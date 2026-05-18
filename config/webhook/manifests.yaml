@@ -1,0 +1,172 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-uyuni-uyuni-project-org-v1alpha1-system
+  failurePolicy: Fail
+  name: msystem.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - systems
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-activationkey
+  failurePolicy: Fail
+  name: vactivationkey.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - activationkeys
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-contentproject
+  failurePolicy: Fail
+  name: vcontentproject.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - contentprojects
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-organization
+  failurePolicy: Fail
+  name: vorganization.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - organizations
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-contentprojectpromotion
+  failurePolicy: Fail
+  name: vpromotion.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - contentprojectpromotions
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-system
+  failurePolicy: Fail
+  name: vsystem.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - systems
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-task
+  failurePolicy: Fail
+  name: vtask.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - tasks
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-uyuniprovider
+  failurePolicy: Fail
+  name: vuyuniprovider.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - uyuniproviders
+  sideEffects: None

@@ -1,0 +1,15 @@
+resources:
+- bases/uyuni.uyuni-project.org_activationkeys.yaml
+- bases/uyuni.uyuni-project.org_configchannels.yaml
+- bases/uyuni.uyuni-project.org_configfiles.yaml
+- bases/uyuni.uyuni-project.org_contentprojectpromotions.yaml
+- bases/uyuni.uyuni-project.org_contentprojects.yaml
+- bases/uyuni.uyuni-project.org_imageprofiles.yaml
+- bases/uyuni.uyuni-project.org_imagestores.yaml
+- bases/uyuni.uyuni-project.org_organizations.yaml
+- bases/uyuni.uyuni-project.org_repositories.yaml
+- bases/uyuni.uyuni-project.org_softwarechannels.yaml
+- bases/uyuni.uyuni-project.org_systemgroups.yaml
+- bases/uyuni.uyuni-project.org_systems.yaml
+- bases/uyuni.uyuni-project.org_tasks.yaml
+- bases/uyuni.uyuni-project.org_uyuniproviders.yaml

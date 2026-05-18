@@ -1,0 +1,76 @@
+# Default values for uyuni-operator.
+
+replicaCount: 1
+
+image:
+  # -- Container image registry
+  repository: ghcr.io/mborodin/uyuni-operator
+  # -- Image name (set to override the default repository basename)
+  name: ""
+  # -- Image tag. Defaults to the chart's appVersion when empty.
+  tag: ""
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- List of image pull secret names to use when pulling the operator image.
+# Each entry is a name of an existing Secret of type kubernetes.io/dockerconfigjson.
+# Example:
+#   imagePullSecrets:
+#     - name: my-registry-secret
+imagePullSecrets: []
+
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+# -- Override the full resource name prefix.
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Additional annotations to add to the ServiceAccount.
+  annotations: {}
+
+# -- Enable leader election for the controller manager.
+# Required when running more than one replica.
+leaderElect: true
+
+# -- Extra arguments passed verbatim to the /manager binary.
+extraArgs: []
+
+# -- Resource requests and limits for the manager container.
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# -- Node selector for the manager pod.
+nodeSelector: {}
+
+# -- Tolerations for the manager pod.
+tolerations: []
+
+# -- Affinity rules for the manager pod.
+affinity: {}
+
+# -- Additional pod annotations.
+podAnnotations: {}
+
+# -- Additional pod labels.
+podLabels: {}
+
+metrics:
+  # -- Port on which Prometheus metrics are exposed.
+  port: 8080
+
+webhook:
+  # -- Enable admission webhooks. When disabled, ValidatingWebhookConfiguration,
+  # MutatingWebhookConfiguration, and the webhook Service are not created.
+  enabled: true
+
+  certManager:
+    # -- Use cert-manager to provision the webhook TLS certificate.
+    # When enabled, an Issuer and Certificate resource are created and the
+    # CA bundle is injected into the webhook configurations automatically.
+    # Requires cert-manager >= v1.0 to be installed in the cluster.
+    enabled: true

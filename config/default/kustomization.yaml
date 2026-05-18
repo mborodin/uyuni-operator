@@ -1,0 +1,83 @@
+namespace: uyuni-operator-system
+
+resources:
+- ../crd
+- ../rbac
+- ../manager
+- ../webhook
+- ../certmanager
+
+patches:
+- path: manager_webhook_patch.yaml
+
+# Inject the namespace and cert name into webhook CA annotations and Certificate
+# DNS SANs using kustomize v5 replacements (replaces the deprecated vars approach).
+replacements:
+# Certificate SAN: replace the placeholder "system" namespace in dnsNames.
+- source:
+    kind: Service
+    version: v1
+    name: webhook-service
+    fieldPath: metadata.namespace
+  targets:
+  - select:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert
+    fieldPaths:
+    - spec.dnsNames.0
+    - spec.dnsNames.1
+    options:
+      delimiter: "."
+      index: 1
+
+# Webhook CA injection annotation — namespace segment.
+- source:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1
+    name: serving-cert
+    fieldPath: metadata.namespace
+  targets:
+  - select:
+      kind: ValidatingWebhookConfiguration
+    fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: "/"
+      index: 0
+      create: true
+  - select:
+      kind: MutatingWebhookConfiguration
+    fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: "/"
+      index: 0
+      create: true
+
+# Webhook CA injection annotation — cert name segment.
+- source:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1
+    name: serving-cert
+    fieldPath: metadata.name
+  targets:
+  - select:
+      kind: ValidatingWebhookConfiguration
+    fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: "/"
+      index: 1
+      create: true
+  - select:
+      kind: MutatingWebhookConfiguration
+    fieldPaths:
+    - metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: "/"
+      index: 1
+      create: true

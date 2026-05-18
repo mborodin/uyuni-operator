@@ -1,0 +1,18 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "uyuni-operator.webhookServiceName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "uyuni-operator.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: https-webhook
+      port: 443
+      protocol: TCP
+      targetPort: 9443
+  selector:
+    {{- include "uyuni-operator.selectorLabels" . | nindent 4 }}
+    control-plane: controller-manager
+{{- end }}

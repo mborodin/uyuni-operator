@@ -1,0 +1,72 @@
+---
+# A complete content lifecycle management setup using the new
+# uyuni.uyuni-project.org API group.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProject
+metadata:
+  name: leap-platform
+  namespace: linux-platform
+spec:
+  label: leap-platform
+  name: openSUSE Leap Platform
+  description: Promoted channels for the Leap 15.6 fleet
+
+  sourceRefs:
+    - name: opensuse-leap-15-6-x86-64
+    - name: opensuse-leap-15-6-x86-64-updates
+    - name: opensuse-leap-15-6-x86-64-uyuni-client
+
+  environments:
+    - { label: dev, name: Development }
+    - { label: test, name: Testing, predecessor: dev }
+    - { label: prod, name: Production, predecessor: test }
+
+  filters:
+    - name: no-rc-kernels
+      type: package
+      rule: deny
+      criteria:
+        field: name
+        matcher: matches
+        value: "kernel.*-rc[0-9]+"
+
+  build:
+    autoBuildSources: true
+    schedule: "0 4 * * 1"
+
+---
+# Activation key bound to the prod environment of the project above.
+# When prod first builds, this key reconciles to use the derived channels.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ActivationKey
+metadata:
+  name: leap-prod
+  namespace: linux-platform
+spec:
+  key: leap-prod
+  description: Production Leap fleet
+  baseChannelFrom:
+    contentProjectRef: { name: leap-platform }
+    environment: prod
+    sourceChannelLabel: opensuse_leap15_6-x86_64
+  childChannelsFrom:
+    - contentProjectRef: { name: leap-platform }
+      environment: prod
+      sourceChannelLabel: opensuse_leap15_6-x86_64-updates
+    - contentProjectRef: { name: leap-platform }
+      environment: prod
+      sourceChannelLabel: opensuse_leap15_6-x86_64-uyuni-client
+
+---
+# Promotion: dev → test. Committed by hand or CI after QA approves v14.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProjectPromotion
+metadata:
+  name: leap-2026-05-13-dev-to-test
+  namespace: linux-platform
+spec:
+  projectRef: { name: leap-platform }
+  fromEnvironment: dev
+  toEnvironment: test
+  requireSourceVersion: 14
+  ttlAfterFinished: 168h

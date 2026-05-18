@@ -1,0 +1,145 @@
+# End-to-end sample for the uyuni.uyuni-project.org operator.
+# Apply with: kubectl apply -f end-to-end.yaml
+#
+# Note the new API group throughout. Annotations and finalizers also use
+# uyuni.uyuni-project.org as the prefix. If you have CRs from a previous
+# operator version using uyuni.io/*, the operator migrates them silently
+# on first reconcile after upgrade.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uyuni-prod-creds
+  namespace: uyuni-operator-system
+type: Opaque
+stringData:
+  username: automation
+  password: replace-me
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: UyuniProvider
+metadata:
+  name: prod
+spec:
+  url: https://uyuni.customer.example
+  credentialsSecretRef:
+    name: uyuni-prod-creds
+    namespace: uyuni-operator-system
+  isDefault: true
+  timeout: 30s
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Repository
+metadata:
+  name: leap-15-6-oss
+  namespace: linux-platform
+spec:
+  label: opensuse_leap15_6-x86_64-repo
+  url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
+  type: yum
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SoftwareChannel
+metadata:
+  name: opensuse-leap-15-6-x86-64
+  namespace: linux-platform
+spec:
+  label: opensuse_leap15_6-x86_64
+  name: openSUSE Leap 15.6 (x86_64)
+  summary: openSUSE Leap 15.6 base channel
+  arch: channel-x86_64
+  repositoryRefs:
+    - name: leap-15-6-oss
+  sync:
+    cron: "0 0 3 ? * *"
+    syncOnCreate: true
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProject
+metadata:
+  name: leap-platform
+  namespace: linux-platform
+spec:
+  label: leap-platform
+  name: openSUSE Leap Platform
+  description: Promoted channels for the Leap 15.6 fleet
+  sourceRefs:
+    - name: opensuse-leap-15-6-x86-64
+  environments:
+    - { label: dev,  name: Development }
+    - { label: test, name: Testing,    predecessor: dev }
+    - { label: prod, name: Production, predecessor: test }
+  filters:
+    - name: no-rc-kernels
+      type: package
+      rule: deny
+      criteria:
+        field: name
+        matcher: matches
+        value: "kernel.*-rc[0-9]+"
+  build:
+    autoBuildSources: true
+    schedule: "0 4 * * 1"
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ActivationKey
+metadata:
+  name: leap-prod
+  namespace: linux-platform
+spec:
+  key: leap-prod
+  description: Production Leap fleet
+  baseChannelFrom:
+    contentProjectRef: { name: leap-platform }
+    environment: prod
+    sourceChannelLabel: opensuse_leap15_6-x86_64
+  systemGroupRefs:
+    - name: linux-prod
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: linux-prod
+  namespace: linux-platform
+spec:
+  name: linux-prod
+  description: Production Linux fleet
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: System
+metadata:
+  name: web-03
+  namespace: linux-platform
+spec:
+  minionId: web-03.example.com
+  preCreate: true
+  network:
+    - { name: eth0, macAddress: "52:54:00:ab:cd:03" }
+  baseChannelFrom:
+    contentProjectRef: { name: leap-platform }
+    environment: prod
+    sourceChannelLabel: opensuse_leap15_6-x86_64
+  customInfo:
+    env: prod
+    role: web
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProjectPromotion
+metadata:
+  name: leap-2026-05-12-dev-to-test
+  namespace: linux-platform
+spec:
+  projectRef: { name: leap-platform }
+  fromEnvironment: dev
+  toEnvironment: test
+  requireSourceVersion: 14
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Task
+metadata:
+  name: deploy-nginx-config-v2
+  namespace: linux-platform
+spec:
+  target:
+    systemGroupRef: { name: linux-prod }
+  highstate: {}

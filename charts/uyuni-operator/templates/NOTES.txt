@@ -1,0 +1,39 @@
+uyuni-operator {{ .Chart.AppVersion }} has been installed.
+
+Namespace: {{ .Release.Namespace }}
+Release:   {{ .Release.Name }}
+
+The operator is now watching for Uyuni custom resources across all namespaces.
+Credential secrets for UyuniProvider resources must be created in: {{ .Release.Namespace }}
+
+{{- if .Values.webhook.enabled }}
+
+Admission webhooks are enabled.
+  {{- if .Values.webhook.certManager.enabled }}
+cert-manager will provision the TLS certificate automatically.
+Ensure cert-manager is installed before applying resources.
+  {{- else }}
+You must manually provision the webhook TLS secret:
+  {{ include "uyuni-operator.webhookCertSecret" . }}
+  {{- end }}
+{{- else }}
+
+WARNING: Admission webhooks are disabled (webhook.enabled=false).
+Validation of Uyuni custom resources will not be enforced at admission time.
+{{- end }}
+
+To get started, create a UyuniProvider resource pointing to your Uyuni server:
+
+  kubectl apply -n {{ .Release.Namespace }} -f - <<EOF
+  apiVersion: uyuni.uyuni-project.org/v1alpha1
+  kind: UyuniProvider
+  metadata:
+    name: my-uyuni
+  spec:
+    url: https://uyuni.example.com
+    credentialsSecretRef:
+      name: uyuni-credentials
+  EOF
+
+For full examples see:
+  https://github.com/mborodin/uyuni-operator/blob/main/config/samples/end-to-end.yaml
