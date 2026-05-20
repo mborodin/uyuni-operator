@@ -72,10 +72,13 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 
 // --- generic re-auth helpers ---
 
-// apiGet calls GET <path> and re-authenticates once on 401.
+// apiGet calls GET <path> and re-authenticates once on 401 or 403.
+// Uyuni returns 403 HTML for both genuine permission denials and expired
+// sessions; we try re-auth on either so that a stale cookie is recovered
+// transparently. If the retry also fails with 403 the error is reported as-is.
 func apiGet[T any](c *Client, path string) (T, error) {
 	resp, err := uyuniapi.Get[T](c.http, path)
-	if err != nil && strings.Contains(err.Error(), "401") {
+	if err != nil && needsReauth(err.Error()) {
 		if loginErr := c.http.Login(); loginErr != nil {
 			var z T
 			return z, loginErr
@@ -84,7 +87,7 @@ func apiGet[T any](c *Client, path string) (T, error) {
 	}
 	if err != nil {
 		var z T
-		return z, err
+		return z, sanitizeHTTPError(err, path)
 	}
 	if !resp.Success {
 		var z T
@@ -93,10 +96,10 @@ func apiGet[T any](c *Client, path string) (T, error) {
 	return resp.Result, nil
 }
 
-// apiPost calls POST <path> with JSON body and re-authenticates once on 401.
+// apiPost calls POST <path> with JSON body and re-authenticates once on 401 or 403.
 func apiPost[T any](c *Client, path string, data map[string]any) (T, error) {
 	resp, err := uyuniapi.Post[T](c.http, path, data)
-	if err != nil && strings.Contains(err.Error(), "401") {
+	if err != nil && needsReauth(err.Error()) {
 		if loginErr := c.http.Login(); loginErr != nil {
 			var z T
 			return z, loginErr
@@ -105,13 +108,44 @@ func apiPost[T any](c *Client, path string, data map[string]any) (T, error) {
 	}
 	if err != nil {
 		var z T
-		return z, err
+		return z, sanitizeHTTPError(err, path)
 	}
 	if !resp.Success {
 		var z T
 		return z, fmt.Errorf("%s", resp.Message)
 	}
 	return resp.Result, nil
+}
+
+// needsReauth reports whether an HTTP error warrants a re-authentication
+// attempt. 401 is the standard unauthenticated signal. Uyuni also returns 403
+// with an HTML body when the pxt-session-cookie has expired (rather than 401),
+// so we treat 403 the same way and let the retry surface a real permission
+// error if re-auth doesn't help. We also match raw HTML in the error body as
+// an additional signal for cases where the status code is not in the string.
+func needsReauth(errMsg string) bool {
+	return strings.Contains(errMsg, "401") ||
+		strings.Contains(errMsg, "403") ||
+		strings.Contains(errMsg, "<!DOCTYPE") ||
+		strings.Contains(errMsg, "<html")
+}
+
+// sanitizeHTTPError replaces HTML response bodies in HTTP error messages with
+// a concise description. Uyuni returns full HTML pages for 403/404/5xx errors,
+// which produce unreadable multi-kilobyte log lines.
+func sanitizeHTTPError(err error, path string) error {
+	msg := err.Error()
+	if strings.Contains(msg, "403") {
+		return fmt.Errorf("403 access denied calling %s: verify the Uyuni user has the required roles (e.g. Channel Administrator)", path)
+	}
+	// Strip any HTML body to keep log lines readable.
+	if idx := strings.Index(msg, "<!DOCTYPE"); idx != -1 {
+		return fmt.Errorf("%s", strings.TrimSpace(msg[:idx]))
+	}
+	if idx := strings.Index(msg, "<html"); idx != -1 {
+		return fmt.Errorf("%s", strings.TrimSpace(msg[:idx]))
+	}
+	return err
 }
 
 // asNotFound converts an error whose message contains "no such" / "not found"
@@ -184,9 +218,9 @@ type wireChannel struct {
 type wireRepo struct {
 	ID                int    `json:"id"`
 	Label             string `json:"label"`
-	SourceURL         string `json:"source_url"`
+	SourceURL         string `json:"sourceUrl"`
 	Type              string `json:"type"`
-	HasSignedMetadata bool   `json:"has_signed_metadata"`
+	HasSignedMetadata bool   `json:"hasSignedMetadata"`
 }
 
 type wireConfigChannel struct {
@@ -295,14 +329,11 @@ type wireActionResult struct {
 // =============================================================================
 
 func (c *Client) GetServerVersion(ctx context.Context) (string, error) {
-	type resp struct {
-		Version string `json:"version"`
-	}
-	r, err := apiGet[resp](c, "api/getVersion")
+	r, err := apiGet[string](c, "api/getVersion")
 	if err != nil {
 		return "", err
 	}
-	return r.Version, nil
+	return r, nil
 }
 
 func (c *Client) GetOrgID(ctx context.Context) (int, error) {
@@ -513,7 +544,7 @@ func (c *Client) CreateSystemGroup(ctx context.Context, name, description string
 }
 
 func (c *Client) GetSystemGroup(ctx context.Context, name string) (*SystemGroupDetails, error) {
-	r, err := apiGet[wireSystemGroup](c, "systemgroup/getDetails?name="+url.QueryEscape(name))
+	r, err := apiGet[wireSystemGroup](c, "systemgroup/getDetails?systemGroupName="+url.QueryEscape(name))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -522,15 +553,15 @@ func (c *Client) GetSystemGroup(ctx context.Context, name string) (*SystemGroupD
 
 func (c *Client) UpdateSystemGroupDescription(ctx context.Context, name, description string) error {
 	_, err := apiPost[any](c, "systemgroup/update", map[string]any{
-		"name":        name,
-		"description": description,
+		"systemGroupName": name,
+		"description":     description,
 	})
 	return err
 }
 
 func (c *Client) DeleteSystemGroup(ctx context.Context, name string) error {
 	_, err := apiPost[any](c, "systemgroup/delete", map[string]any{
-		"name": name,
+		"systemGroupName": name,
 	})
 	return asNotFound(err)
 }
@@ -539,7 +570,7 @@ func (c *Client) ListSystemsInGroup(ctx context.Context, name string) ([]int, er
 	type sys struct {
 		ID int `json:"id"`
 	}
-	list, err := apiGet[[]sys](c, "systemgroup/listSystems?name="+url.QueryEscape(name))
+	list, err := apiGet[[]sys](c, "systemgroup/listSystems?systemGroupName="+url.QueryEscape(name))
 	if err != nil {
 		return nil, err
 	}
@@ -552,34 +583,34 @@ func (c *Client) ListSystemsInGroup(ctx context.Context, name string) ([]int, er
 
 func (c *Client) AddSystemsToGroup(ctx context.Context, name string, serverIDs []int) error {
 	_, err := apiPost[any](c, "systemgroup/addOrRemoveSystems", map[string]any{
-		"name":       name,
-		"server_ids": serverIDs,
-		"add":        true,
+		"systemGroupName": name,
+		"systemIds":       serverIDs,
+		"add":             true,
 	})
 	return err
 }
 
 func (c *Client) RemoveSystemsFromGroup(ctx context.Context, name string, serverIDs []int) error {
 	_, err := apiPost[any](c, "systemgroup/addOrRemoveSystems", map[string]any{
-		"name":       name,
-		"server_ids": serverIDs,
-		"add":        false,
+		"systemGroupName": name,
+		"systemIds":       serverIDs,
+		"add":             false,
 	})
 	return err
 }
 
 func (c *Client) SubscribeGroupToConfigChannel(ctx context.Context, groupName, channelLabel string) error {
 	_, err := apiPost[any](c, "systemgroup/subscribeConfigChannel", map[string]any{
-		"system_group_name":    groupName,
-		"config_channel_label": channelLabel,
+		"systemGroupName":    groupName,
+		"configChannelLabel": channelLabel,
 	})
 	return err
 }
 
 func (c *Client) UnsubscribeGroupFromConfigChannel(ctx context.Context, groupName, channelLabel string) error {
 	_, err := apiPost[any](c, "systemgroup/unsubscribeConfigChannel", map[string]any{
-		"system_group_name":    groupName,
-		"config_channel_label": channelLabel,
+		"systemGroupName":    groupName,
+		"configChannelLabel": channelLabel,
 	})
 	return err
 }
@@ -712,23 +743,25 @@ func wireAKToDetails(w *wireActivationKey) *ActivationKeyDetails {
 // =============================================================================
 
 func (c *Client) CreateChannel(ctx context.Context, spec ChannelDetails) error {
-	_, err := apiPost[any](c, "channel.software/create", map[string]any{
-		"label":           spec.Label,
-		"name":            spec.Name,
-		"summary":         spec.Summary,
-		"arch_label":      spec.ArchName,
-		"parent_label":    spec.ParentChannelLabel,
-		"checksum_label":  spec.ChecksumLabel,
-		"gpg_key_url":     spec.GPGKeyURL,
-		"gpg_key_id":      spec.GPGKeyID,
-		"gpg_fingerprint": spec.GPGKeyFp,
-		"gpg_check":       spec.GPGCheck,
+	_, err := apiPost[any](c, "channel/software/create", map[string]any{
+		"label":        spec.Label,
+		"name":         spec.Name,
+		"summary":      spec.Summary,
+		"archLabel":    spec.ArchName,
+		"parentLabel":  spec.ParentChannelLabel,
+		"checksumType": spec.ChecksumLabel,
+		"gpgKey": map[string]any{
+			"url":         spec.GPGKeyURL,
+			"id":          spec.GPGKeyID,
+			"fingerprint": spec.GPGKeyFp,
+		},
+		"gpgCheck": spec.GPGCheck,
 	})
 	return err
 }
 
 func (c *Client) GetChannel(ctx context.Context, label string) (*ChannelDetails, error) {
-	r, err := apiGet[wireChannel](c, "channel.software/getDetails?channel_label="+url.QueryEscape(label))
+	r, err := apiGet[wireChannel](c, "channel/software/getDetails?channelLabel="+url.QueryEscape(label))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -736,25 +769,25 @@ func (c *Client) GetChannel(ctx context.Context, label string) (*ChannelDetails,
 }
 
 func (c *Client) SetChannelDetails(ctx context.Context, id int, d ChannelDetails) error {
-	_, err := apiPost[any](c, "channel.software/setDetails", map[string]any{
-		"channel_id": id,
-		"channel": map[string]any{
-			"name":            d.Name,
-			"summary":         d.Summary,
-			"description":     d.Description,
-			"gpg_key_url":     d.GPGKeyURL,
-			"gpg_key_id":      d.GPGKeyID,
-			"gpg_fingerprint": d.GPGKeyFp,
-			"gpg_check":       d.GPGCheck,
-			"checksum_label":  d.ChecksumLabel,
+	_, err := apiPost[any](c, "channel/software/setDetails", map[string]any{
+		"channelId": id,
+		"details": map[string]any{
+			"name":           d.Name,
+			"summary":        d.Summary,
+			"description":    d.Description,
+			"gpg_key_url":    d.GPGKeyURL,
+			"gpg_key_id":     d.GPGKeyID,
+			"gpg_key_fp":     d.GPGKeyFp,
+			"gpg_check":      d.GPGCheck,
+			"checksum_label": d.ChecksumLabel,
 		},
 	})
 	return err
 }
 
 func (c *Client) DeleteChannel(ctx context.Context, label string) error {
-	_, err := apiPost[any](c, "channel.software/delete", map[string]any{
-		"channel_label": label,
+	_, err := apiPost[any](c, "channel/software/delete", map[string]any{
+		"channelLabel": label,
 	})
 	return asNotFound(err)
 }
@@ -763,7 +796,7 @@ func (c *Client) ListChannelRepos(ctx context.Context, label string) ([]string, 
 	type repoRef struct {
 		Label string `json:"label"`
 	}
-	list, err := apiGet[[]repoRef](c, "channel.software/listChannelRepos?channel_label="+url.QueryEscape(label))
+	list, err := apiGet[[]repoRef](c, "channel/software/listChannelRepos?channelLabel="+url.QueryEscape(label))
 	if err != nil {
 		return nil, err
 	}
@@ -775,32 +808,32 @@ func (c *Client) ListChannelRepos(ctx context.Context, label string) ([]string, 
 }
 
 func (c *Client) AssociateRepo(ctx context.Context, channelLabel, repoLabel string) error {
-	_, err := apiPost[any](c, "channel.software/associateRepo", map[string]any{
-		"channel_label": channelLabel,
-		"repo_label":    repoLabel,
+	_, err := apiPost[any](c, "channel/software/associateRepo", map[string]any{
+		"channelLabel": channelLabel,
+		"repoLabel":    repoLabel,
 	})
 	return err
 }
 
 func (c *Client) DisassociateRepo(ctx context.Context, channelLabel, repoLabel string) error {
-	_, err := apiPost[any](c, "channel.software/disassociateRepo", map[string]any{
-		"channel_label": channelLabel,
-		"repo_label":    repoLabel,
+	_, err := apiPost[any](c, "channel/software/disassociateRepo", map[string]any{
+		"channelLabel": channelLabel,
+		"repoLabel":    repoLabel,
 	})
 	return err
 }
 
 func (c *Client) SetRepoSyncSchedule(ctx context.Context, channelLabel, quartzCron string) error {
-	_, err := apiPost[any](c, "channel.software/setRepoSyncCronExpression", map[string]any{
-		"id":        channelLabel,
-		"cron_expr": quartzCron,
+	_, err := apiPost[any](c, "channel/software/syncRepo", map[string]any{
+		"channelLabel": channelLabel,
+		"cronExpr":     quartzCron,
 	})
 	return err
 }
 
 func (c *Client) SyncChannelNow(ctx context.Context, channelLabel string) error {
-	_, err := apiPost[any](c, "channel.software/syncRepo", map[string]any{
-		"channel_label": channelLabel,
+	_, err := apiPost[any](c, "channel/software/syncRepo", map[string]any{
+		"channelLabel": channelLabel,
 	})
 	return err
 }
@@ -812,11 +845,11 @@ func (c *Client) CreateRepo(ctx context.Context, r RepoDetails, sslCa, sslCert, 
 		"url":   r.URL,
 	}
 	if sslCa != "" || sslCert != "" || sslKey != "" {
-		payload["ssl_ca_cert"] = sslCa
-		payload["ssl_client_cert"] = sslCert
-		payload["ssl_client_key"] = sslKey
+		payload["sslCaCert"]  = sslCa
+		payload["sslCliCert"] = sslCert
+		payload["sslCliKey"]  = sslKey
 	}
-	created, err := apiPost[wireRepo](c, "channel.software/createRepo", payload)
+	created, err := apiPost[wireRepo](c, "channel/software/createRepo", payload)
 	if err != nil {
 		return nil, err
 	}
@@ -824,7 +857,7 @@ func (c *Client) CreateRepo(ctx context.Context, r RepoDetails, sslCa, sslCert, 
 }
 
 func (c *Client) GetRepo(ctx context.Context, label string) (*RepoDetails, error) {
-	r, err := apiGet[wireRepo](c, "channel.software/getRepoDetails?repo_label="+url.QueryEscape(label))
+	r, err := apiGet[wireRepo](c, "channel/software/getRepoDetails?repoLabel="+url.QueryEscape(label))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -832,16 +865,16 @@ func (c *Client) GetRepo(ctx context.Context, label string) (*RepoDetails, error
 }
 
 func (c *Client) UpdateRepoURL(ctx context.Context, label, repoURL string) error {
-	_, err := apiPost[any](c, "channel.software/updateRepoUrl", map[string]any{
-		"repo_label": label,
-		"url":        repoURL,
+	_, err := apiPost[any](c, "channel/software/updateRepoUrl", map[string]any{
+		"label": label,
+		"url":   repoURL,
 	})
 	return err
 }
 
 func (c *Client) DeleteRepo(ctx context.Context, label string) error {
-	_, err := apiPost[any](c, "channel.software/removeRepo", map[string]any{
-		"repo_label": label,
+	_, err := apiPost[any](c, "channel/software/removeRepo", map[string]any{
+		"label": label,
 	})
 	return asNotFound(err)
 }
@@ -1509,7 +1542,7 @@ func (c *Client) CreateOrganization(ctx context.Context, name, adminLogin, admin
 }
 
 func (c *Client) GetOrganizationByID(ctx context.Context, id int) (*OrgDetails, error) {
-	r, err := apiGet[wireOrg](c, fmt.Sprintf("org/getDetails?org_id=%d", id))
+	r, err := apiGet[wireOrg](c, fmt.Sprintf("org/getDetails?orgId=%d", id))
 	if err != nil {
 		return nil, asNotFound(err)
 	}

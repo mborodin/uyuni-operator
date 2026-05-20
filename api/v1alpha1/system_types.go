@@ -105,11 +105,12 @@ type SystemGroupSpec struct {
 }
 
 type SystemGroupStatus struct {
-	UyuniID            int                `json:"uyuniId,omitempty"`
-	MemberCount        int                `json:"memberCount,omitempty"`
-	ResolvedMembers    []string           `json:"resolvedMembers,omitempty"`
-	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
-	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+	UyuniID                   int                `json:"uyuniId,omitempty"`
+	MemberCount               int                `json:"memberCount,omitempty"`
+	ResolvedMembers           []string           `json:"resolvedMembers,omitempty"`
+	ActiveConfigChannelLabels []string           `json:"activeConfigChannelLabels,omitempty"`
+	ObservedGeneration        int64              `json:"observedGeneration,omitempty"`
+	Conditions                []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

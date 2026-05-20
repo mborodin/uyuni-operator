@@ -22,7 +22,8 @@ type entry struct {
 }
 
 type orgEntry struct {
-	api uyuni.API
+	api          uyuni.API
+	providerName string // non-empty when the org has no own credentials and shares the provider client
 }
 
 // Pool is a concrete uyuni.ClientPool. It lazily builds API clients from
@@ -183,7 +184,7 @@ func (p *Pool) buildForOrg(ctx context.Context, orgName, orgNamespace, key strin
 			return nil, err
 		}
 		p.mu.Lock()
-		p.orgCache[key] = orgEntry{api: api}
+		p.orgCache[key] = orgEntry{api: api, providerName: org.Spec.ProviderRef.Name}
 		p.mu.Unlock()
 		return api, nil
 	}
@@ -227,11 +228,17 @@ func (p *Pool) buildForOrg(ctx context.Context, orgName, orgNamespace, key strin
 	return c, nil
 }
 
-// Invalidate evicts the cached client for providerName so the next For
-// call recreates it. Called by UyuniProviderReconciler when credentials change.
+// Invalidate evicts the cached client for providerName so the next For call
+// recreates it. Org cache entries that share the provider client (no own
+// credentials) are also evicted so they rebuild against the fresh client.
 func (p *Pool) Invalidate(providerName string) {
 	p.mu.Lock()
 	delete(p.cache, providerName)
+	for k, e := range p.orgCache {
+		if e.providerName == providerName {
+			delete(p.orgCache, k)
+		}
+	}
 	p.mu.Unlock()
 }
 

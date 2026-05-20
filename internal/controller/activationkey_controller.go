@@ -288,7 +288,28 @@ func (r *ActivationKeyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.activationKeysForProject)).
 		Watches(&uyuniv1.SoftwareChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.activationKeysForChannel)).
+		Watches(&uyuniv1.SystemGroup{},
+			handler.EnqueueRequestsFromMapFunc(r.activationKeysForSystemGroup)).
 		Complete(r)
+}
+
+func (r *ActivationKeyReconciler) activationKeysForSystemGroup(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list uyuniv1.ActivationKeyList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var out []reconcile.Request
+	for _, ak := range list.Items {
+		for _, ref := range ak.Spec.SystemGroupRefs {
+			if ref.Name == obj.GetName() {
+				out = append(out, reconcile.Request{
+					NamespacedName: types.NamespacedName{Namespace: ak.Namespace, Name: ak.Name},
+				})
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (r *ActivationKeyReconciler) activationKeysForProject(ctx context.Context, obj client.Object) []reconcile.Request {

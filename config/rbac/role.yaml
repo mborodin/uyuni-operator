@@ -1,6 +1,6 @@
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: manager-role
 rules:
@@ -19,6 +19,8 @@ rules:
   - contentprojects
   - organizations
   - repositories
+  - softwarechannels
+  - systemgroups
   - uyuniproviders
   verbs:
   - create
@@ -35,6 +37,8 @@ rules:
   - contentprojects/finalizers
   - organizations/finalizers
   - repositories/finalizers
+  - softwarechannels/finalizers
+  - systemgroups/finalizers
   - tasks/finalizers
   verbs:
   - update
@@ -46,6 +50,8 @@ rules:
   - contentprojects/status
   - organizations/status
   - repositories/status
+  - softwarechannels/status
+  - systemgroups/status
   - tasks/status
   - uyuniproviders/status
   verbs:
@@ -56,8 +62,6 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - configchannels
-  - softwarechannels
-  - systemgroups
   - systems
   verbs:
   - get
