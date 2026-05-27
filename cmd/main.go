@@ -144,6 +144,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.ConfigurationChannelReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ConfigurationChannel")
+		os.Exit(1)
+	}
+
 	if err := (&webhook.OrganizationValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "OrganizationValidator")
 		os.Exit(1)
@@ -181,6 +189,11 @@ func main() {
 
 	if err := (&webhook.TaskValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "TaskValidator")
+		os.Exit(1)
+	}
+
+	if err := (&webhook.ConfigurationChannelValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ConfigurationChannelValidator")
 		os.Exit(1)
 	}
 
