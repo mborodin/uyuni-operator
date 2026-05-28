@@ -54,7 +54,8 @@ spec:
   name: openSUSE Leap 15.6 Updates (x86_64)          # Display name
   summary: Security and bugfix updates for Leap 15.6 # Description
   arch: channel-x86_64                               # Architecture
-  parentChannelLabel: opensuse_leap15_6-x86_64       # Link to parent channel
+  parentChannelRef:                                  # Reference to parent channel resource
+    name: opensuse-leap-15-6-x86-64                  # Name of parent SoftwareChannel
   repositoryRefs:
     - name: opensuse-leap-15-6-updates               # Reference to Repository
   sync:
