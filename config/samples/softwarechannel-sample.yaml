@@ -1,7 +1,20 @@
 # SoftwareChannel Sample - Package Repository Channels
 # Apply with: kubectl apply -f config/samples/softwarechannel-sample.yaml
 
-# First, create a Repository resource pointing to the package mirror
+# First, create an Organization (required for SoftwareChannels)
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Organization
+metadata:
+  name: pantheon-of-goods
+  namespace: linux-platform
+spec:
+  name: Pantheon of Goods
+  orgAdmin:
+    username: admin
+
+---
+# Then, create a Repository resource pointing to the package mirror
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: Repository
@@ -36,6 +49,8 @@ spec:
   name: openSUSE Leap 15.6 (x86_64)                  # Display name
   summary: openSUSE Leap 15.6 base channel           # Brief description
   arch: channel-x86_64                               # Architecture
+  organizationRef:
+    name: pantheon-of-goods                          # Reference to Organization
   repositoryRefs:
     - name: opensuse-leap-15-6-oss                   # Reference to Repository
   sync:
@@ -54,6 +69,8 @@ spec:
   name: openSUSE Leap 15.6 Updates (x86_64)          # Display name
   summary: Security and bugfix updates for Leap 15.6 # Description
   arch: channel-x86_64                               # Architecture
+  organizationRef:
+    name: pantheon-of-goods                          # Reference to Organization
   parentChannelRef:                                  # Reference to parent channel resource
     name: opensuse-leap-15-6-x86-64                  # Name of parent SoftwareChannel
   repositoryRefs:
@@ -85,6 +102,8 @@ spec:
   name: Red Hat Enterprise Linux 8 (x86_64)
   summary: RHEL 8 base channel
   arch: channel-x86_64
+  organizationRef:
+    name: pantheon-of-goods                          # Reference to Organization
   repositoryRefs:
     - name: rhel-8-baseos
   sync:
