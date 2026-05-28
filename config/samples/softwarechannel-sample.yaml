@@ -10,8 +10,8 @@ metadata:
   namespace: linux-platform
 spec:
   name: Pantheon of Goods
-  orgAdmin:
-    username: admin
+  providerRef:
+    name: rke                                        # Reference to UyuniProvider
 
 ---
 # Then, create a Repository resource pointing to the package mirror
