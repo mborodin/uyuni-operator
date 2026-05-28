@@ -20,3 +20,14 @@ spec:
   name: Base System Configuration
   type: normal
   description: Base system configuration management
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: apache-config
+  namespace: linux-platform
+spec:
+  id: apache-config-state
+  name: Apache Configuration
+  type: state
+  description: Apache web server configuration management
