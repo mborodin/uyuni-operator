@@ -1,11 +1,26 @@
-resources:
-- manager.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
+namespace: uyuni-operator-system
+
+resources:
+- manager.yaml
+
 images:
-# - name: controller
-#   newName: ghcr.io/mborodin/uyuni-operator
-#   newTag: dev
 - name: controller
-  newName: fayazlinux/uyuni-operator        # ← CHANGE THIS
-  newTag: v1.0.0                            # ← CHANGE THIS (was: dev)
+  newName: fayazlinux/uyuni-operator
+  newTag: v1.0.0
+
+patches:
+# Add imagePullSecrets so RKE2 can authenticate with Docker Hub
+- target:
+    kind: Deployment
+    name: controller-manager
+  patch: |-
+    - op: add
+      path: /spec/template/spec/imagePullSecrets
+      value:
+      - name: dockerhub-secret
+    - op: add
+      path: /spec/template/spec/containers/0/imagePullPolicy
+      value: Always
