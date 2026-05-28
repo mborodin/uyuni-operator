@@ -25,6 +25,8 @@ spec:
   label: opensuse_leap15_6-oss-repo
   url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
   type: yum
+  organizationRef:
+    name: pantheon-of-goods
 
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
@@ -36,6 +38,8 @@ spec:
   label: opensuse_leap15_6-updates-repo
   url: http://download.opensuse.org/update/leap/15.6/oss/
   type: yum
+  organizationRef:
+    name: pantheon-of-goods
 
 ---
 # Base Software Channel (parent channel)
@@ -90,6 +94,8 @@ spec:
   label: rhel-8-baseos-repo
   url: http://mirror.example.com/rhel/8/BaseOS/x86_64/
   type: yum
+  organizationRef:
+    name: pantheon-of-goods
 
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
@@ -107,5 +113,5 @@ spec:
   repositoryRefs:
     - name: rhel-8-baseos
   sync:
-    cron: "0 2 ? * *"                               # Sync at 2 AM daily
+    cron: "0 0 2 ? * *"                              # Sync at 2 AM daily
     syncOnCreate: false                             # Don't sync on create (set to true to sync)
