@@ -7,7 +7,6 @@ spec:
   id: nginx-config-state
   name: Nginx Configuration (state)
   type: state
-  cluster: prod
   description: Salt state channel for Nginx configuration management
   url: https://github.com/example/salt-nginx-config
 ---
@@ -20,3 +19,4 @@ spec:
   id: base-config-normal
   name: Base System Configuration
   type: normal
+  description: Base system configuration management
