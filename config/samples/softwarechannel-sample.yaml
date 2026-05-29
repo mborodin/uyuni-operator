@@ -124,7 +124,7 @@ metadata:
   namespace: linux-platform
 spec:
   label: test-repo-label
-  url: http://download.opensuse.org/update/leap/15.6/oss/
+  url: https://download.opensuse.org/update/leap/15.5/oss/
   type: yum
   organizationRef:
     name: pantheon-of-goods                          # Required: link to Organization
