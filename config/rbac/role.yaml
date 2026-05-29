@@ -1,6 +1,6 @@
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: manager-role
 rules:
@@ -16,6 +16,7 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys
+  - configurationchannels
   - contentprojects
   - organizations
   - repositories
@@ -34,6 +35,7 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/finalizers
+  - configurationchannels/finalizers
   - contentprojects/finalizers
   - organizations/finalizers
   - repositories/finalizers
@@ -46,6 +48,7 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/status
+  - configurationchannels/status
   - contentprojectpromotions/status
   - contentprojects/status
   - organizations/status
