@@ -1,0 +1,65 @@
+# SystemGroup Sample - Manage system groups with multi-cluster support
+# Apply with: kubectl apply -f config/samples/systemgroup-sample.yaml
+
+---
+# Example 1: SystemGroup using default UyuniProvider (no cluster field)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: default-servers
+  namespace: linux-platform
+spec:
+  name: Default Servers
+  description: Systems managed by the default Uyuni instance
+  # No cluster field → uses default UyuniProvider (spec.isDefault: true)
+  memberRefs:
+    - name: system-1
+    - name: system-2
+
+---
+# Example 2: SystemGroup using a specific UyuniProvider
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: prod-servers
+  namespace: linux-platform
+spec:
+  name: Production Servers
+  description: Systems managed by the production Uyuni instance
+  cluster:
+    name: prod-uyuni  # Reference to a specific UyuniProvider
+  memberRefs:
+    - name: prod-web-01
+    - name: prod-app-01
+
+---
+# Example 3: SystemGroup with config channel subscriptions
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: managed-servers
+  namespace: linux-platform
+spec:
+  name: Managed Servers
+  description: Servers with configuration management
+  cluster:
+    name: prod-uyuni
+  memberRefs:
+    - name: managed-server-1
+  configChannelRefs:
+    - name: nginx-config
+    - name: base-config
+
+---
+# Example 4: SystemGroup with static minion IDs
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: legacy-servers
+  namespace: linux-platform
+spec:
+  name: Legacy Servers
+  description: Systems identified by minion IDs
+  staticMinionIds:
+    - legacy-system-1.example.com
+    - legacy-system-2.example.com

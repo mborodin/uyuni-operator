@@ -34,9 +34,14 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	uc, err := r.Clients.ForOrganization(ctx, orgRef(sg.Spec.OrganizationRef), sg.Namespace)
+	// Resolve UyuniProvider from cluster field or use default
+	var clusterRef *uyuni.LocalObjectRef
+	if sg.Spec.Cluster != nil {
+		clusterRef = &uyuni.LocalObjectRef{Name: sg.Spec.Cluster.Name}
+	}
+	uc, err := r.Clients.For(ctx, clusterRef, sg.Namespace)
 	if err != nil {
-		return r.fail(ctx, &sg, "OrganizationError", err)
+		return r.fail(ctx, &sg, "ProviderError", err)
 	}
 
 	if !sg.DeletionTimestamp.IsZero() {

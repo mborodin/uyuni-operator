@@ -102,6 +102,11 @@ type SystemGroupSpec struct {
 	ConfigChannelRefs []LocalObjectRef `json:"configChannelRefs,omitempty"`
 
 	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// Reference to UyuniProvider for multi-cluster support.
+	// Empty = use default provider (spec.isDefault: true)
+	Cluster *LocalObjectRef `json:"cluster,omitempty"`
 }
 
 type SystemGroupStatus struct {

@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -107,5 +108,40 @@ func (v *SystemValidator) validate(_ context.Context, sys *uyuniv1.System) (admi
 			schema.GroupKind{Group: uyuniv1.Group, Kind: "System"},
 			sys.Name, errs)
 	}
+	return nil, nil
+}
+
+// +kubebuilder:webhook:path=/validate-uyuni-uyuni-project-org-v1alpha1-systemgroup,mutating=false,failurePolicy=fail,sideEffects=None,groups=uyuni.uyuni-project.org,resources=systemgroups,verbs=create;update,versions=v1alpha1,name=vsystemgroup.uyuni.uyuni-project.org,admissionReviewVersions=v1
+
+type SystemGroupValidator struct{}
+
+var _ webhook.CustomValidator = &SystemGroupValidator{}
+
+func (v *SystemGroupValidator) SetupWebhookWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewWebhookManagedBy(mgr).
+		For(&uyuniv1.SystemGroup{}).
+		WithValidator(v).
+		Complete()
+}
+
+func (v *SystemGroupValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return nil, nil
+}
+
+func (v *SystemGroupValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	old := oldObj.(*uyuniv1.SystemGroup)
+	sg := newObj.(*uyuniv1.SystemGroup)
+	gr := schema.GroupResource{Group: uyuniv1.Group, Resource: "systemgroups"}
+
+	if old.Spec.Name != sg.Spec.Name {
+		return nil, apierrors.NewForbidden(gr, sg.Name, fmt.Errorf("spec.name is immutable"))
+	}
+	if !reflect.DeepEqual(old.Spec.Cluster, sg.Spec.Cluster) {
+		return nil, apierrors.NewForbidden(gr, sg.Name, fmt.Errorf("spec.cluster is immutable"))
+	}
+	return nil, nil
+}
+
+func (v *SystemGroupValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
 	return nil, nil
 }
