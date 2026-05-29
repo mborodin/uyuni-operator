@@ -116,6 +116,7 @@ spec:
     cron: "0 2 ? * *"                               # Sync at 2 AM daily
     syncOnCreate: false                             # Don't sync on create (set to true to sync)
 ---
+# Example: Test Repository (uses different URL to avoid duplicates)
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: Repository
 metadata:
@@ -123,7 +124,7 @@ metadata:
   namespace: linux-platform
 spec:
   label: test-repo-label
-  url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
+  url: http://download.opensuse.org/update/leap/15.6/oss/
   type: yum
   organizationRef:
     name: pantheon-of-goods                          # Required: link to Organization
