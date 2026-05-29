@@ -25,6 +25,8 @@ spec:
   label: opensuse_leap15_6-oss-repo
   url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
   type: yum
+  organizationRef:
+    name: pantheon-of-goods                          # Required: link to Organization
 
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
@@ -36,6 +38,8 @@ spec:
   label: opensuse_leap15_6-updates-repo
   url: http://download.opensuse.org/update/leap/15.6/oss/
   type: yum
+  organizationRef:
+    name: pantheon-of-goods                          # Required: link to Organization
 
 ---
 # Base Software Channel (parent channel)
@@ -90,6 +94,8 @@ spec:
   label: rhel-8-baseos-repo
   url: http://mirror.example.com/rhel/8/BaseOS/x86_64/
   type: yum
+  organizationRef:
+    name: pantheon-of-goods                          # Required: link to Organization
 
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
@@ -119,6 +125,8 @@ spec:
   label: test-repo-label
   url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
   type: yum
+  organizationRef:
+    name: pantheon-of-goods                          # Required: link to Organization
 
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
