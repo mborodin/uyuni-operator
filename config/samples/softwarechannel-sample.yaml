@@ -109,3 +109,32 @@ spec:
   sync:
     cron: "0 2 ? * *"                               # Sync at 2 AM daily
     syncOnCreate: false                             # Don't sync on create (set to true to sync)
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Repository
+metadata:
+  name: test-repo
+  namespace: linux-platform
+spec:
+  label: test-repo-label
+  url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
+  type: yum
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SoftwareChannel
+metadata:
+  name: test-channel
+  namespace: linux-platform
+spec:
+  label: test-channel-label
+  name: Test Channel
+  summary: Test channel for validation
+  arch: channel-x86_64
+  organizationRef:
+    name: pantheon-of-goods
+  repositoryRefs:
+    - name: test-repo
+  sync:
+    cron: "0 0 3 ? * *"
+    syncOnCreate: true
