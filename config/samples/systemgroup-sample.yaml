@@ -1,5 +1,11 @@
 # SystemGroup Sample - Manage system groups with multi-cluster support
 # Apply with: kubectl apply -f config/samples/systemgroup-sample.yaml
+#
+# Multi-cluster support: Use the 'cluster' field to specify which UyuniProvider
+# manages the system group. Omit 'cluster' to use the default provider (spec.isDefault: true)
+#
+# Available UyuniProviders in your cluster:
+#   - rke (default)
 
 ---
 # Example 1: SystemGroup using default UyuniProvider (no cluster field)
@@ -10,27 +16,27 @@ metadata:
   namespace: linux-platform
 spec:
   name: Default Servers
-  description: Systems managed by the default Uyuni instance
-  # No cluster field → uses default UyuniProvider (spec.isDefault: true)
+  description: Systems managed by the default Uyuni instance (rke)
+  # No cluster field → uses default UyuniProvider (rke with spec.isDefault: true)
   memberRefs:
     - name: system-1
     - name: system-2
 
 ---
-# Example 2: SystemGroup using a specific UyuniProvider
+# Example 2: SystemGroup explicitly referencing the 'rke' UyuniProvider
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: SystemGroup
 metadata:
-  name: prod-servers
+  name: rke-servers
   namespace: linux-platform
 spec:
-  name: Production Servers
-  description: Systems managed by the production Uyuni instance
+  name: RKE Managed Servers
+  description: Systems explicitly managed by the rke Uyuni instance
   cluster:
-    name: prod-uyuni  # Reference to a specific UyuniProvider
+    name: rke  # Explicitly reference the rke UyuniProvider
   memberRefs:
-    - name: prod-web-01
-    - name: prod-app-01
+    - name: web-server-1
+    - name: app-server-1
 
 ---
 # Example 3: SystemGroup with config channel subscriptions
@@ -41,9 +47,9 @@ metadata:
   namespace: linux-platform
 spec:
   name: Managed Servers
-  description: Servers with configuration management
+  description: Servers with configuration management applied
   cluster:
-    name: prod-uyuni
+    name: rke
   memberRefs:
     - name: managed-server-1
   configChannelRefs:
@@ -59,7 +65,9 @@ metadata:
   namespace: linux-platform
 spec:
   name: Legacy Servers
-  description: Systems identified by minion IDs
+  description: Systems identified by minion IDs without System CR references
+  cluster:
+    name: rke
   staticMinionIds:
     - legacy-system-1.example.com
     - legacy-system-2.example.com
