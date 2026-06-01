@@ -16,11 +16,11 @@
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: SystemGroup
 metadata:
-  name: web-servers
+  name: test-web-servers
   namespace: linux-platform
 spec:
-  name: Web Servers
-  description: Production web server fleet - add members via Uyuni UI or System resources
+  name: Test Web Servers
+  description: Test - Production web server fleet - add members via Uyuni UI or System resources
   organizationRef:
     name: pantheon-of-goods
 
@@ -30,11 +30,11 @@ spec:
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: SystemGroup
 metadata:
-  name: app-servers
+  name: test-app-servers
   namespace: linux-platform
 spec:
-  name: Application Servers
-  description: Production application server fleet
+  name: Test Application Servers
+  description: Test - Production application server fleet
   organizationRef:
     name: pantheon-of-goods
   cluster:
@@ -45,11 +45,11 @@ spec:
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: SystemGroup
 metadata:
-  name: managed-linux
+  name: test-managed-linux
   namespace: linux-platform
 spec:
-  name: Managed Linux Systems
-  description: Systems with centralized configuration management
+  name: Test Managed Linux Systems
+  description: Test - Systems with centralized configuration management
   organizationRef:
     name: pantheon-of-goods
   cluster:
@@ -60,11 +60,11 @@ spec:
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: SystemGroup
 metadata:
-  name: database-servers
+  name: test-database-servers
   namespace: linux-platform
 spec:
-  name: Database Servers
-  description: Database server fleet for production databases
+  name: Test Database Servers
+  description: Test - Database server fleet for production databases
   organizationRef:
     name: pantheon-of-goods
   # No cluster field → uses default UyuniProvider (rke)
@@ -75,11 +75,11 @@ spec:
 # apiVersion: uyuni.uyuni-project.org/v1alpha1
 # kind: SystemGroup
 # metadata:
-#   name: staging-servers
+#   name: test-staging-servers
 #   namespace: linux-platform
 # spec:
-#   name: Staging Servers
-#   description: Staging environment servers managed by staging Uyuni instance
+#   name: Test Staging Servers
+#   description: Test - Staging environment servers managed by staging Uyuni instance
 #   cluster:
 #     name: staging-uyuni  # Reference a different UyuniProvider
 
