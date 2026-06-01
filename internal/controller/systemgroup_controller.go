@@ -50,7 +50,7 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Create or adopt the group in Uyuni.
 	current, err := uc.GetSystemGroup(ctx, sg.Spec.Name)
-	if uyuni.IsNotFound(err) {
+	if uyuni.IsNotFound(err) || (err != nil && strings.Contains(strings.ToLower(err.Error()), "unable to locate")) {
 		created, createErr := uc.CreateSystemGroup(ctx, sg.Spec.Name, sg.Spec.Description)
 		if createErr != nil {
 			// Race or pre-existing group: adopt it rather than failing.
@@ -68,7 +68,7 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			sg.Status.UyuniID = created.ID
 		}
 	} else if err != nil {
-		return ctrl.Result{}, err
+		return r.fail(ctx, &sg, "GetFailed", err)
 	} else {
 		sg.Status.UyuniID = current.ID
 		if current.Description != sg.Spec.Description {
