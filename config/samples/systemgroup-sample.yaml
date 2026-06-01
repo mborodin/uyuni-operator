@@ -21,6 +21,8 @@ metadata:
 spec:
   name: Web Servers
   description: Production web server fleet - add members via Uyuni UI or System resources
+  organizationRef:
+    name: pantheon-of-goods
 
 ---
 # Example 2: SystemGroup explicitly referencing the 'rke' UyuniProvider
@@ -33,6 +35,8 @@ metadata:
 spec:
   name: Application Servers
   description: Production application server fleet
+  organizationRef:
+    name: pantheon-of-goods
   cluster:
     name: rke  # Explicitly reference the rke UyuniProvider
 
@@ -46,6 +50,8 @@ metadata:
 spec:
   name: Managed Linux Systems
   description: Systems with centralized configuration management
+  organizationRef:
+    name: pantheon-of-goods
   cluster:
     name: rke
 
@@ -59,6 +65,8 @@ metadata:
 spec:
   name: Database Servers
   description: Database server fleet for production databases
+  organizationRef:
+    name: pantheon-of-goods
   # No cluster field → uses default UyuniProvider (rke)
 
 ---
