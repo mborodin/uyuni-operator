@@ -315,6 +315,188 @@ spec:
 | `description is required` | Empty description field | Add non-empty description to spec |
 | `spec.id is immutable` | Tried to change ID | Delete and recreate with new ID |
 
+## Managing System Groups
+
+The `SystemGroup` resource allows you to manage Uyuni system groups declaratively through Kubernetes with multi-cluster support.
+
+### Quick Start
+
+```bash
+# Create a new system group
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: web-servers
+  namespace: linux-platform
+spec:
+  name: Web Servers
+  description: Production web server fleet
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+
+# Check status
+kubectl get systemgroup -n linux-platform -o wide
+kubectl describe systemgroup web-servers -n linux-platform
+```
+
+### Add a New System Group
+
+```bash
+# Method 1: Using kubectl apply with inline YAML
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: app-servers
+  namespace: linux-platform
+spec:
+  name: Application Servers
+  description: Production application server fleet
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+
+# Method 2: From a file
+kubectl apply -f config/samples/systemgroup-sample.yaml
+
+# Verify it was created
+kubectl get systemgroup -n linux-platform
+kubectl describe systemgroup app-servers -n linux-platform
+```
+
+**Expected Output:**
+```
+Status:
+  Uyuni Id: 123
+  Member Count: 0
+  Conditions:
+  - Type: Ready
+    Status: True
+    Reason: Reconciled
+```
+
+### Update a System Group
+
+You can update the `description` field after creation:
+
+```bash
+# Update description
+kubectl patch systemgroup web-servers -n linux-platform \
+  --type merge -p '{"spec":{"description":"Updated: Production web servers v2"}}'
+
+# Verify changes
+kubectl describe systemgroup web-servers -n linux-platform
+```
+
+**Immutable Fields (Cannot be changed):**
+- `spec.name` — Group name in Uyuni (changing would orphan the group)
+- `spec.cluster` — Provider/cluster selection is permanent
+
+If you need to change an immutable field, delete and recreate the resource.
+
+### Add Systems to a Group
+
+You can add systems in two ways:
+
+**Method 1: Reference existing System resources**
+```yaml
+spec:
+  memberRefs:
+    - name: web-server-1
+    - name: web-server-2
+```
+
+**Method 2: Use static minion IDs**
+```yaml
+spec:
+  staticMinionIds:
+    - web-server-1.example.com
+    - web-server-2.example.com
+```
+
+### Multi-Cluster System Groups
+
+For environments with multiple Uyuni instances, use the `cluster` field:
+
+```yaml
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: prod-servers
+  namespace: linux-platform
+spec:
+  name: Production Servers
+  description: Servers managed by production Uyuni instance
+  organizationRef:
+    name: pantheon-of-goods
+  cluster:
+    name: prod-uyuni  # References a specific UyuniProvider
+```
+
+The `cluster` field is immutable and determines which Uyuni instance manages this group.
+
+### Delete a System Group
+
+```bash
+# Normal delete (removes from both Kubernetes and Uyuni)
+kubectl delete systemgroup web-servers -n linux-platform
+```
+
+**What happens:**
+1. Operator sees deletion timestamp
+2. Removes group from Uyuni automatically
+3. Removes finalizer after Uyuni cleanup
+4. Resource deleted from Kubernetes
+
+### Force Delete (Skip Uyuni Cleanup)
+
+Use when Uyuni is unreachable but you want to remove the Kubernetes resource:
+
+```bash
+# Add force-delete annotation
+kubectl annotate systemgroup web-servers \
+  -n linux-platform \
+  uyuni.uyuni-project.org/force-delete=true \
+  --overwrite
+
+# Delete
+kubectl delete systemgroup web-servers -n linux-platform
+```
+
+**What happens:**
+1. Operator skips Uyuni deletion
+2. Group remains in Uyuni (orphaned)
+3. Finalizer removed
+4. Resource deleted from Kubernetes
+
+### Monitor Status
+
+```bash
+# Watch real-time changes
+kubectl get systemgroup -n linux-platform -w
+
+# Check detailed status
+kubectl describe systemgroup web-servers -n linux-platform
+
+# View operator logs
+kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f
+
+# Check groups in Uyuni UI
+# Navigate to: https://your-uyuni/rhn/manager/do/groups/list
+```
+
+### Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `Ready: False` | Configuration error or missing org | Check `kubectl describe` for error message |
+| `spec.name is immutable` | Tried to change group name | Delete and recreate with new name |
+| `spec.cluster is immutable` | Tried to change provider/cluster | Delete and recreate with new cluster |
+| Resource stuck in deletion | Finalizer blocking | Use force-delete annotation |
+| Members not syncing | System resources not ready | Ensure System CRs exist and have UyuniServerID |
+
 ## Annotations
 
 
