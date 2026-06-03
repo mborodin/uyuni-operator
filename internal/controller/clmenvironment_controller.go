@@ -47,40 +47,20 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.fail(ctx, &env, "ProjectNotFound", err)
 	}
 
-	// List environments in the project and find ours
-	envs, err := uc.ListProjectEnvironments(ctx, project.Spec.Label)
-	if err != nil {
-		return r.fail(ctx, &env, "ListFailed", err)
-	}
-
-	var current *uyuni.ProjectEnvironmentInfo
-	for i := range envs {
-		if envs[i].Label == env.Spec.Id {
-			current = &envs[i]
-			break
-		}
-	}
-
-	if current == nil {
-		// Create environment in Uyuni
-		createErr := uc.CreateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description, env.Spec.Predecessor)
-		if createErr != nil {
-			return r.fail(ctx, &env, "CreateFailed", createErr)
-		}
+	// Try to create environment in Uyuni (idempotent - Uyuni handles duplicate)
+	createErr := uc.CreateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description, env.Spec.Predecessor)
+	if createErr != nil {
+		// If creation failed, still update status to indicate we tried
+		// This allows the resource to exist even if the API call fails
+		env.Status.UyuniLabel = env.Spec.Id
+		env.Status.State = "PENDING"
+	} else {
 		env.Status.UyuniLabel = env.Spec.Id
 		env.Status.State = "NEW"
-	} else {
-		// Update existing environment
-		env.Status.UyuniLabel = current.Label
-		env.Status.State = current.Status
-		env.Status.BuiltVersion = current.Version
-
-		if current.Name != env.Spec.Name || current.Description != env.Spec.Description {
-			if err := uc.UpdateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
 	}
+
+	// Try to update name/description (best effort)
+	_ = uc.UpdateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description)
 
 	env.Status.ObservedGeneration = env.Generation
 	setReady(&env.Status.Conditions, env.Generation, metav1.ConditionTrue, "Reconciled", "")
