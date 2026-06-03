@@ -1034,7 +1034,7 @@ func wireConfigFileToDetails(w *wireConfigFile) *ConfigFileDetails {
 // =============================================================================
 
 func (c *Client) CreateProject(ctx context.Context, label, name, description string) (*ProjectDetails, error) {
-	r, err := apiPost[wireProject](c, "contentmanagement/createProject", map[string]any{
+	r, err := apiPost[wireProject](c, "contentmanagement/projects", map[string]any{
 		"projectLabel": label,
 		"name":         name,
 		"description":  description,
@@ -1054,17 +1054,17 @@ func (c *Client) LookupProject(ctx context.Context, label string) (*ProjectDetai
 }
 
 func (c *Client) UpdateProject(ctx context.Context, label, name, description string) error {
-	_, err := apiPost[any](c, "contentmanagement/updateProject", map[string]any{
-		"project_label": label,
-		"name":          name,
-		"description":   description,
+	_, err := apiPost[any](c, "contentmanagement/projects", map[string]any{
+		"projectLabel": label,
+		"name":         name,
+		"description":  description,
 	})
 	return err
 }
 
 func (c *Client) RemoveProject(ctx context.Context, label string) error {
-	_, err := apiPost[any](c, "contentmanagement/removeProject", map[string]any{
-		"project_label": label,
+	_, err := apiPost[any](c, "contentmanagement/projects", map[string]any{
+		"projectLabel": label,
 	})
 	return asNotFound(err)
 }
@@ -1124,20 +1124,20 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 }
 
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
-	// XML-RPC parameter order: projectLabel, predecessorLabel, label, name, description
+	// Use the same endpoint pattern as the UI: /contentmanagement/environments
 	payload := map[string]any{
 		"projectLabel":     projectLabel,
-		"predecessorLabel": predecessor, // Must come before label
+		"predecessorLabel": predecessor,
 		"label":            label,
 		"name":             name,
 		"description":      description,
 	}
-	_, err := apiPost[any](c, "contentmanagement/createEnvironment", payload)
+	_, err := apiPost[any](c, "contentmanagement/environments", payload)
 	return err
 }
 
 func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error {
-	_, err := apiPost[any](c, "contentmanagement/updateEnvironment", map[string]any{
+	_, err := apiPost[any](c, "contentmanagement/environments", map[string]any{
 		"projectLabel": projectLabel,
 		"label":        envLabel,
 		"name":         name,
@@ -1147,7 +1147,7 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 }
 
 func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error {
-	_, err := apiPost[any](c, "contentmanagement/removeEnvironment", map[string]any{
+	_, err := apiPost[any](c, "contentmanagement/environments", map[string]any{
 		"projectLabel": projectLabel,
 		"label":        envLabel,
 	})
