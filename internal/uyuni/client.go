@@ -1124,14 +1124,13 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 }
 
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
+	// XML-RPC parameter order: projectLabel, predecessorLabel, label, name, description
 	payload := map[string]any{
-		"projectLabel": projectLabel,
-		"label":        label,
-		"name":         name,
-		"description":  description,
-	}
-	if predecessor != "" {
-		payload["predecessorLabel"] = predecessor
+		"projectLabel":     projectLabel,
+		"predecessorLabel": predecessor, // Must come before label
+		"label":            label,
+		"name":             name,
+		"description":      description,
 	}
 	_, err := apiPost[any](c, "contentmanagement/createEnvironment", payload)
 	return err
