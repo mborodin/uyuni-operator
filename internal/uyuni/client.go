@@ -1035,10 +1035,13 @@ func wireConfigFileToDetails(w *wireConfigFile) *ConfigFileDetails {
 
 func (c *Client) CreateProject(ctx context.Context, label, name, description string) (*ProjectDetails, error) {
 	r, err := apiPost[wireProject](c, "contentmanagement/projects", map[string]any{
-		"label":           label,
-		"name":            name,
-		"description":     description,
-		"historyEntries":  []any{},
+		"properties": map[string]any{
+			"label":           label,
+			"name":            name,
+			"description":     description,
+			"historyEntries":  []any{},
+		},
+		"errors": map[string]any{},
 	})
 	if err != nil {
 		return nil, err
