@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -66,11 +67,16 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// 2. Project create (best effort - Uyuni handles idempotency)
-	// Note: Uyuni doesn't have a GET API for projects, so we just try to create
 	created, err := uc.CreateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description)
 	if err != nil {
-		fmt.Printf("CreateProject API failed: %v\n", err)
-		cp.Status.UyuniID = 0
+		// Check if project already exists (idempotent)
+		if strings.Contains(err.Error(), "already exists") {
+			fmt.Printf("Project already exists: %s\n", cp.Spec.Label)
+			cp.Status.UyuniID = 1 // Placeholder ID for existing projects
+		} else {
+			fmt.Printf("CreateProject API failed: %v\n", err)
+			cp.Status.UyuniID = 0
+		}
 	} else {
 		cp.Status.UyuniID = created.ID
 	}
