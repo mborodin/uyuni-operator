@@ -1,0 +1,85 @@
+# SystemGroup Sample - Manage system groups with multi-cluster support
+# Apply with: kubectl apply -f config/samples/systemgroup-sample.yaml
+#
+# Multi-cluster support: Use the 'cluster' field to specify which UyuniProvider
+# manages the system group. Omit 'cluster' to use the default provider (spec.isDefault: true)
+#
+# Available UyuniProviders in your cluster:
+#   - rke (default)
+#
+# Note: These examples create empty groups that reconcile immediately.
+# Add members via Uyuni UI or by creating System resources with memberRefs.
+
+---
+# Example 1: SystemGroup using default UyuniProvider (no cluster field)
+# This group will be created in Uyuni immediately and shows READY = True
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: test-web-servers
+  namespace: linux-platform
+spec:
+  name: Test Web Servers
+  description: Test - Production web server fleet - add members via Uyuni UI or System resources
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Example 2: SystemGroup explicitly referencing the 'rke' UyuniProvider
+# Demonstrates multi-cluster feature - explicitly specifies which provider manages this group
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: test-app-servers
+  namespace: linux-platform
+spec:
+  name: Test Application Servers
+  description: Test - Production application server fleet
+  organizationRef:
+    name: pantheon-of-goods
+  cluster:
+    name: rke  # Explicitly reference the rke UyuniProvider
+
+---
+# Example 3: SystemGroup for servers with configuration management
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: test-managed-linux
+  namespace: linux-platform
+spec:
+  name: Test Managed Linux Systems
+  description: Test - Systems with centralized configuration management
+  organizationRef:
+    name: pantheon-of-goods
+  cluster:
+    name: rke
+
+---
+# Example 4: SystemGroup for database servers
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: test-database-servers
+  namespace: linux-platform
+spec:
+  name: Test Database Servers
+  description: Test - Database server fleet for production databases
+  organizationRef:
+    name: pantheon-of-goods
+  # No cluster field → uses default UyuniProvider (rke)
+
+---
+# Example 5: Multi-cluster example (when you have multiple UyuniProviders)
+# Uncomment and adjust when you have additional UyuniProviders configured
+# apiVersion: uyuni.uyuni-project.org/v1alpha1
+# kind: SystemGroup
+# metadata:
+#   name: test-staging-servers
+#   namespace: linux-platform
+# spec:
+#   name: Test Staging Servers
+#   description: Test - Staging environment servers managed by staging Uyuni instance
+#   cluster:
+#     name: staging-uyuni  # Reference a different UyuniProvider
+

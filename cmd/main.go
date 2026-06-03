@@ -191,6 +191,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&webhook.SystemGroupValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "SystemGroupValidator")
+		os.Exit(1)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)

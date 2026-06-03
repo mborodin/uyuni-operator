@@ -47,6 +47,16 @@ spec:
             type: object
           spec:
             properties:
+              cluster:
+                description: |-
+                  Reference to UyuniProvider for multi-cluster support.
+                  Empty = use default provider (spec.isDefault: true)
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
               configChannelRefs:
                 items:
                   description: |-
