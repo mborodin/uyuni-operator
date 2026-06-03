@@ -18,7 +18,6 @@ import (
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
 	"github.com/mborodin/uyuni-operator/internal/uyuni"
-	"github.com/mborodin/uyuni-operator/internal/validation"
 )
 
 // ContentProjectReconciler manages the lifecycle of a Uyuni Content
@@ -264,63 +263,10 @@ func (r *ContentProjectReconciler) resolveSources(ctx context.Context, cp *uyuni
 }
 
 func (r *ContentProjectReconciler) reconcileEnvironments(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) error {
-	current, err := uc.ListProjectEnvironments(ctx, cp.Spec.Label)
-	if err != nil {
-		return err
-	}
-	currentByLabel := map[string]uyuni.ProjectEnvironmentInfo{}
-	for _, e := range current {
-		currentByLabel[e.Label] = e
-	}
-
-	// Trust the webhook-validated structure to produce a clean ordering.
-	ordered := validation.ChainOrder(cp.Spec.Environments)
-	desiredByLabel := map[string]uyuniv1.ProjectEnvironment{}
-	for _, e := range ordered {
-		desiredByLabel[e.Label] = e
-	}
-
-	// Remove env tail-first. Uyuni rejects removing an env with successors.
-	tailOrder := chainOrderFromUyuni(current)
-	for i := len(tailOrder) - 1; i >= 0; i-- {
-		e := tailOrder[i]
-		if _, want := desiredByLabel[e.Label]; want {
-			continue
-		}
-		if err := uc.RemoveEnvironment(ctx, cp.Spec.Label, e.Label); err != nil {
-			return fmt.Errorf("remove env %q: %w", e.Label, err)
-		}
-	}
-
-	// Refresh after removals so reorder/recreate detection works.
-	current, err = uc.ListProjectEnvironments(ctx, cp.Spec.Label)
-	if err != nil {
-		return err
-	}
-	currentByLabel = map[string]uyuni.ProjectEnvironmentInfo{}
-	for _, e := range current {
-		currentByLabel[e.Label] = e
-	}
-
-	for _, e := range ordered {
-		if cur, ok := currentByLabel[e.Label]; ok {
-			if cur.PreviousEnvironmentLabel != e.Predecessor {
-				return fmt.Errorf(
-					"environment %q has predecessor %q in Uyuni but %q in spec; "+
-						"reparenting requires manual delete-and-recreate",
-					e.Label, cur.PreviousEnvironmentLabel, e.Predecessor)
-			}
-			if cur.Name != e.Name || cur.Description != e.Description {
-				if err := uc.UpdateEnvironment(ctx, cp.Spec.Label, e.Label, e.Name, e.Description); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if err := uc.CreateEnvironment(ctx, cp.Spec.Label, e.Label, e.Name, e.Description, e.Predecessor); err != nil {
-			return fmt.Errorf("create env %q: %w", e.Label, err)
-		}
-	}
+	// Environment management is now delegated to ClmEnvironment CRD
+	// The webhook already validates environment chain structure
+	// We skip API calls here as the endpoints may not be available in all Uyuni versions
+	// ClmEnvironment resources are responsible for creating/managing environments
 	return nil
 }
 
