@@ -1047,7 +1047,7 @@ func (c *Client) CreateProject(ctx context.Context, label, name, description str
 }
 
 func (c *Client) LookupProject(ctx context.Context, label string) (*ProjectDetails, error) {
-	r, err := apiGet[wireProject](c, "contentmanagement/lookupProject?project_label="+url.QueryEscape(label))
+	r, err := apiGet[wireProject](c, "contentmanagement/projects/"+url.QueryEscape(label))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
