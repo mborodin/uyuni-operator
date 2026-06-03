@@ -63,6 +63,8 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Try to create environment in Uyuni (idempotent - Uyuni handles duplicate)
 	createErr := uc.CreateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description, env.Spec.Predecessor)
 	if createErr != nil {
+		// Log the actual error so we can debug API issues
+		fmt.Printf("CreateEnvironment API error for %s: %v\n", env.Spec.Id, createErr)
 		// If creation failed, still update status to indicate we tried
 		// This allows the resource to exist even if the API call fails
 		env.Status.UyuniLabel = env.Spec.Id
@@ -73,7 +75,10 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Try to update name/description (best effort)
-	_ = uc.UpdateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description)
+	updateErr := uc.UpdateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description)
+	if updateErr != nil {
+		fmt.Printf("UpdateEnvironment API error for %s: %v\n", env.Spec.Id, updateErr)
+	}
 
 	env.Status.ObservedGeneration = env.Generation
 	setReady(&env.Status.Conditions, env.Generation, metav1.ConditionTrue, "Reconciled", "")
