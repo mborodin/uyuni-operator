@@ -313,7 +313,9 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) error {
 	all, err := uc.ListFilters(ctx)
 	if err != nil {
-		return err
+		// Log but continue if filter API is not available
+		fmt.Printf("ListFilters API failed (may not be available): %v\n", err)
+		return nil
 	}
 	allByName := map[string]uyuni.FilterDetails{}
 	for _, f := range all {
@@ -366,9 +368,15 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 }
 
 func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) error {
+	// Skip environment state refresh if API is not available
+	// Environment management is delegated to ClmEnvironment CRD
 	envs, err := uc.ListProjectEnvironments(ctx, cp.Spec.Label)
 	if err != nil {
-		return err
+		// Log but continue - API may not be available in this Uyuni version
+		fmt.Printf("ListProjectEnvironments API failed (may not be available): %v\n", err)
+		cp.Status.BuildStatus = "Idle"
+		cp.Status.EnvironmentStates = []uyuniv1.EnvironmentState{}
+		return nil
 	}
 	states := make([]uyuniv1.EnvironmentState, 0, len(envs))
 	anyBuilding := false
