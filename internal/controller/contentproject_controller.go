@@ -188,9 +188,12 @@ func (r *ContentProjectReconciler) handleDeletion(ctx context.Context, uc uyuni.
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
+	// Try to remove project from Uyuni, but don't block deletion if API fails
 	if err := uc.RemoveProject(ctx, cp.Spec.Label); err != nil && !uyuni.IsNotFound(err) {
-		return ctrl.Result{}, err
+		fmt.Printf("RemoveProject API failed (may not be available): %v\n", err)
+		// Continue with cleanup anyway - API may not support this endpoint
 	}
+
 	// Our owned filters are project-scoped by naming convention but live in
 	// the org's filter namespace. Clean up explicitly to avoid orphans.
 	for _, id := range cp.Status.FilterIDs {
