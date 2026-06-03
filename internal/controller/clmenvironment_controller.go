@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,10 +42,22 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &env)
 	}
 
-	// Verify parent ContentProject exists
+	// Verify parent ContentProject exists and is READY
 	var project uyuniv1.ContentProject
 	if err := r.Get(ctx, client.ObjectKey{Namespace: env.Namespace, Name: env.Spec.ProjectRef.Name}, &project); err != nil {
 		return r.fail(ctx, &env, "ProjectNotFound", err)
+	}
+
+	// Check if ContentProject is READY in Kubernetes (project created in Uyuni)
+	projectReady := false
+	for _, cond := range project.Status.Conditions {
+		if cond.Type == "Ready" && cond.Status == metav1.ConditionTrue {
+			projectReady = true
+			break
+		}
+	}
+	if !projectReady {
+		return r.fail(ctx, &env, "ProjectNotReady", fmt.Errorf("parent ContentProject is not ready in Uyuni - cannot create environment"))
 	}
 
 	// Try to create environment in Uyuni (idempotent - Uyuni handles duplicate)
