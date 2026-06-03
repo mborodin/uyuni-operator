@@ -1035,9 +1035,10 @@ func wireConfigFileToDetails(w *wireConfigFile) *ConfigFileDetails {
 
 func (c *Client) CreateProject(ctx context.Context, label, name, description string) (*ProjectDetails, error) {
 	r, err := apiPost[wireProject](c, "contentmanagement/projects", map[string]any{
-		"projectLabel": label,
-		"name":         name,
-		"description":  description,
+		"label":           label,
+		"name":            name,
+		"description":     description,
+		"historyEntries":  []any{},
 	})
 	if err != nil {
 		return nil, err
@@ -1055,16 +1056,16 @@ func (c *Client) LookupProject(ctx context.Context, label string) (*ProjectDetai
 
 func (c *Client) UpdateProject(ctx context.Context, label, name, description string) error {
 	_, err := apiPost[any](c, "contentmanagement/projects", map[string]any{
-		"projectLabel": label,
-		"name":         name,
-		"description":  description,
+		"label":       label,
+		"name":        name,
+		"description": description,
 	})
 	return err
 }
 
 func (c *Client) RemoveProject(ctx context.Context, label string) error {
 	_, err := apiPost[any](c, "contentmanagement/projects", map[string]any{
-		"projectLabel": label,
+		"label": label,
 	})
 	return asNotFound(err)
 }
@@ -1124,13 +1125,16 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 }
 
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
-	// Use the same endpoint pattern as the UI: /contentmanagement/environments
+	// Match the UI's exact parameter format
 	payload := map[string]any{
-		"projectLabel":     projectLabel,
-		"predecessorLabel": predecessor,
-		"label":            label,
-		"name":             name,
-		"description":      description,
+		"projectLabel": projectLabel,
+		"label":        label,
+		"name":         name,
+		"description":  description,
+	}
+	// Only include predecessorLabel if provided
+	if predecessor != "" {
+		payload["predecessorLabel"] = predecessor
 	}
 	_, err := apiPost[any](c, "contentmanagement/environments", payload)
 	return err
