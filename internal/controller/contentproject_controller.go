@@ -65,32 +65,14 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// 2. Project create/update (best effort - if API endpoints don't exist, continue anyway)
-	current, err := uc.LookupProject(ctx, cp.Spec.Label)
-	switch {
-	case uyuni.IsNotFound(err):
-		created, err := uc.CreateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description)
-		if err != nil {
-			// If project creation fails (API might not exist), log but continue
-			// The project may already exist in Uyuni or will be created manually
-			fmt.Printf("CreateProject API failed (may not be available in this Uyuni version): %v\n", err)
-			cp.Status.UyuniID = 0 // Fallback ID
-		} else {
-			current = created
-			cp.Status.UyuniID = current.ID
-		}
-	case err != nil:
-		// If lookup fails (API might not exist), log but continue
-		fmt.Printf("LookupProject API failed (may not be available in this Uyuni version): %v\n", err)
-		cp.Status.UyuniID = 0 // Fallback ID
-	default:
-		if current.Name != cp.Spec.Name || current.Description != cp.Spec.Description {
-			if err := uc.UpdateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description); err != nil {
-				// Ignore update errors - project may not need updating
-				fmt.Printf("UpdateProject API failed: %v\n", err)
-			}
-		}
-		cp.Status.UyuniID = current.ID
+	// 2. Project create (best effort - Uyuni handles idempotency)
+	// Note: Uyuni doesn't have a GET API for projects, so we just try to create
+	created, err := uc.CreateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description)
+	if err != nil {
+		fmt.Printf("CreateProject API failed: %v\n", err)
+		cp.Status.UyuniID = 0
+	} else {
+		cp.Status.UyuniID = created.ID
 	}
 
 	// 3. Environment chain. Webhook validated structure; we walk it
