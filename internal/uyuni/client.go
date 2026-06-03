@@ -1035,9 +1035,9 @@ func wireConfigFileToDetails(w *wireConfigFile) *ConfigFileDetails {
 
 func (c *Client) CreateProject(ctx context.Context, label, name, description string) (*ProjectDetails, error) {
 	r, err := apiPost[wireProject](c, "contentmanagement/createProject", map[string]any{
-		"project_label": label,
-		"name":          name,
-		"description":   description,
+		"projectLabel": label,
+		"name":         name,
+		"description":  description,
 	})
 	if err != nil {
 		return nil, err
@@ -1087,18 +1087,18 @@ func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([
 
 func (c *Client) AttachSource(ctx context.Context, projectLabel, channelLabel string) error {
 	_, err := apiPost[any](c, "contentmanagement/attachSource", map[string]any{
-		"project_label": projectLabel,
-		"source_type":   "SW_CHANNEL",
-		"source_label":  channelLabel,
+		"projectLabel": projectLabel,
+		"sourceType":   "SW_CHANNEL",
+		"sourceLabel":  channelLabel,
 	})
 	return err
 }
 
 func (c *Client) DetachSource(ctx context.Context, projectLabel, channelLabel string) error {
 	_, err := apiPost[any](c, "contentmanagement/detachSource", map[string]any{
-		"project_label": projectLabel,
-		"source_type":   "SW_CHANNEL",
-		"source_label":  channelLabel,
+		"projectLabel": projectLabel,
+		"sourceType":   "SW_CHANNEL",
+		"sourceLabel":  channelLabel,
 	})
 	return err
 }
@@ -1125,13 +1125,13 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
 	payload := map[string]any{
-		"project_label": projectLabel,
-		"label":         label,
-		"name":          name,
-		"description":   description,
+		"projectLabel": projectLabel,
+		"label":        label,
+		"name":         name,
+		"description":  description,
 	}
 	if predecessor != "" {
-		payload["predecessor_label"] = predecessor
+		payload["predecessorLabel"] = predecessor
 	}
 	_, err := apiPost[any](c, "contentmanagement/createEnvironment", payload)
 	return err
@@ -1139,18 +1139,18 @@ func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, nam
 
 func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error {
 	_, err := apiPost[any](c, "contentmanagement/updateEnvironment", map[string]any{
-		"project_label": projectLabel,
-		"label":         envLabel,
-		"name":          name,
-		"description":   description,
+		"projectLabel": projectLabel,
+		"label":        envLabel,
+		"name":         name,
+		"description":  description,
 	})
 	return err
 }
 
 func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error {
 	_, err := apiPost[any](c, "contentmanagement/removeEnvironment", map[string]any{
-		"project_label": projectLabel,
-		"label":         envLabel,
+		"projectLabel": projectLabel,
+		"label":        envLabel,
 	})
 	return asNotFound(err)
 }
@@ -1165,9 +1165,9 @@ func (c *Client) ListFilters(ctx context.Context) ([]FilterDetails, error) {
 
 func (c *Client) CreateFilter(ctx context.Context, name, entityType, rule string, criteria FilterCriteriaWire) (*FilterDetails, error) {
 	r, err := apiPost[wireFilter](c, "contentmanagement/createFilter", map[string]any{
-		"name":        name,
-		"entity_type": entityType,
-		"rule":        rule,
+		"name":       name,
+		"entityType": entityType,
+		"rule":       rule,
 		"criteria": map[string]any{
 			"field":   criteria.Field,
 			"matcher": criteria.Matcher,
@@ -1204,32 +1204,32 @@ func (c *Client) RemoveFilter(ctx context.Context, id int) error {
 
 func (c *Client) AttachFilter(ctx context.Context, projectLabel string, id int) error {
 	_, err := apiPost[any](c, "contentmanagement/attachFilter", map[string]any{
-		"project_label": projectLabel,
-		"filter_id":     id,
+		"projectLabel": projectLabel,
+		"filterId":     id,
 	})
 	return err
 }
 
 func (c *Client) DetachFilter(ctx context.Context, projectLabel string, id int) error {
 	_, err := apiPost[any](c, "contentmanagement/detachFilter", map[string]any{
-		"project_label": projectLabel,
-		"filter_id":     id,
+		"projectLabel": projectLabel,
+		"filterId":     id,
 	})
 	return err
 }
 
 func (c *Client) BuildProject(ctx context.Context, projectLabel, message string) error {
 	_, err := apiPost[any](c, "contentmanagement/buildProject", map[string]any{
-		"project_label": projectLabel,
-		"message":       message,
+		"projectLabel": projectLabel,
+		"message":      message,
 	})
 	return err
 }
 
 func (c *Client) PromoteProject(ctx context.Context, projectLabel, envLabel string) error {
 	_, err := apiPost[any](c, "contentmanagement/promoteProject", map[string]any{
-		"project_label": projectLabel,
-		"env_label":     envLabel,
+		"projectLabel": projectLabel,
+		"envLabel":     envLabel,
 	})
 	return err
 }
