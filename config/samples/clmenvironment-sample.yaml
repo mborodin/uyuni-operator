@@ -1,0 +1,102 @@
+# CLM Environment Sample - Manage Content Lifecycle Management environments with multi-cluster support
+# Apply with: kubectl apply -f config/samples/clmenvironment-sample.yaml
+#
+# Environments define promotion chains for content (dev → test → prod)
+# The cluster field enables multi-cluster support for managing environments across different Uyuni instances
+
+---
+# Parent ContentProject (for reference - must be created first)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProject
+metadata:
+  name: test-leap-platform
+  namespace: linux-platform
+spec:
+  label: test-leap-platform
+  name: Test OpenSUSE Leap Platform
+  description: Test CLM project for Leap 15.6
+  sourceRefs:
+    - name: opensuse-leap-15-6-x86-64
+  environments:
+    - { label: dev, name: Development }
+    - { label: test, name: Testing, predecessor: dev }
+    - { label: prod, name: Production, predecessor: test }
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Example 1: Root environment (no predecessor)
+# This is the first environment in the promotion chain
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: test-dev-env
+  namespace: linux-platform
+spec:
+  id: dev                                # Immutable environment label
+  name: Test Development
+  description: Development environment
+  projectRef:
+    name: test-leap-platform            # Reference to parent ContentProject
+  cluster:
+    name: rke                             # Multi-cluster support - reference UyuniProvider
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Example 2: Non-root environment (has predecessor)
+# This environment promotes content from the 'dev' environment
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: test-test-env
+  namespace: linux-platform
+spec:
+  id: test
+  name: Test Testing
+  description: Testing environment
+  projectRef:
+    name: test-leap-platform
+  cluster:
+    name: rke
+  predecessor: dev                       # Promotes from 'dev' environment
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Example 3: Leaf environment (final in promotion chain)
+# This environment promotes content from the 'test' environment
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: test-prod-env
+  namespace: linux-platform
+spec:
+  id: prod
+  name: Test Production
+  description: Production environment
+  projectRef:
+    name: test-leap-platform
+  cluster:
+    name: rke
+  predecessor: test                      # Promotes from 'test' environment
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Example 4: Using default UyuniProvider (no cluster field)
+# When cluster field is omitted, the default UyuniProvider (isDefault: true) is used
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: test-default-env
+  namespace: linux-platform
+spec:
+  id: default
+  name: Test Default Provider
+  description: Environment using default UyuniProvider
+  projectRef:
+    name: test-leap-platform
+  # No cluster field → uses default UyuniProvider
+  organizationRef:
+    name: pantheon-of-goods

@@ -41,4 +41,5 @@ const (
 	taskFinalizer    = uyuniv1.Group + "/task"
 	provFinalizer    = uyuniv1.Group + "/uyuniprovider"
 	orgFinalizer     = uyuniv1.Group + "/organization"
+	clmEnvFinalizer  = uyuniv1.Group + "/clmenvironment"
 )
