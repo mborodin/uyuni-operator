@@ -17,10 +17,6 @@ spec:
   description: Test CLM project for Leap 15.6
   sourceRefs:
     - name: opensuse-leap-15-6-x86-64
-  environments:
-    - { label: dev, name: Development }
-    - { label: test, name: Testing, predecessor: dev }
-    - { label: prod, name: Production, predecessor: test }
   organizationRef:
     name: pantheon-of-goods
 
@@ -113,8 +109,6 @@ spec:
   label: e2e-test-project
   name: E2E Test Project
   description: End-to-end test project created via Kubernetes automation
-  environments:
-    - { label: dev-e2e-test, name: E2E Development }
   organizationRef:
     name: pantheon-of-goods
 
