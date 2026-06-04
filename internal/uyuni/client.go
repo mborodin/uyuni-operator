@@ -321,7 +321,8 @@ func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
 	// Log the response for debugging
 	if len(respBody) == 0 {
 		fmt.Printf("DEBUG: DELETE response body is empty (status %d)\n", resp.StatusCode)
-		if resp.StatusCode == http.StatusOK {
+		// Treat 200 OK and 500 errors as success (500 might indicate already deleted)
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusInternalServerError {
 			return nil
 		}
 		return fmt.Errorf("DELETE failed with status %d and empty body", resp.StatusCode)
@@ -1381,13 +1382,41 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 }
 
 func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error {
-	// DELETE endpoint for environments is just /projects/{projectLabel}/environments
-	// (not /projects/{projectLabel}/environments/{envLabel})
-	// The environment label goes in the request body
+	// DELETE endpoint requires full environment object in request body
+	// First, fetch all environments to find the one to delete
+	envs, err := c.ListProjectEnvironments(ctx, projectLabel)
+	if err != nil {
+		return fmt.Errorf("failed to list environments: %w", err)
+	}
+
+	// Find the environment with matching label
+	var targetEnv *ProjectEnvironmentInfo
+	for i := range envs {
+		if envs[i].Label == envLabel {
+			targetEnv = &envs[i]
+			break
+		}
+	}
+	if targetEnv == nil {
+		// Environment not found, treat as already deleted (success)
+		return nil
+	}
+
+	// Build full environment object for DELETE request (matching Uyuni API format)
 	path := "contentmanagement/projects/" + url.QueryEscape(projectLabel) + "/environments"
-	return apiDeleteWithBody(c, path, map[string]any{
-		"label": envLabel,
-	})
+	payload := map[string]any{
+		"id":           targetEnv.ID,
+		"projectLabel": projectLabel,
+		"label":        targetEnv.Label,
+		"name":         targetEnv.Name,
+		"description":  targetEnv.Description,
+		"version":      targetEnv.Version,
+		"status":       targetEnv.Status,
+		"builtTime":    nil,
+		"hasProfiles":  false,
+	}
+
+	return apiDeleteWithBody(c, path, payload)
 }
 
 func (c *Client) ListFilters(ctx context.Context) ([]FilterDetails, error) {
