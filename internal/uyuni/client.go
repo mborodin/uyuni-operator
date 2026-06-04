@@ -1128,18 +1128,16 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 }
 
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
-	// Match the UI's exact parameter format
 	payload := map[string]any{
 		"projectLabel": projectLabel,
 		"label":        label,
 		"name":         name,
 		"description":  description,
 	}
-	// Only include predecessorLabel if provided
 	if predecessor != "" {
 		payload["predecessorLabel"] = predecessor
 	}
-	_, err := apiPost[any](c, "contentmanagement/environments", payload)
+	_, err := apiPost[any](c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments", payload)
 	return err
 }
 
