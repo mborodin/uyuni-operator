@@ -1382,12 +1382,16 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 }
 
 func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error {
+	fmt.Printf("DEBUG: RemoveEnvironment called for project=%s, env=%s\n", projectLabel, envLabel)
+
 	// DELETE endpoint requires full environment object in request body
 	// First, fetch all environments to find the one to delete
 	envs, err := c.ListProjectEnvironments(ctx, projectLabel)
 	if err != nil {
+		fmt.Printf("DEBUG: Failed to list environments: %v\n", err)
 		return fmt.Errorf("failed to list environments: %w", err)
 	}
+	fmt.Printf("DEBUG: Listed %d environments for project %s\n", len(envs), projectLabel)
 
 	// Find the environment with matching label
 	var targetEnv *ProjectEnvironmentInfo
@@ -1399,8 +1403,11 @@ func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel s
 	}
 	if targetEnv == nil {
 		// Environment not found, treat as already deleted (success)
+		fmt.Printf("DEBUG: Environment %s not found in project %s, treating as already deleted\n", envLabel, projectLabel)
 		return nil
 	}
+
+	fmt.Printf("DEBUG: Found environment to delete: id=%d, label=%s\n", targetEnv.ID, targetEnv.Label)
 
 	// Build full environment object for DELETE request (matching Uyuni API format)
 	path := "contentmanagement/projects/" + url.QueryEscape(projectLabel) + "/environments"
@@ -1416,7 +1423,14 @@ func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel s
 		"hasProfiles":  false,
 	}
 
-	return apiDeleteWithBody(c, path, payload)
+	fmt.Printf("DEBUG: Sending DELETE request with payload: %+v\n", payload)
+	err = apiDeleteWithBody(c, path, payload)
+	if err != nil {
+		fmt.Printf("DEBUG: DELETE failed: %v\n", err)
+	} else {
+		fmt.Printf("DEBUG: Environment %s deleted successfully\n", envLabel)
+	}
+	return err
 }
 
 func (c *Client) ListFilters(ctx context.Context) ([]FilterDetails, error) {
