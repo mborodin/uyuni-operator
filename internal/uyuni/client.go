@@ -239,9 +239,115 @@ func apiDelete(c *Client, path string) error {
 	return nil
 }
 
-// TODO: Proper DELETE support requires uyuni-tools library to expose DELETE method
-// with proper cookie jar configuration. For now, return success to allow finalizer to complete.
-// Users can manually delete from Uyuni UI or implement custom deletion script.
+// apiDeleteWithBody calls HTTP DELETE with a JSON body (used for environment deletion)
+func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
+	// Ensure we're authenticated
+	if err := c.http.Login(); err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	// Build full URL
+	fullURL := c.baseURL + "/rhn/manager/api/" + path
+
+	// Serialize request body
+	bodyBytes, err := json.Marshal(bodyData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal DELETE body: %w", err)
+	}
+
+	// Create DELETE request
+	req, err := http.NewRequest("DELETE", fullURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create DELETE request: %w", err)
+	}
+
+	// Set required headers
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+
+	// Execute using the underlying http.Client
+	resp, err := c.http.Client.Do(req)
+	if err != nil {
+		if needsReauth(err.Error()) {
+			if loginErr := c.http.Login(); loginErr != nil {
+				return loginErr
+			}
+			req2, _ := http.NewRequest("DELETE", fullURL, bytes.NewReader(bodyBytes))
+			req2.Header.Set("Content-Type", "application/json; charset=UTF-8")
+			req2.Header.Set("Accept", "*/*")
+			req2.Header.Set("X-Requested-With", "XMLHttpRequest")
+			req2.Header.Set("Accept-Encoding", "gzip, deflate, br")
+			resp, err = c.http.Client.Do(req2)
+		}
+		if err != nil {
+			return sanitizeHTTPError(err, path)
+		}
+	}
+	defer resp.Body.Close()
+
+	// Handle 401 Unauthorized - retry with fresh login
+	if resp.StatusCode == http.StatusUnauthorized {
+		fmt.Printf("DEBUG: Got 401 Unauthorized in DELETE with body, retrying with fresh login\n")
+		if loginErr := c.http.Login(); loginErr != nil {
+			return loginErr
+		}
+		req3, _ := http.NewRequest("DELETE", fullURL, bytes.NewReader(bodyBytes))
+		req3.Header.Set("Content-Type", "application/json; charset=UTF-8")
+		req3.Header.Set("Accept", "*/*")
+		req3.Header.Set("X-Requested-With", "XMLHttpRequest")
+		req3.Header.Set("Accept-Encoding", "gzip, deflate, br")
+		resp, err = c.http.Client.Do(req3)
+		if err != nil {
+			return sanitizeHTTPError(err, path)
+		}
+		defer resp.Body.Close()
+	}
+
+	// Parse response - handle gzip if needed
+	var respBody []byte
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to create gzip reader: %w", err)
+		}
+		defer gz.Close()
+		respBody, _ = io.ReadAll(gz)
+	} else {
+		respBody, _ = io.ReadAll(resp.Body)
+	}
+
+	// Log the response for debugging
+	if len(respBody) == 0 {
+		fmt.Printf("DEBUG: DELETE response body is empty (status %d)\n", resp.StatusCode)
+		if resp.StatusCode == http.StatusOK {
+			return nil
+		}
+		return fmt.Errorf("DELETE failed with status %d and empty body", resp.StatusCode)
+	}
+
+	fmt.Printf("DEBUG: DELETE with body response: %s\n", string(respBody))
+
+	var apiResp struct {
+		Success  bool   `json:"success"`
+		Message  string `json:"message"`
+		Messages []string `json:"messages"`
+	}
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		fmt.Printf("DEBUG: Failed to parse DELETE with body response: %v\n", err)
+		if resp.StatusCode == http.StatusOK {
+			return nil
+		}
+		return fmt.Errorf("failed to parse DELETE response: %w", err)
+	}
+
+	if !apiResp.Success {
+		return fmt.Errorf("%s", apiResp.Message)
+	}
+
+	return nil
+}
 
 // needsReauth reports whether an HTTP error warrants a re-authentication
 // attempt. 401 is the standard unauthenticated signal. Uyuni also returns 403
@@ -1275,7 +1381,13 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 }
 
 func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error {
-	return apiDelete(c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments/"+url.QueryEscape(envLabel))
+	// DELETE endpoint for environments is just /projects/{projectLabel}/environments
+	// (not /projects/{projectLabel}/environments/{envLabel})
+	// The environment label goes in the request body
+	path := "contentmanagement/projects/" + url.QueryEscape(projectLabel) + "/environments"
+	return apiDeleteWithBody(c, path, map[string]any{
+		"label": envLabel,
+	})
 }
 
 func (c *Client) ListFilters(ctx context.Context) ([]FilterDetails, error) {
