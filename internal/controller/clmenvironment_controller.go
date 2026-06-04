@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,12 +64,16 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Try to create environment in Uyuni (idempotent - Uyuni handles duplicate)
 	createErr := uc.CreateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description, env.Spec.Predecessor)
 	if createErr != nil {
-		// Log the actual error so we can debug API issues
-		fmt.Printf("CreateEnvironment API error for %s: %v\n", env.Spec.Id, createErr)
-		// If creation failed, still update status to indicate we tried
-		// This allows the resource to exist even if the API call fails
-		env.Status.UyuniLabel = env.Spec.Id
-		env.Status.State = "PENDING"
+		// Check if environment already exists (idempotent)
+		if strings.Contains(createErr.Error(), "already exists") {
+			fmt.Printf("Environment already exists: %s\n", env.Spec.Id)
+			env.Status.UyuniLabel = env.Spec.Id
+			env.Status.State = "NEW"
+		} else {
+			fmt.Printf("CreateEnvironment API error for %s: %v\n", env.Spec.Id, createErr)
+			env.Status.UyuniLabel = env.Spec.Id
+			env.Status.State = "PENDING"
+		}
 	} else {
 		env.Status.UyuniLabel = env.Spec.Id
 		env.Status.State = "NEW"
