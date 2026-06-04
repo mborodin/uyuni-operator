@@ -57,7 +57,11 @@ func (v *ContentProjectValidator) ValidateDelete(_ context.Context, _ runtime.Ob
 }
 
 func (v *ContentProjectValidator) validate(_ context.Context, cp *uyuniv1.ContentProject) (admission.Warnings, error) {
-	errs := validation.EnvChain(cp.Spec.Environments, field.NewPath("spec", "environments"))
+	var errs field.ErrorList
+	// Only validate environments if specified. Environments are now managed via separate ClmEnvironment CRDs.
+	if len(cp.Spec.Environments) > 0 {
+		errs = validation.EnvChain(cp.Spec.Environments, field.NewPath("spec", "environments"))
+	}
 
 	if cp.Spec.Build.Schedule != "" {
 		if _, err := cron.ParseStandard(cp.Spec.Build.Schedule); err != nil {
