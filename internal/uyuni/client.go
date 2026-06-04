@@ -131,8 +131,16 @@ func apiDelete(c *Client, path string) error {
 	// Build full URL
 	fullURL := c.baseURL + "/rhn/manager/api/" + path
 
-	// Create DELETE request with empty body
-	req, err := http.NewRequest("DELETE", fullURL, bytes.NewReader([]byte("{}")))
+	// For DELETE, we need to send minimal body. Browser sends full project data but
+	// Uyuni API may accept empty object. Try with empty object first.
+	bodyData := map[string]any{}
+	bodyBytes, err := json.Marshal(bodyData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal DELETE body: %w", err)
+	}
+
+	// Create DELETE request
+	req, err := http.NewRequest("DELETE", fullURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create DELETE request: %w", err)
 	}
@@ -141,6 +149,8 @@ func apiDelete(c *Client, path string) error {
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	// Important: Set Accept-Encoding to allow automatic decompression
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 
 	// Execute using the underlying http.Client (which preserves auth cookies)
 	resp, err := c.http.Client.Do(req)
@@ -163,12 +173,30 @@ func apiDelete(c *Client, path string) error {
 
 	// Parse response
 	respBody, _ := io.ReadAll(resp.Body)
+
+	// Log the response for debugging
+	if len(respBody) == 0 {
+		fmt.Printf("DEBUG: DELETE response body is empty (status %d)\n", resp.StatusCode)
+		// Empty response with 200 OK is success
+		if resp.StatusCode == http.StatusOK {
+			return nil
+		}
+		return fmt.Errorf("DELETE failed with status %d and empty body", resp.StatusCode)
+	}
+
+	fmt.Printf("DEBUG: DELETE response body: %s\n", string(respBody))
+
 	var apiResp struct {
 		Success  bool   `json:"success"`
 		Message  string `json:"message"`
 		Messages []string `json:"messages"`
 	}
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		fmt.Printf("DEBUG: Failed to parse DELETE response: %v\n", err)
+		// If we get 200 OK, treat as success even if response can't be parsed
+		if resp.StatusCode == http.StatusOK {
+			return nil
+		}
 		return fmt.Errorf("failed to parse DELETE response: %w", err)
 	}
 
