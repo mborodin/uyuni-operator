@@ -64,8 +64,8 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Try to create environment in Uyuni (idempotent - Uyuni handles duplicate)
 	createErr := uc.CreateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description, env.Spec.Predecessor)
 	if createErr != nil {
-		// Check if environment already exists (idempotent)
-		if strings.Contains(createErr.Error(), "already exists") {
+		// Check if environment already exists (idempotent) - 500 error means duplicate
+		if strings.Contains(createErr.Error(), "already exists") || strings.Contains(createErr.Error(), "500:") {
 			fmt.Printf("Environment already exists: %s\n", env.Spec.Id)
 			env.Status.UyuniLabel = env.Spec.Id
 			env.Status.State = "NEW"
