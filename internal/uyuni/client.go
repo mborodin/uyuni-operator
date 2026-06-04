@@ -1,10 +1,13 @@
 package uyuni
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,8 +21,9 @@ import (
 // TLS configuration, and pxt-session-cookie session management.
 // On 401 responses it re-authenticates transparently before retrying.
 type Client struct {
-	conn *uyuniapi.ConnectionDetails
-	http *uyuniapi.APIClient
+	conn    *uyuniapi.ConnectionDetails
+	http    *uyuniapi.APIClient
+	baseURL string // Full server URL for direct HTTP calls
 }
 
 // notFoundError wraps a "not found" response so callers can use IsNotFound.
@@ -67,7 +71,7 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 	if err := httpClient.Login(); err != nil {
 		return nil, fmt.Errorf("authenticating with %s: %w", rawURL, err)
 	}
-	return &Client{conn: conn, http: httpClient}, nil
+	return &Client{conn: conn, http: httpClient, baseURL: strings.TrimSuffix(rawURL, "/")}, nil
 }
 
 // --- generic re-auth helpers ---
@@ -117,13 +121,62 @@ func apiPost[T any](c *Client, path string, data map[string]any) (T, error) {
 	return resp.Result, nil
 }
 
-// apiDelete calls DELETE <path> using a POST workaround.
-// Note: uyuni-tools doesn't expose DELETE, but Uyuni API supports it.
-// For now we use POST with empty body which works for environment deletion.
+// apiDelete calls HTTP DELETE <path> using the underlying http.Client from uyuniapi.
 func apiDelete(c *Client, path string) error {
-	// Use POST with empty map - Uyuni treats this as a delete request
-	_, err := apiPost[any](c, path, map[string]any{})
-	return asNotFound(err)
+	// Ensure we're authenticated
+	if err := c.http.Login(); err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+
+	// Build full URL
+	fullURL := c.baseURL + "/rhn/manager/api/" + path
+
+	// Create DELETE request with empty body
+	req, err := http.NewRequest("DELETE", fullURL, bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return fmt.Errorf("failed to create DELETE request: %w", err)
+	}
+
+	// Set required headers (matching browser DELETE request)
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+
+	// Execute using the underlying http.Client (which preserves auth cookies)
+	resp, err := c.http.Client.Do(req)
+	if err != nil {
+		// Re-authenticate and retry once
+		if needsReauth(err.Error()) {
+			if loginErr := c.http.Login(); loginErr != nil {
+				return loginErr
+			}
+			req2, _ := http.NewRequest("DELETE", fullURL, bytes.NewReader([]byte("{}")))
+			req2.Header.Set("Content-Type", "application/json; charset=utf-8")
+			req2.Header.Set("Accept", "application/json; charset=utf-8")
+			resp, err = c.http.Client.Do(req2)
+		}
+		if err != nil {
+			return sanitizeHTTPError(err, path)
+		}
+	}
+	defer resp.Body.Close()
+
+	// Parse response
+	respBody, _ := io.ReadAll(resp.Body)
+	var apiResp struct {
+		Success  bool   `json:"success"`
+		Message  string `json:"message"`
+		Messages []string `json:"messages"`
+	}
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("failed to parse DELETE response: %w", err)
+	}
+
+	if !apiResp.Success {
+		return fmt.Errorf("%s", apiResp.Message)
+	}
+
+	return nil
 }
 
 // needsReauth reports whether an HTTP error warrants a re-authentication
