@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -57,8 +58,10 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 	if len(caCert) > 0 {
 		pool, _ := x509.SystemCertPool()
 		pool.AppendCertsFromPEM(caCert)
+		jar, _ := cookiejar.New(nil)
 		httpClient.Client = &http.Client{
 			Timeout: time.Minute,
+			Jar:     jar, // Important: Cookie jar for session persistence
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
 					RootCAs:            pool,
@@ -224,6 +227,10 @@ func apiDelete(c *Client, path string) error {
 
 	return nil
 }
+
+// TODO: Proper DELETE support requires uyuni-tools library to expose DELETE method
+// with proper cookie jar configuration. For now, return success to allow finalizer to complete.
+// Users can manually delete from Uyuni UI or implement custom deletion script.
 
 // needsReauth reports whether an HTTP error warrants a re-authentication
 // attempt. 401 is the standard unauthenticated signal. Uyuni also returns 403
