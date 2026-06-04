@@ -105,7 +105,7 @@ func (r *ClmEnvironmentReconciler) handleDeletion(ctx context.Context, uc uyuni.
 	// Get project to pass to RemoveEnvironment
 	var project uyuniv1.ContentProject
 	if err := r.Get(ctx, client.ObjectKey{Namespace: env.Namespace, Name: env.Spec.ProjectRef.Name}, &project); err == nil {
-		if err := uc.RemoveEnvironment(ctx, project.Spec.Label, env.Spec.Id); err != nil && !uyuni.IsNotFound(err) {
+		if err := uc.RemoveEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description); err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
 	}

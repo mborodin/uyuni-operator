@@ -1381,50 +1381,25 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 	return err
 }
 
-func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error {
+func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error {
 	fmt.Printf("DEBUG: RemoveEnvironment called for project=%s, env=%s\n", projectLabel, envLabel)
 
-	// DELETE endpoint requires full environment object in request body
-	// First, fetch all environments to find the one to delete
-	envs, err := c.ListProjectEnvironments(ctx, projectLabel)
-	if err != nil {
-		fmt.Printf("DEBUG: Failed to list environments: %v\n", err)
-		return fmt.Errorf("failed to list environments: %w", err)
-	}
-	fmt.Printf("DEBUG: Listed %d environments for project %s\n", len(envs), projectLabel)
-
-	// Find the environment with matching label
-	var targetEnv *ProjectEnvironmentInfo
-	for i := range envs {
-		if envs[i].Label == envLabel {
-			targetEnv = &envs[i]
-			break
-		}
-	}
-	if targetEnv == nil {
-		// Environment not found, treat as already deleted (success)
-		fmt.Printf("DEBUG: Environment %s not found in project %s, treating as already deleted\n", envLabel, projectLabel)
-		return nil
-	}
-
-	fmt.Printf("DEBUG: Found environment to delete: id=%d, label=%s\n", targetEnv.ID, targetEnv.Label)
-
-	// Build full environment object for DELETE request (matching Uyuni API format)
+	// Build environment object for DELETE request using provided fields
+	// We use reasonable defaults for fields not available from the controller
 	path := "contentmanagement/projects/" + url.QueryEscape(projectLabel) + "/environments"
 	payload := map[string]any{
-		"id":           targetEnv.ID,
 		"projectLabel": projectLabel,
-		"label":        targetEnv.Label,
-		"name":         targetEnv.Name,
-		"description":  targetEnv.Description,
-		"version":      targetEnv.Version,
-		"status":       targetEnv.Status,
+		"label":        envLabel,
+		"name":         name,
+		"description":  description,
+		"version":      0,
+		"status":       nil,
 		"builtTime":    nil,
 		"hasProfiles":  false,
 	}
 
-	fmt.Printf("DEBUG: Sending DELETE request with payload: %+v\n", payload)
-	err = apiDeleteWithBody(c, path, payload)
+	fmt.Printf("DEBUG: Sending DELETE request for env=%s with payload: %+v\n", envLabel, payload)
+	err := apiDeleteWithBody(c, path, payload)
 	if err != nil {
 		fmt.Printf("DEBUG: DELETE failed: %v\n", err)
 	} else {
