@@ -98,35 +98,35 @@ spec:
     name: pantheon-of-goods
 
 ---
-# NEW: Fresh End-to-End Test Project
-# This demonstrates creating a brand new project from scratch via Kubernetes automation
-apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: ContentProject
-metadata:
-  name: e2e-test-project
-  namespace: linux-platform
-spec:
-  label: e2e-test-project
-  name: E2E Test Project
-  description: End-to-end test project created via Kubernetes automation
-  organizationRef:
-    name: pantheon-of-goods
+# # NEW: Fresh End-to-End Test Project
+# # This demonstrates creating a brand new project from scratch via Kubernetes automation
+# apiVersion: uyuni.uyuni-project.org/v1alpha1
+# kind: ContentProject
+# metadata:
+#   name: e2e-test-project
+#   namespace: linux-platform
+# spec:
+#   label: e2e-test-project
+#   name: E2E Test Project
+#   description: End-to-end test project created via Kubernetes automation
+#   organizationRef:
+#     name: pantheon-of-goods
 
----
-# Environment in E2E Test Project
-# Fresh environment created in the new project
-apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: ClmEnvironment
-metadata:
-  name: dev-e2e-test
-  namespace: linux-platform
-spec:
-  id: dev-e2e-test
-  name: E2E Development Environment
-  description: Development environment for E2E testing
-  projectRef:
-    name: e2e-test-project
-  organizationRef:
-    name: pantheon-of-goods
-  # No predecessor = this is the root environment
+# ---
+# # Environment in E2E Test Project
+# # Fresh environment created in the new project
+# apiVersion: uyuni.uyuni-project.org/v1alpha1
+# kind: ClmEnvironment
+# metadata:
+#   name: dev-e2e-test
+#   namespace: linux-platform
+# spec:
+#   id: dev-e2e-test
+#   name: E2E Development Environment
+#   description: Development environment for E2E testing
+#   projectRef:
+#     name: e2e-test-project
+#   organizationRef:
+#     name: pantheon-of-goods
+#   # No predecessor = this is the root environment
   
