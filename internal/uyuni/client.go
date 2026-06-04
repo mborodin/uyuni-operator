@@ -171,6 +171,24 @@ func apiDelete(c *Client, path string) error {
 	}
 	defer resp.Body.Close()
 
+	// Handle 401 Unauthorized - retry with fresh login
+	if resp.StatusCode == http.StatusUnauthorized {
+		fmt.Printf("DEBUG: Got 401 Unauthorized, retrying with fresh login\n")
+		if loginErr := c.http.Login(); loginErr != nil {
+			return loginErr
+		}
+		req3, _ := http.NewRequest("DELETE", fullURL, bytes.NewReader(bodyBytes))
+		req3.Header.Set("Content-Type", "application/json; charset=UTF-8")
+		req3.Header.Set("Accept", "*/*")
+		req3.Header.Set("X-Requested-With", "XMLHttpRequest")
+		req3.Header.Set("Accept-Encoding", "gzip, deflate, br")
+		resp, err = c.http.Client.Do(req3)
+		if err != nil {
+			return sanitizeHTTPError(err, path)
+		}
+		defer resp.Body.Close()
+	}
+
 	// Parse response
 	respBody, _ := io.ReadAll(resp.Body)
 
