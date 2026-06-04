@@ -64,7 +64,9 @@ spec:
 | `SystemGroup` | A logical group of systems |
 | `ConfigChannel` + `ConfigFile` | Salt state/normal/dictionary channels and their contents |
 | `ImageStore` + `ImageProfile` | Image storage and kiwi/dockerfile build profiles |
-| `ContentProject` + `ContentProjectPromotion` | CLM project, environments, filters; promotions as Job-shaped CRs |
+| `ContentProject` | CLM project, filters, build settings (environments managed separately) |
+| `ClmEnvironment` | CLM project environments (dev/test/prod), promotion chains |
+| `ContentProjectPromotion` | Promotions between environments as Job-shaped CRs |
 | `Task` | Scheduled actions: highstate apply, remote command, reboot, patch install, config deploy |
 
 See `config/samples/end-to-end.yaml` for a complete worked example.
@@ -609,13 +611,16 @@ kubectl patch contentproject leap-platform -n linux-platform \
 
 ### Managing Environments Separately
 
-Environments are now managed via separate `ClmEnvironment` CRDs. This gives you:
-- **Single source of truth** — environments defined only in ClmEnvironment
-- **Independent management** — create/delete environments without recreating projects
+**Recommended approach:** Environments are now managed via separate `ClmEnvironment` CRDs. This gives you:
+- **Single source of truth** — environments defined only in ClmEnvironment CRDs, not in ContentProject.spec
+- **Independent lifecycle** — create/update/delete environments without affecting the project
+- **Full DELETE automation** — deleting a ClmEnvironment automatically removes it from Uyuni UI
 - **Cleaner architecture** — projects and promotion chains are separate concerns
 
+**Important:** Do NOT use the `spec.environments` field in ContentProject anymore. It is now optional and kept only for backward compatibility. All environments must be managed via separate ClmEnvironment resources.
+
 ```bash
-# After creating ContentProject, add environments
+# After creating ContentProject, add environments via ClmEnvironment CRDs
 kubectl apply -f - <<'EOF'
 ---
 # Root environment (dev)
@@ -677,10 +682,13 @@ kubectl delete contentproject leap-platform -n linux-platform
 ```
 
 **What happens:**
-1. Operator sees deletion timestamp
-2. Removes project from Uyuni automatically
-3. Removes finalizer after Uyuni cleanup
-4. Resource deleted from Kubernetes
+1. Operator sees deletion timestamp on ContentProject
+2. **Cascades to all ClmEnvironment resources** in that project
+3. Removes all environments from Uyuni automatically
+4. Removes project from Uyuni
+5. Removes finalizers and deletes all resources from Kubernetes
+
+**Note:** Deleting the ContentProject will also delete all associated `ClmEnvironment` resources. If you only want to remove specific environments, delete individual `ClmEnvironment` CRs instead (see next section).
 
 ### Monitor Status
 
@@ -706,6 +714,8 @@ kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f
 | `spec.label is immutable` | Tried to change project label | Delete and recreate with new label |
 | Build failed | Invalid filter criteria | Check YAML syntax, verify filter field/matcher values |
 | Environments not appearing | Not using ClmEnvironment CRDs | Create separate ClmEnvironment resources for each environment |
+| Project stuck in deletion | Environments have finalizers blocking | Delete environments first with `kubectl delete clmenvironment` |
+| Manual UI cleanup needed after delete | Using force-delete annotation | Environments remain in Uyuni UI as orphans; manually clean up via UI if needed |
 
 ## Managing CLM Environments
 
@@ -847,15 +857,18 @@ spec:
 ### Delete an Environment
 
 ```bash
-# Normal delete (removes from both Kubernetes and Uyuni)
+# Normal delete (removes from both Kubernetes and Uyuni UI)
 kubectl delete clmenvironment dev-env -n linux-platform
 ```
 
 **What happens:**
-1. Operator sees deletion timestamp
-2. Removes environment from Uyuni automatically
-3. Removes finalizer after Uyuni cleanup
-4. Resource deleted from Kubernetes
+1. Operator sees deletion timestamp on ClmEnvironment
+2. Sends HTTP DELETE request to Uyuni API with full environment object
+3. Uyuni removes the environment from the project
+4. Operator removes finalizer after successful Uyuni cleanup
+5. Resource deleted from Kubernetes
+
+**Result:** The environment is completely removed from both Kubernetes **and Uyuni UI**. No manual UI cleanup needed.
 
 ### Force Delete (Skip Uyuni Cleanup)
 
@@ -898,6 +911,96 @@ kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f
 | `spec.cluster is immutable` | Tried to change provider/cluster | Delete and recreate with new cluster |
 | Resource stuck in deletion | Finalizer blocking | Use force-delete annotation |
 | Predecessor not found | Referenced predecessor environment doesn't exist | Ensure predecessor environment is created first |
+| Environment not deleted from Uyuni | DELETE request failed (check logs) | Run `kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f` to see DEBUG messages |
+| Manual cleanup needed in Uyuni UI | Used force-delete annotation | Environment remains in Uyuni UI as orphan; manually remove via UI if needed |
+
+## Complete DELETE Automation
+
+The operator provides **full DELETE automation** — deleting resources from Kubernetes automatically removes them from Uyuni UI with zero manual steps.
+
+### Environment Deletion Workflow
+
+```bash
+# Delete a single environment
+kubectl delete clmenvironment dev-env -n linux-platform
+```
+
+**Automation flow:**
+1. Kubernetes marks resource for deletion (adds deletion timestamp)
+2. Operator detects finalizer and begins cleanup
+3. Operator sends HTTP DELETE to Uyuni API with full environment object
+4. Uyuni removes environment from project
+5. Operator verifies success and removes finalizer
+6. Kubernetes garbage collects the resource
+
+**Result:** Environment is removed from both Kubernetes **and Uyuni UI** automatically. No manual UI cleanup needed.
+
+### Project Deletion Workflow (With Cascade)
+
+```bash
+# Delete project and all its environments at once
+kubectl delete contentproject leap-platform -n linux-platform
+```
+
+**Automation flow:**
+1. Kubernetes marks ContentProject for deletion
+2. Operator detects finalizer on ContentProject
+3. Kubernetes garbage collector automatically deletes all child ClmEnvironment resources
+4. Each ClmEnvironment deletion triggers its own DELETE to Uyuni API
+5. After all environments are deleted, ContentProject DELETE is sent to Uyuni
+6. All finalizers are removed
+7. All resources cleaned up from Kubernetes
+
+**Result:** Project and all environments removed from Kubernetes **and Uyuni UI** in a single cascade operation. No manual steps required.
+
+### Selective Environment Deletion
+
+```bash
+# Delete only specific environments, keep project
+kubectl delete clmenvironment test-env -n linux-platform
+kubectl delete clmenvironment prod-env -n linux-platform
+# dev-env remains
+```
+
+The ContentProject is unaffected. Only the deleted ClmEnvironment resources are removed from Uyuni.
+
+### Force Delete (Emergency Only)
+
+Use when Uyuni is unreachable but you want to clean up Kubernetes:
+
+```bash
+# Mark for force delete (skips Uyuni API call)
+kubectl annotate clmenvironment dev-env -n linux-platform \
+  uyuni.uyuni-project.org/force-delete=true --overwrite
+
+# Delete from Kubernetes only
+kubectl delete clmenvironment dev-env -n linux-platform
+```
+
+**What happens:**
+- Operator skips HTTP DELETE to Uyuni
+- Resource removed from Kubernetes immediately
+- Environment remains in Uyuni UI as orphan
+- **Manual cleanup in Uyuni UI required** (remove via Web UI)
+
+Use sparingly and document any orphaned resources created this way.
+
+### Monitoring DELETE Operations
+
+Check operator logs to see DELETE automation in action:
+
+```bash
+# Watch DELETE operations in real-time
+kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f | grep -E "DELETE|RemoveEnvironment|RemoveProject"
+```
+
+**Example log output:**
+```
+DEBUG: RemoveEnvironment called for project=leap-platform, env=dev
+DEBUG: Sending DELETE request for env=dev with payload: map[...]
+DEBUG: DELETE with body response: {"success":true,"messages":null,"errors":null,...}
+DEBUG: Environment dev deleted successfully
+```
 
 ## Annotations
 
