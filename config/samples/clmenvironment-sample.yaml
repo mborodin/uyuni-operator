@@ -113,7 +113,8 @@ spec:
   label: e2e-test-project
   name: E2E Test Project
   description: End-to-end test project created via Kubernetes automation
-  environments: []  # Environments managed separately via ClmEnvironment CRDs
+  environments:
+    - { label: dev-e2e-test, name: E2E Development }
   organizationRef:
     name: pantheon-of-goods
 
