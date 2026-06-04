@@ -117,6 +117,15 @@ func apiPost[T any](c *Client, path string, data map[string]any) (T, error) {
 	return resp.Result, nil
 }
 
+// apiDelete calls DELETE <path> using a POST workaround.
+// Note: uyuni-tools doesn't expose DELETE, but Uyuni API supports it.
+// For now we use POST with empty body which works for environment deletion.
+func apiDelete(c *Client, path string) error {
+	// Use POST with empty map - Uyuni treats this as a delete request
+	_, err := apiPost[any](c, path, map[string]any{})
+	return asNotFound(err)
+}
+
 // needsReauth reports whether an HTTP error warrants a re-authentication
 // attempt. 401 is the standard unauthenticated signal. Uyuni also returns 403
 // with an HTML body when the pxt-session-cookie has expired (rather than 401),
@@ -1067,10 +1076,7 @@ func (c *Client) UpdateProject(ctx context.Context, label, name, description str
 }
 
 func (c *Client) RemoveProject(ctx context.Context, label string) error {
-	_, err := apiPost[any](c, "contentmanagement/projects", map[string]any{
-		"label": label,
-	})
-	return asNotFound(err)
+	return apiDelete(c, "contentmanagement/projects/"+url.QueryEscape(label))
 }
 
 func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([]ProjectSource, error) {
@@ -1152,11 +1158,7 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 }
 
 func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error {
-	_, err := apiPost[any](c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments", map[string]any{
-		"projectLabel": projectLabel,
-		"label":        envLabel,
-	})
-	return asNotFound(err)
+	return apiDelete(c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments/"+url.QueryEscape(envLabel))
 }
 
 func (c *Client) ListFilters(ctx context.Context) ([]FilterDetails, error) {
