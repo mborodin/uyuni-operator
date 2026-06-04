@@ -2,6 +2,7 @@ package uyuni
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -192,8 +193,18 @@ func apiDelete(c *Client, path string) error {
 		defer resp.Body.Close()
 	}
 
-	// Parse response
-	respBody, _ := io.ReadAll(resp.Body)
+	// Parse response - handle gzip if needed
+	var respBody []byte
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to create gzip reader: %w", err)
+		}
+		defer gz.Close()
+		respBody, _ = io.ReadAll(gz)
+	} else {
+		respBody, _ = io.ReadAll(resp.Body)
+	}
 
 	// Log the response for debugging
 	if len(respBody) == 0 {
