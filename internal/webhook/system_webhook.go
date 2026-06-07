@@ -86,15 +86,30 @@ func (v *SystemValidator) ValidateUpdate(ctx context.Context, oldObj, newObj run
 			fmt.Errorf("spec.minionId is immutable"))
 	}
 
-	// autoinstall.profile is immutable once the first provisioning action has
-	// been scheduled (status.autoinstallActionId is non-zero).
+	// autoinstall.profile and autoinstall.profileRef are immutable once the first
+	// provisioning action has been scheduled (status.autoinstallActionId is non-zero).
 	if oldSys.Spec.Autoinstall != nil && newSys.Spec.Autoinstall != nil &&
-		oldSys.Spec.Autoinstall.Profile != newSys.Spec.Autoinstall.Profile &&
 		oldSys.Status.AutoinstallActionID != 0 {
-		return nil, apierrors.NewForbidden(
-			schema.GroupResource{Group: uyuniv1.Group, Resource: "systems"},
-			newSys.Name,
-			fmt.Errorf("spec.autoinstall.profile is immutable after provisioning has been scheduled"))
+		if oldSys.Spec.Autoinstall.Profile != newSys.Spec.Autoinstall.Profile {
+			return nil, apierrors.NewForbidden(
+				schema.GroupResource{Group: uyuniv1.Group, Resource: "systems"},
+				newSys.Name,
+				fmt.Errorf("spec.autoinstall.profile is immutable after provisioning has been scheduled"))
+		}
+		oldRef := ""
+		if oldSys.Spec.Autoinstall.ProfileRef != nil {
+			oldRef = oldSys.Spec.Autoinstall.ProfileRef.Name
+		}
+		newRef := ""
+		if newSys.Spec.Autoinstall.ProfileRef != nil {
+			newRef = newSys.Spec.Autoinstall.ProfileRef.Name
+		}
+		if oldRef != newRef {
+			return nil, apierrors.NewForbidden(
+				schema.GroupResource{Group: uyuniv1.Group, Resource: "systems"},
+				newSys.Name,
+				fmt.Errorf("spec.autoinstall.profileRef is immutable after provisioning has been scheduled"))
+		}
 	}
 
 	return v.validate(ctx, newSys)
@@ -123,6 +138,15 @@ func (v *SystemValidator) validate(ctx context.Context, sys *uyuniv1.System) (ad
 			"spec.autoinstall must be set when using the reinstall-now annotation"))
 	}
 
+	// spec.autoinstall.profile and spec.autoinstall.profileRef are mutually exclusive.
+	if sys.Spec.Autoinstall != nil &&
+		sys.Spec.Autoinstall.Profile != "" && sys.Spec.Autoinstall.ProfileRef != nil {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec", "autoinstall", "profileRef"),
+			sys.Spec.Autoinstall.ProfileRef,
+			"spec.autoinstall.profile and spec.autoinstall.profileRef are mutually exclusive; set exactly one"))
+	}
+
 	var warnings admission.Warnings
 
 	// Cross-resource: warn (GitOps tolerance) if referenced groups are not found.
@@ -138,6 +162,15 @@ func (v *SystemValidator) validate(ctx context.Context, sys *uyuniv1.System) (ad
 	for i, ref := range sys.Spec.ConfigChannelRefs {
 		path := field.NewPath("spec", "configChannelRefs").Index(i)
 		w := v.warnIfConfigChannelMissing(ctx, sys.Namespace, ref.Name, path)
+		if w != "" {
+			warnings = append(warnings, w)
+		}
+	}
+
+	// Cross-resource: warn if spec.autoinstall.profileRef does not resolve.
+	if sys.Spec.Autoinstall != nil && sys.Spec.Autoinstall.ProfileRef != nil {
+		path := field.NewPath("spec", "autoinstall", "profileRef")
+		w := v.warnIfAutoinstallProfileMissing(ctx, sys.Namespace, sys.Spec.Autoinstall.ProfileRef.Name, path)
 		if w != "" {
 			warnings = append(warnings, w)
 		}
@@ -169,6 +202,18 @@ func (v *SystemValidator) warnIfConfigChannelMissing(ctx context.Context, ns, na
 	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &cc); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return fmt.Sprintf("%s: ConfigChannel %q not found in namespace %q (may be applied alongside in the same commit)",
+				path.String(), name, ns)
+		}
+		return ""
+	}
+	return ""
+}
+
+func (v *SystemValidator) warnIfAutoinstallProfileMissing(ctx context.Context, ns, name string, path *field.Path) string {
+	var ap uyuniv1.AutoinstallProfile
+	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &ap); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return fmt.Sprintf("%s: AutoinstallProfile %q not found in namespace %q (may be applied alongside in the same commit)",
 				path.String(), name, ns)
 		}
 		return ""

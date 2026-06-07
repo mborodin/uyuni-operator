@@ -3,12 +3,17 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // AutoinstallSpec configures Cobbler/Kickstart-based OS provisioning via Uyuni.
+// Exactly one of Profile or ProfileRef must be set; the webhook enforces mutual exclusion.
 type AutoinstallSpec struct {
-	// Profile is the Cobbler/Kickstart profile name registered in Uyuni.
+	// Profile is the bare Cobbler/Kickstart profile label registered in Uyuni.
 	// Immutable once the first provisioning action has been scheduled.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	Profile string `json:"profile"`
+	// Mutually exclusive with ProfileRef.
+	Profile string `json:"profile,omitempty"`
+
+	// ProfileRef references an AutoinstallProfile CR in the same namespace.
+	// The reconciler resolves spec.label from the CR at runtime.
+	// Mutually exclusive with Profile.
+	ProfileRef *LocalObjectRef `json:"profileRef,omitempty"`
 
 	// Earliest is the earliest time at which to schedule the autoinstall action.
 	// Defaults to immediate execution.

@@ -41,4 +41,6 @@ const (
 	taskFinalizer    = uyuniv1.Group + "/task"
 	provFinalizer    = uyuniv1.Group + "/uyuniprovider"
 	orgFinalizer     = uyuniv1.Group + "/organization"
+	adFinalizer      = uyuniv1.Group + "/autoinstalldistribution"
+	apFinalizer      = uyuniv1.Group + "/autoinstallprofile"
 )

@@ -135,6 +135,27 @@ type API interface {
 	BuildProject(ctx context.Context, projectLabel, message string) error
 	PromoteProject(ctx context.Context, projectLabel, envLabel string) error
 
+	// Autoinstall — kickstart.tree (distribution)
+	CreateDistribution(ctx context.Context, d DistributionDetails) error
+	GetDistribution(ctx context.Context, label string) (*DistributionDetails, error)
+	UpdateDistribution(ctx context.Context, label string, d DistributionDetails) error
+	DeleteDistribution(ctx context.Context, label string) error
+
+	// Autoinstall — kickstart / kickstart.profile
+	CreateProfile(ctx context.Context, args ProfileCreateArgs) error
+	ImportProfile(ctx context.Context, args ProfileImportArgs) error
+	GetProfile(ctx context.Context, label string) (*ProfileDetails, error)
+	DeleteProfile(ctx context.Context, label string) error
+	SetProfileChildChannels(ctx context.Context, label string, channelLabels []string) error
+	GetProfileChildChannels(ctx context.Context, label string) ([]string, error)
+	SetProfileVariables(ctx context.Context, label string, vars map[string]string) error
+	GetProfileVariables(ctx context.Context, label string) (map[string]string, error)
+	SetProfileUpdateType(ctx context.Context, label, updateType string) error
+	SetProfileCfgPreservation(ctx context.Context, label string, preserve bool) error
+	AddProfileScript(ctx context.Context, label string, s ProfileScript) (int, error)
+	ListProfileScripts(ctx context.Context, label string) ([]ProfileScript, error)
+	RemoveProfileScript(ctx context.Context, label string, scriptID int) error
+
 	// Image stores / profiles
 	CreateImageStore(ctx context.Context, label, storeType, uri, user, pass string) error
 	GetImageStore(ctx context.Context, label string) (*ImageStoreDetails, error)

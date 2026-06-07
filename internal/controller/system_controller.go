@@ -159,18 +159,27 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 
 	// Phase: PreProvisioned / Reprovisioning — check autoinstall scheduling.
 	if sys.Status.UyuniServerID != 0 && sys.Spec.Autoinstall != nil && sys.Status.AutoinstallActionID == 0 {
+		profileLabel, waitReason, err := r.resolveProfileLabel(ctx, sys)
+		if err != nil {
+			return r.fail(ctx, sys, "ResolveProfileFailed", err)
+		}
+		if waitReason != "" {
+			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, "WaitingForProfile", waitReason)
+			_ = r.Status().Update(ctx, sys)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		earliest := now
 		if sys.Spec.Autoinstall.Earliest != nil {
 			earliest = sys.Spec.Autoinstall.Earliest.Time
 		}
-		actionID, err := uc.ProvisionSystem(ctx, sys.Status.UyuniServerID, sys.Spec.Autoinstall.Profile, earliest)
+		actionID, err := uc.ProvisionSystem(ctx, sys.Status.UyuniServerID, profileLabel, earliest)
 		if err != nil {
 			return r.fail(ctx, sys, "ScheduleFailed", err)
 		}
 		sys.Status.AutoinstallActionID = actionID
 		sys.Status.AutoinstallStatus = "Scheduled"
 		setCondition(&sys.Status.Conditions, condAutoinstallScheduled, metav1.ConditionTrue, sys.Generation,
-			"Scheduled", fmt.Sprintf("autoinstall action %d scheduled for profile %q", actionID, sys.Spec.Autoinstall.Profile))
+			"Scheduled", fmt.Sprintf("autoinstall action %d scheduled for profile %q", actionID, profileLabel))
 		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
 			"WaitingForRegistration", "autoinstall scheduled; waiting for system to re-register")
 		if err := r.Status().Update(ctx, sys); err != nil {
@@ -215,11 +224,20 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 			_ = r.Status().Update(ctx, sys)
 			return ctrl.Result{}, nil
 		}
+		profileLabel, waitReason, err := r.resolveProfileLabel(ctx, sys)
+		if err != nil {
+			return r.fail(ctx, sys, "ResolveProfileFailed", err)
+		}
+		if waitReason != "" {
+			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, "WaitingForProfile", waitReason)
+			_ = r.Status().Update(ctx, sys)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		earliest := r.Now()
 		if sys.Spec.Autoinstall.Earliest != nil {
 			earliest = sys.Spec.Autoinstall.Earliest.Time
 		}
-		actionID, err := uc.ProvisionSystem(ctx, sys.Status.UyuniServerID, sys.Spec.Autoinstall.Profile, earliest)
+		actionID, err := uc.ProvisionSystem(ctx, sys.Status.UyuniServerID, profileLabel, earliest)
 		if err != nil {
 			return r.fail(ctx, sys, "ScheduleFailed", err)
 		}
@@ -229,7 +247,7 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		sys.Status.Phase = "Reprovisioning"
 		sys.Status.PhaseTransitionTime = &t
 		setCondition(&sys.Status.Conditions, condAutoinstallScheduled, metav1.ConditionTrue, sys.Generation,
-			"Scheduled", fmt.Sprintf("reinstall action %d scheduled for profile %q", actionID, sys.Spec.Autoinstall.Profile))
+			"Scheduled", fmt.Sprintf("reinstall action %d scheduled for profile %q", actionID, profileLabel))
 		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
 			"WaitingForRegistration", "reprovisioning scheduled; waiting for system to re-register")
 		if err := r.Status().Update(ctx, sys); err != nil {
@@ -462,6 +480,33 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 	return labels, "", nil
 }
 
+// resolveProfileLabel returns the Cobbler profile label to use for provisioning.
+// If spec.autoinstall.profileRef is set, the label is read from the referenced
+// AutoinstallProfile CR. If spec.autoinstall.profile is set, it is returned as-is.
+func (r *SystemReconciler) resolveProfileLabel(ctx context.Context, sys *uyuniv1.System) (label, wait string, err error) {
+	ai := sys.Spec.Autoinstall
+	if ai == nil {
+		return "", "", nil
+	}
+	if ai.Profile != "" {
+		return ai.Profile, "", nil
+	}
+	if ai.ProfileRef != nil {
+		var ap uyuniv1.AutoinstallProfile
+		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: ai.ProfileRef.Name}, &ap); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return "", fmt.Sprintf("AutoinstallProfile %q not found", ai.ProfileRef.Name), nil
+			}
+			return "", "", err
+		}
+		if ap.Status.DistributionLabel == "" {
+			return "", fmt.Sprintf("AutoinstallProfile %q not yet realized (no distributionLabel in status)", ai.ProfileRef.Name), nil
+		}
+		return ap.Spec.Label, "", nil
+	}
+	return "", "", nil
+}
+
 // resolveGroupMembership returns the list of Uyuni group names the system should belong to.
 func (r *SystemReconciler) resolveGroupMembership(ctx context.Context, sys *uyuniv1.System) (names []string, wait string, err error) {
 	for _, ref := range sys.Spec.GroupRefs {
@@ -495,6 +540,8 @@ func (r *SystemReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.systemsForConfigChannel)).
 		Watches(&uyuniv1.SoftwareChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForSoftwareChannel)).
+		Watches(&uyuniv1.AutoinstallProfile{},
+			handler.EnqueueRequestsFromMapFunc(r.systemsForAutoinstallProfile)).
 		Complete(r)
 }
 
@@ -556,6 +603,23 @@ func (r *SystemReconciler) systemsForSoftwareChannel(ctx context.Context, obj cl
 				})
 				break
 			}
+		}
+	}
+	return out
+}
+
+func (r *SystemReconciler) systemsForAutoinstallProfile(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list uyuniv1.SystemList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var out []reconcile.Request
+	for _, sys := range list.Items {
+		if sys.Spec.Autoinstall != nil && sys.Spec.Autoinstall.ProfileRef != nil &&
+			sys.Spec.Autoinstall.ProfileRef.Name == obj.GetName() {
+			out = append(out, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: sys.Namespace, Name: sys.Name},
+			})
 		}
 	}
 	return out

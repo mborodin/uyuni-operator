@@ -186,6 +186,55 @@ type ImageInfo struct {
 	ProfileLabel string
 }
 
+// --- Autoinstall (kickstart.tree + kickstart.profile) ---
+
+type DistributionDetails struct {
+	ID                int
+	Label             string
+	BasePath          string
+	ChannelLabel      string
+	InstallType       string
+	KernelOptions     string
+	PostKernelOptions string
+}
+
+type ProfileCreateArgs struct {
+	Label              string
+	VirtualizationType string
+	TreeLabel          string
+	KickstartHost      string
+	RootPassword       string
+	UpdateType         string
+}
+
+type ProfileImportArgs struct {
+	Label         string
+	TreeLabel     string
+	KickstartHost string
+	Contents      string
+}
+
+type ProfileDetails struct {
+	Label              string
+	VirtualizationType string
+	TreeLabel          string
+	UpdateType         string
+}
+
+// ProfileScript describes a single pre/post script attached to an autoinstall profile.
+// Name is our reconcile key — it is encoded as a "#name:<name>\n" prefix in Contents
+// so it survives the round-trip through Uyuni's API, which has no separate name field.
+type ProfileScript struct {
+	ID          int
+	Name        string
+	Contents    string
+	Interpreter string
+	Type        string // "pre" | "post"
+	Chroot      bool
+	Template    bool
+	ErrorOnFail bool
+}
+
 // --- Scheduled actions ---
 
 type ScheduledAction struct {

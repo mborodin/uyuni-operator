@@ -1601,3 +1601,257 @@ func (c *Client) DeleteOrganization(ctx context.Context, id int) error {
 	})
 	return asNotFound(err)
 }
+
+// =============================================================================
+// Autoinstall — kickstart.tree (distribution)
+// =============================================================================
+
+type wireDistribution struct {
+	ID                int    `json:"id"`
+	Label             string `json:"label"`
+	BasePath          string `json:"base_path"`
+	ChannelLabel      string `json:"channel_label"`
+	InstallType       string `json:"install_type"`
+	KernelOptions     string `json:"kernel_options"`
+	PostKernelOptions string `json:"post_kernel_options"`
+}
+
+func wireDistToDetails(w *wireDistribution) *DistributionDetails {
+	return &DistributionDetails{
+		ID:                w.ID,
+		Label:             w.Label,
+		BasePath:          w.BasePath,
+		ChannelLabel:      w.ChannelLabel,
+		InstallType:       w.InstallType,
+		KernelOptions:     w.KernelOptions,
+		PostKernelOptions: w.PostKernelOptions,
+	}
+}
+
+func (c *Client) CreateDistribution(ctx context.Context, d DistributionDetails) error {
+	_, err := apiPost[any](c, "kickstart/tree/create", map[string]any{
+		"treelabel":          d.Label,
+		"basepath":           d.BasePath,
+		"channel_label":      d.ChannelLabel,
+		"installtype_label":  d.InstallType,
+		"kernel_options":     d.KernelOptions,
+		"post_kernel_options": d.PostKernelOptions,
+	})
+	return err
+}
+
+func (c *Client) GetDistribution(ctx context.Context, label string) (*DistributionDetails, error) {
+	r, err := apiGet[wireDistribution](c, "kickstart/tree/getDetails?treeLabel="+url.QueryEscape(label))
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	return wireDistToDetails(&r), nil
+}
+
+func (c *Client) UpdateDistribution(ctx context.Context, label string, d DistributionDetails) error {
+	_, err := apiPost[any](c, "kickstart/tree/update", map[string]any{
+		"treelabel":          label,
+		"basepath":           d.BasePath,
+		"channel_label":      d.ChannelLabel,
+		"installtype_label":  d.InstallType,
+		"kernel_options":     d.KernelOptions,
+		"post_kernel_options": d.PostKernelOptions,
+	})
+	return err
+}
+
+func (c *Client) DeleteDistribution(ctx context.Context, label string) error {
+	_, err := apiPost[any](c, "kickstart/tree/delete", map[string]any{
+		"treelabel": label,
+	})
+	return asNotFound(err)
+}
+
+// =============================================================================
+// Autoinstall — kickstart / kickstart.profile
+// =============================================================================
+
+type wireProfile struct {
+	Label              string `json:"label"`
+	VirtualizationType string `json:"virtualization_type"`
+	TreeLabel          string `json:"tree_label"`
+	UpdateType         string `json:"update_type"`
+}
+
+type wireProfileScript struct {
+	ScriptID    int    `json:"script_id"`
+	Contents    string `json:"contents"`
+	Interpreter string `json:"interpreter"`
+	ScriptType  string `json:"script_type"` // "pre" | "post"
+	Chroot      bool   `json:"chroot"`
+	Template    bool   `json:"template"`
+	ErrorOnFail bool   `json:"error_on_fail"`
+}
+
+// scriptNamePrefix is the sentinel embedded at the start of script contents to
+// carry the reconcile name through Uyuni's API, which has no separate name field.
+const scriptNamePrefix = "#ks-name:"
+
+func encodeScriptName(name, contents string) string {
+	return scriptNamePrefix + name + "\n" + contents
+}
+
+func decodeScriptName(encoded string) (name, contents string) {
+	if after, ok := strings.CutPrefix(encoded, scriptNamePrefix); ok {
+		nl := strings.IndexByte(after, '\n')
+		if nl >= 0 {
+			return after[:nl], after[nl+1:]
+		}
+		return after, ""
+	}
+	return "", encoded
+}
+
+func (c *Client) CreateProfile(ctx context.Context, args ProfileCreateArgs) error {
+	_, err := apiPost[any](c, "kickstart/createProfile", map[string]any{
+		"profile_label":       args.Label,
+		"vm_type":             args.VirtualizationType,
+		"kickstart_host":      args.KickstartHost,
+		"kickstart_tree_label": args.TreeLabel,
+		"download_url":        "",
+		"root_password":       args.RootPassword,
+	})
+	return err
+}
+
+func (c *Client) ImportProfile(ctx context.Context, args ProfileImportArgs) error {
+	_, err := apiPost[any](c, "kickstart/importFile", map[string]any{
+		"profile_label":       args.Label,
+		"virtualization_type": "none",
+		"kickstart_host":      args.KickstartHost,
+		"kickstart_tree_label": args.TreeLabel,
+		"file_contents":       args.Contents,
+	})
+	return err
+}
+
+func (c *Client) GetProfile(ctx context.Context, label string) (*ProfileDetails, error) {
+	r, err := apiGet[wireProfile](c, "kickstart/getDetails?ksLabel="+url.QueryEscape(label))
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	return &ProfileDetails{
+		Label:              r.Label,
+		VirtualizationType: r.VirtualizationType,
+		TreeLabel:          r.TreeLabel,
+		UpdateType:         r.UpdateType,
+	}, nil
+}
+
+func (c *Client) DeleteProfile(ctx context.Context, label string) error {
+	_, err := apiPost[any](c, "kickstart/deleteProfile", map[string]any{
+		"ksLabel": label,
+	})
+	return asNotFound(err)
+}
+
+func (c *Client) SetProfileChildChannels(ctx context.Context, label string, channelLabels []string) error {
+	_, err := apiPost[any](c, "kickstart/profile/software/setSoftwareList", map[string]any{
+		"ksLabel":      label,
+		"channels":     channelLabels,
+		"upgradeable":  false,
+	})
+	return err
+}
+
+func (c *Client) GetProfileChildChannels(ctx context.Context, label string) ([]string, error) {
+	type chanRef struct {
+		Label string `json:"label"`
+	}
+	list, err := apiGet[[]chanRef](c, "kickstart/profile/software/getSoftwareList?ksLabel="+url.QueryEscape(label))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(list))
+	for i, cr := range list {
+		out[i] = cr.Label
+	}
+	return out, nil
+}
+
+func (c *Client) SetProfileVariables(ctx context.Context, label string, vars map[string]string) error {
+	_, err := apiPost[any](c, "kickstart/profile/setVariables", map[string]any{
+		"ksLabel":   label,
+		"variables": vars,
+	})
+	return err
+}
+
+func (c *Client) GetProfileVariables(ctx context.Context, label string) (map[string]string, error) {
+	r, err := apiGet[map[string]string](c, "kickstart/profile/getVariables?ksLabel="+url.QueryEscape(label))
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (c *Client) SetProfileUpdateType(ctx context.Context, label, updateType string) error {
+	_, err := apiPost[any](c, "kickstart/profile/setAdvancedOptions", map[string]any{
+		"ksLabel": label,
+		"options": []map[string]any{
+			{"name": "update_type", "enabled": true, "value": updateType},
+		},
+	})
+	return err
+}
+
+func (c *Client) SetProfileCfgPreservation(ctx context.Context, label string, preserve bool) error {
+	_, err := apiPost[any](c, "kickstart/profile/setAdvancedOptions", map[string]any{
+		"ksLabel": label,
+		"options": []map[string]any{
+			{"name": "preserveFiles", "enabled": preserve},
+		},
+	})
+	return err
+}
+
+func (c *Client) AddProfileScript(ctx context.Context, label string, s ProfileScript) (int, error) {
+	r, err := apiPost[wireProfileScript](c, "kickstart/profile/script/addScript", map[string]any{
+		"ksLabel":      label,
+		"contents":     encodeScriptName(s.Name, s.Contents),
+		"interpreter":  s.Interpreter,
+		"script_type":  s.Type,
+		"chroot":       s.Chroot,
+		"template":     s.Template,
+		"errorOnFail":  s.ErrorOnFail,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return r.ScriptID, nil
+}
+
+func (c *Client) ListProfileScripts(ctx context.Context, label string) ([]ProfileScript, error) {
+	list, err := apiGet[[]wireProfileScript](c, "kickstart/profile/script/listScripts?ksLabel="+url.QueryEscape(label))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProfileScript, len(list))
+	for i, ws := range list {
+		name, contents := decodeScriptName(ws.Contents)
+		out[i] = ProfileScript{
+			ID:          ws.ScriptID,
+			Name:        name,
+			Contents:    contents,
+			Interpreter: ws.Interpreter,
+			Type:        ws.ScriptType,
+			Chroot:      ws.Chroot,
+			Template:    ws.Template,
+			ErrorOnFail: ws.ErrorOnFail,
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) RemoveProfileScript(ctx context.Context, label string, scriptID int) error {
+	_, err := apiPost[any](c, "kickstart/profile/script/removeScript", map[string]any{
+		"ksLabel":   label,
+		"script_id": scriptID,
+	})
+	return err
+}

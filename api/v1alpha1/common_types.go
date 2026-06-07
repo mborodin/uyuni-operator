@@ -9,6 +9,14 @@ type LocalObjectRef struct {
 	Name string `json:"name"`
 }
 
+// SecretKeyRef selects a key from a Kubernetes Secret in the same namespace.
+type SecretKeyRef struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// +kubebuilder:validation:Required
+	Key string `json:"key"`
+}
+
 // ChannelFromProject references a channel produced by a ContentProject
 // environment. Resolution is structural: the realized Uyuni channel label
 // is {project.spec.label}-{environment}-{sourceChannelLabel}.
