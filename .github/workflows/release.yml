@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
 
+# Workflow-level permissions are required — buildx and helm push both use the
+# GITHUB_TOKEN outside the step context where job-level permissions may not
+# propagate correctly.
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   # ─── Determine next semver tag and what changed ────────────────────────────
   version:
@@ -75,6 +82,10 @@ jobs:
           tags: |
             ghcr.io/mborodin/uyuni-operator:${{ needs.version.outputs.version }}
             ghcr.io/mborodin/uyuni-operator:latest
+          # Disable provenance attestation — the extra OCI manifest it writes
+          # requires a separate push that triggers a second 403 on fresh packages.
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
