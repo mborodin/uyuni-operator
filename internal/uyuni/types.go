@@ -10,9 +10,17 @@ type SystemDetails struct {
 	MinionID           string
 	Hostname           string
 	Description        string
+	ContactMethod      string
 	BaseChannelLabel   string
 	ChildChannelLabels []string
 	LastCheckin        time.Time
+}
+
+// SystemDetailsUpdate carries the mutable fields written by system.setDetails.
+// Only non-empty fields are sent; callers set what they want to change.
+type SystemDetailsUpdate struct {
+	Description   string
+	ContactMethod string // "default" | "ssh-push" | "ssh-push-tunnel"
 }
 
 type SystemProfileData struct {

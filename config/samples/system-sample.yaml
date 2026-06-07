@@ -1,0 +1,135 @@
+# System Sample — full feature showcase
+# Apply with: kubectl apply -f config/samples/system-sample.yaml
+#
+# Demonstrates:
+#   - Pre-create a system profile before PXE boot (preCreate: true)
+#   - Cobbler/Kickstart autoinstallation (spec.autoinstall)
+#   - Software channel assignment via ContentProject environment
+#   - Direct config channel subscription
+#   - Group membership (system-side declaration)
+#   - Add-ons (entitlements)
+#   - Custom info key-values
+#   - Contact method
+#
+# Minimal viable variant (registration-only, no pre-create) is at the bottom.
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: System
+metadata:
+  name: web-01
+  namespace: linux-platform
+spec:
+  # Immutable after creation — the Salt minion ID the system will register with.
+  minionId: web-01.example.com
+
+  # Pre-create a system profile in Uyuni before the machine boots.
+  # Required for PXE boot flows. Needs at least one MAC address or a hostname.
+  preCreate: true
+  hostname: web-01.example.com
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:ee:01"
+      ipAddress: "10.0.0.101"
+
+  description: "Frontend web server tier 1"
+
+  # Contact method: how Uyuni reaches this system post-registration.
+  # +kubebuilder:validation:Enum=default;ssh-push;ssh-push-tunnel
+  contactMethod: default
+
+  # Software channels — use a ContentProject environment for automatic promotion.
+  baseChannelFrom:
+    contentProjectRef:
+      name: sles15sp5-baseline
+    environment: prod
+    sourceChannelLabel: sles-15-sp5-pool-x86_64
+
+  childChannelsFrom:
+    - contentProjectRef:
+        name: sles15sp5-baseline
+      environment: prod
+      sourceChannelLabel: sles-15-sp5-updates-x86_64
+
+  # Autoinstall: Cobbler/Kickstart profile to provision this system.
+  # The reconciler calls system.provisionSystem after the profile is pre-created.
+  autoinstall:
+    profile: sles-15-sp5-autoyast
+    # earliest: "2025-01-01T03:00:00Z"  # optional: defer the action
+
+  # Config channels assigned directly to this system (priority order: index 0 = highest).
+  # These outrank any channels inherited from groupRefs.
+  configChannelRefs:
+    - name: web-server-hardening    # ConfigChannel CR in the same namespace
+    - name: ntp-baseline
+
+  # Groups this system should belong to (system-side declaration).
+  # Preferred over SystemGroup.spec.memberRefs.
+  groupRefs:
+    - name: web-servers
+    - name: prod-monitoring
+
+  # Add-ons (Uyuni entitlements granted to this system).
+  addOns:
+    - monitoring_entitled
+
+  # Custom info key-values stored on the system in Uyuni.
+  customInfo:
+    tier: frontend
+    owner: platform-team
+    cost-center: "CC-4412"
+
+  # How the CR behaves when deleted.
+  # "Orphan" (default): leave the Uyuni system intact.
+  # "Delete": remove from Uyuni when the CR is deleted.
+  deletionPolicy: Orphan
+
+  # Timeout waiting for the minion to register.
+  # Webhook defaults: 24h when preCreate=true, 30m otherwise.
+  adoptionTimeout: 24h0m0s
+
+  organizationRef:
+    name: pantheon-of-goods    # Organization CR in the same namespace
+
+---
+# Minimal variant — adopt an already-registered system and manage its config.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: System
+metadata:
+  name: db-01
+  namespace: linux-platform
+spec:
+  minionId: db-01.example.com
+  description: "Primary database server"
+  contactMethod: ssh-push
+
+  baseChannelRef:
+    name: sles-15-sp5-x86-64    # SoftwareChannel CR
+
+  configChannelRefs:
+    - name: db-hardening
+
+  groupRefs:
+    - name: database-servers
+
+  addOns:
+    - monitoring_entitled
+
+  customInfo:
+    tier: data
+    owner: dba-team
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Triggering a reinstall on a live system:
+#
+# kubectl annotate system web-01 -n linux-platform \
+#   uyuni.uyuni-project.org/reinstall-now=true
+#
+# The reconciler will:
+#   1. Call system.provisionSystem with spec.autoinstall.profile
+#   2. Record the action ID in status.autoinstallActionId
+#   3. Set status.phase = Reprovisioning
+#   4. Strip the annotation

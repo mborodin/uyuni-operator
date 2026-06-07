@@ -172,6 +172,7 @@ type wireSystem struct {
 	MinionID           string   `json:"minionid"`
 	Hostname           string   `json:"hostname"`
 	Description        string   `json:"description"`
+	ContactMethod      string   `json:"contact_method"`
 	BaseChannelLabel   string   `json:"base_channel_label"`
 	ChildChannelLabels []string `json:"child_channel_labels"`
 	LastCheckin        string   `json:"last_checkin"`
@@ -415,12 +416,48 @@ func (c *Client) GetSystemDetails(ctx context.Context, serverID int) (*SystemDet
 	return wireSystemToDetails(&r), nil
 }
 
-func (c *Client) SetSystemDetails(ctx context.Context, serverID int, description string) error {
-	_, err := apiPost[any](c, "system/setDetails", map[string]any{
-		"sid":         serverID,
-		"server_name": description,
+func (c *Client) SetSystemDetails(ctx context.Context, serverID int, d SystemDetailsUpdate) error {
+	body := map[string]any{"sid": serverID}
+	if d.Description != "" {
+		body["server_name"] = d.Description
+	}
+	if d.ContactMethod != "" {
+		body["contact_method"] = d.ContactMethod
+	}
+	_, err := apiPost[any](c, "system/setDetails", body)
+	return err
+}
+
+func (c *Client) ListSystemConfigChannels(ctx context.Context, serverID int) ([]string, error) {
+	type wireCCInfo struct {
+		Label string `json:"label"`
+	}
+	list, err := apiGet[[]wireCCInfo](c, fmt.Sprintf("system/config/listChannels?sid=%d", serverID))
+	if err != nil {
+		return nil, err
+	}
+	labels := make([]string, len(list))
+	for i, cc := range list {
+		labels[i] = cc.Label
+	}
+	return labels, nil
+}
+
+func (c *Client) SetSystemConfigChannels(ctx context.Context, serverID int, channelLabels []string) error {
+	_, err := apiPost[any](c, "system/config/setChannels", map[string]any{
+		"sids":                 []int{serverID},
+		"configChannelLabels":  channelLabels,
 	})
 	return err
+}
+
+func (c *Client) ProvisionSystem(ctx context.Context, serverID int, profile string, earliest time.Time) (int, error) {
+	actionID, err := apiPost[int](c, "system/provisionSystem", map[string]any{
+		"sid":          serverID,
+		"profileName":  profile,
+		"earliestDate": earliest.UTC().Format(time.RFC3339),
+	})
+	return actionID, err
 }
 
 func (c *Client) DeleteSystem(ctx context.Context, serverID int) error {
@@ -523,6 +560,7 @@ func wireSystemToDetails(w *wireSystem) *SystemDetails {
 		MinionID:           w.MinionID,
 		Hostname:           w.Hostname,
 		Description:        w.Description,
+		ContactMethod:      w.ContactMethod,
 		BaseChannelLabel:   w.BaseChannelLabel,
 		ChildChannelLabels: w.ChildChannelLabels,
 	}

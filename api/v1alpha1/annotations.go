@@ -31,4 +31,10 @@ const (
 	// version string for the next build. Not stripped (lets the customer
 	// pin a version for a sequence of builds).
 	AnnBuildVersion = Group + "/build-version"
+
+	// AnnReinstallNow on a System triggers a new system.provisionSystem call,
+	// reprovisioning a live registered system via its autoinstall profile.
+	// The reconciler strips the annotation after recording the action ID in status.
+	// Requires spec.autoinstall to be set. Value must be exactly "true".
+	AnnReinstallNow = Group + "/reinstall-now"
 )
