@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ─── Determine next semver tag and what changed ────────────────────────────
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version:       ${{ steps.bump.outputs.version }}
+      version_no_v:  ${{ steps.bump.outputs.version_no_v }}
+      helm_changed:  ${{ steps.changes.outputs.helm }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history required to list all tags
+
+      # Find the latest vX.Y.Z tag and increment patch.
+      # v1 → v1.0.0, v1.2 → v1.2.0, no tags → v0.1.0
+      - name: Compute next version
+        id: bump
+        run: |
+          LATEST=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            MAJOR=0; MINOR=1; PATCH=0
+          else
+            VERSION="${LATEST#v}"
+            IFS='.' read -r P1 P2 P3 <<< "$VERSION"
+            MAJOR="${P1:-0}"; MINOR="${P2:-0}"; PATCH="${P3:-0}"
+            PATCH=$((PATCH + 1))
+          fi
+          NEXT="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=${NEXT}"                         >> "$GITHUB_OUTPUT"
+          echo "version_no_v=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+          echo "Next version: ${NEXT}"
+
+      # Emit helm=true when any file under charts/ changed vs the previous commit.
+      # Always true on the very first commit (no parent).
+      - name: Detect Helm chart changes
+        id: changes
+        run: |
+          PREV=$(git rev-parse HEAD~1 2>/dev/null || true)
+          if [ -z "$PREV" ] || git diff --name-only "${PREV}" HEAD -- charts/ | grep -q .; then
+            echo "helm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "helm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─── Build and push the controller image to GHCR ──────────────────────────
+  docker:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/mborodin/uyuni-operator:${{ needs.version.outputs.version }}
+            ghcr.io/mborodin/uyuni-operator:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Package and push the Helm chart to GHCR OCI ──────────────────────────
+  helm:
+    needs: version
+    if: needs.version.outputs.helm_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR OCI registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      # Stamp Chart.yaml with the computed version before packaging
+      - name: Update chart version
+        run: |
+          sed -i 's/^version:.*/version: ${{ needs.version.outputs.version_no_v }}/' \
+            charts/uyuni-operator/Chart.yaml
+          sed -i 's/^appVersion:.*/appVersion: "${{ needs.version.outputs.version }}"/' \
+            charts/uyuni-operator/Chart.yaml
+
+      - name: Package chart
+        run: helm package charts/uyuni-operator --destination /tmp/charts
+
+      - name: Push chart to GHCR
+        run: helm push /tmp/charts/*.tgz oci://ghcr.io/mborodin/charts
+
+  # ─── Create git tag and GitHub release ────────────────────────────────────
+  release:
+    needs: [version, docker, helm]
+    # Run when docker succeeded, regardless of whether helm was skipped
+    if: >
+      always() &&
+      needs.docker.result == 'success' &&
+      (needs.helm.result == 'success' || needs.helm.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag the release commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ needs.version.outputs.version }}"
+          git push origin "${{ needs.version.outputs.version }}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ needs.version.outputs.version }}" \
+            --title "${{ needs.version.outputs.version }}" \
+            --generate-notes

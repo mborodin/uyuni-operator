@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -84,6 +85,33 @@ func (v *SystemValidator) ValidateUpdate(ctx context.Context, oldObj, newObj run
 			newSys.Name,
 			fmt.Errorf("spec.minionId is immutable"))
 	}
+
+	// autoinstall.profile and autoinstall.profileRef are immutable once the first
+	// provisioning action has been scheduled (status.autoinstallActionId is non-zero).
+	if oldSys.Spec.Autoinstall != nil && newSys.Spec.Autoinstall != nil &&
+		oldSys.Status.AutoinstallActionID != 0 {
+		if oldSys.Spec.Autoinstall.Profile != newSys.Spec.Autoinstall.Profile {
+			return nil, apierrors.NewForbidden(
+				schema.GroupResource{Group: uyuniv1.Group, Resource: "systems"},
+				newSys.Name,
+				fmt.Errorf("spec.autoinstall.profile is immutable after provisioning has been scheduled"))
+		}
+		oldRef := ""
+		if oldSys.Spec.Autoinstall.ProfileRef != nil {
+			oldRef = oldSys.Spec.Autoinstall.ProfileRef.Name
+		}
+		newRef := ""
+		if newSys.Spec.Autoinstall.ProfileRef != nil {
+			newRef = newSys.Spec.Autoinstall.ProfileRef.Name
+		}
+		if oldRef != newRef {
+			return nil, apierrors.NewForbidden(
+				schema.GroupResource{Group: uyuniv1.Group, Resource: "systems"},
+				newSys.Name,
+				fmt.Errorf("spec.autoinstall.profileRef is immutable after provisioning has been scheduled"))
+		}
+	}
+
 	return v.validate(ctx, newSys)
 }
 
@@ -91,7 +119,7 @@ func (v *SystemValidator) ValidateDelete(_ context.Context, _ runtime.Object) (a
 	return nil, nil
 }
 
-func (v *SystemValidator) validate(_ context.Context, sys *uyuniv1.System) (admission.Warnings, error) {
+func (v *SystemValidator) validate(ctx context.Context, sys *uyuniv1.System) (admission.Warnings, error) {
 	errs := validation.ChannelRefMutex(
 		sys.Spec.BaseChannelRef, sys.Spec.BaseChannelFrom,
 		sys.Spec.ChildChannelRefs, sys.Spec.ChildChannelsFrom,
@@ -103,12 +131,94 @@ func (v *SystemValidator) validate(_ context.Context, sys *uyuniv1.System) (admi
 		sys.Annotations, validation.DangerousAnnotations,
 		field.NewPath("metadata", "annotations"))...)
 
+	// reinstall-now requires spec.autoinstall to be set.
+	if sys.Annotations[uyuniv1.AnnReinstallNow] == "true" && sys.Spec.Autoinstall == nil {
+		errs = append(errs, field.Required(
+			field.NewPath("spec", "autoinstall"),
+			"spec.autoinstall must be set when using the reinstall-now annotation"))
+	}
+
+	// spec.autoinstall.profile and spec.autoinstall.profileRef are mutually exclusive.
+	if sys.Spec.Autoinstall != nil &&
+		sys.Spec.Autoinstall.Profile != "" && sys.Spec.Autoinstall.ProfileRef != nil {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec", "autoinstall", "profileRef"),
+			sys.Spec.Autoinstall.ProfileRef,
+			"spec.autoinstall.profile and spec.autoinstall.profileRef are mutually exclusive; set exactly one"))
+	}
+
+	var warnings admission.Warnings
+
+	// Cross-resource: warn (GitOps tolerance) if referenced groups are not found.
+	for i, ref := range sys.Spec.GroupRefs {
+		path := field.NewPath("spec", "groupRefs").Index(i)
+		w := v.warnIfGroupMissing(ctx, sys.Namespace, ref.Name, path)
+		if w != "" {
+			warnings = append(warnings, w)
+		}
+	}
+
+	// Cross-resource: warn if directly referenced config channels are not found.
+	for i, ref := range sys.Spec.ConfigChannelRefs {
+		path := field.NewPath("spec", "configChannelRefs").Index(i)
+		w := v.warnIfConfigChannelMissing(ctx, sys.Namespace, ref.Name, path)
+		if w != "" {
+			warnings = append(warnings, w)
+		}
+	}
+
+	// Cross-resource: warn if spec.autoinstall.profileRef does not resolve.
+	if sys.Spec.Autoinstall != nil && sys.Spec.Autoinstall.ProfileRef != nil {
+		path := field.NewPath("spec", "autoinstall", "profileRef")
+		w := v.warnIfAutoinstallProfileMissing(ctx, sys.Namespace, sys.Spec.Autoinstall.ProfileRef.Name, path)
+		if w != "" {
+			warnings = append(warnings, w)
+		}
+	}
+
 	if len(errs) > 0 {
-		return nil, apierrors.NewInvalid(
+		return warnings, apierrors.NewInvalid(
 			schema.GroupKind{Group: uyuniv1.Group, Kind: "System"},
 			sys.Name, errs)
 	}
-	return nil, nil
+	return warnings, nil
+}
+
+func (v *SystemValidator) warnIfGroupMissing(ctx context.Context, ns, name string, path *field.Path) string {
+	var sg uyuniv1.SystemGroup
+	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &sg); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return fmt.Sprintf("%s: SystemGroup %q not found in namespace %q (may be applied alongside in the same commit)",
+				path.String(), name, ns)
+		}
+		// API server / network issue: don't block admission.
+		return ""
+	}
+	return ""
+}
+
+func (v *SystemValidator) warnIfConfigChannelMissing(ctx context.Context, ns, name string, path *field.Path) string {
+	var cc uyuniv1.ConfigChannel
+	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &cc); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return fmt.Sprintf("%s: ConfigChannel %q not found in namespace %q (may be applied alongside in the same commit)",
+				path.String(), name, ns)
+		}
+		return ""
+	}
+	return ""
+}
+
+func (v *SystemValidator) warnIfAutoinstallProfileMissing(ctx context.Context, ns, name string, path *field.Path) string {
+	var ap uyuniv1.AutoinstallProfile
+	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &ap); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return fmt.Sprintf("%s: AutoinstallProfile %q not found in namespace %q (may be applied alongside in the same commit)",
+				path.String(), name, ns)
+		}
+		return ""
+	}
+	return ""
 }
 
 // +kubebuilder:webhook:path=/validate-uyuni-uyuni-project-org-v1alpha1-systemgroup,mutating=false,failurePolicy=fail,sideEffects=None,groups=uyuni.uyuni-project.org,resources=systemgroups,verbs=create;update,versions=v1alpha1,name=vsystemgroup.uyuni.uyuni-project.org,admissionReviewVersions=v1

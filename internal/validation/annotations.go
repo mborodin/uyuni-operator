@@ -36,4 +36,5 @@ func StrictBooleanAnnotations(
 // safety-critical effects (delete behavior, irreversible operations).
 var DangerousAnnotations = []string{
 	uyuniv1.AnnForceDelete,
+	uyuniv1.AnnReinstallNow,
 }

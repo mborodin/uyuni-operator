@@ -735,3 +735,8 @@ The operator should feel like a "system of record" for Uyuni state to
 the customer. They write specs in git; we reconcile; status reflects
 reality; drift gets surfaced honestly. Anything that compromises that
 trust contract is a bug.
+
+---
+# Uyuni API documentation
+
+When implementing API calls to Uyuni please refer to documentation general location at https://github.com/uyuni-project/uyuni-docs-api/tree/master/modules/api/pages

@@ -1,0 +1,144 @@
+# Image build sample — full chain: ImageStore → ImageProfile → ImageBuild
+#
+# Dependency order (bottom-up):
+#   Secret → ImageStore → ImageProfile → ImageBuild
+#
+# The operator is tolerant of out-of-order apply (GitOps-safe).
+
+---
+# 1. Secret providing registry credentials for ImageStore and source repo auth for ImageProfile.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: build-credentials
+  namespace: linux-platform
+type: Opaque
+stringData:
+  # Registry credentials (used by ImageStore).
+  registry-username: "robot$myproject"
+  registry-password: "changeme-in-production"
+  # Source repository credentials (used by ImageProfile auth).
+  username: "git-user"
+  password: "ghp_changeme-in-production"
+
+---
+# 2. ImageStore — points at a Harbor registry that will receive built images.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ImageStore
+metadata:
+  name: harbor-registry
+  namespace: linux-platform
+spec:
+  label: harbor-registry
+  type: registry
+  uri: harbor.example.com/uyuni-images
+
+  # Optional: registry credentials stored in a Secret.
+  credentialsSecretRef:
+    name: build-credentials
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# 3a. ImageProfile — Dockerfile-based, using the structured git source + auth.
+#     The git struct is reconstructed as:
+#       https://github.com/example-org/container-images.git#main:docker/sles15
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ImageProfile
+metadata:
+  name: sles15-web-server
+  namespace: linux-platform
+spec:
+  # Cobbler profile label. Immutable after creation.
+  label: sles15-web-server
+
+  # Image type. Immutable after creation.
+  type: dockerfile
+
+  # ImageStore CR whose realized label is passed to imageprofile/create.
+  storeRef:
+    name: harbor-registry
+
+  # Activation key applied to the built system image.
+  activationKeyRef:
+    name: sles15-base-key
+
+  # Structured git source — reconstructed to:
+  #   https://github.com/example-org/container-images.git#main:docker/sles15
+  git:
+    repository: https://github.com/example-org/container-images.git
+    reference: main
+    path: docker/sles15
+
+  # Inject Basic Auth into the git repository URL at reconcile time.
+  # The Secret is read and credentials injected; never stored in status.
+  auth:
+    name: build-credentials
+    usernameKey: username
+    passwordKey: password
+
+  customInfo:
+    env: production
+    team: platform
+
+  # "manual":   only AnnBuildNow triggers a build
+  # "onChange": rebuild when spec generation changes
+  buildPolicy: onChange
+
+  # System CR used as the Uyuni image build host.
+  buildHostRef:
+    name: build-host-01
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# 3b. ImageProfile — KIWI-based, using a direct URL (no auth).
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ImageProfile
+metadata:
+  name: sles15-kiwi-base
+  namespace: linux-platform
+spec:
+  label: sles15-kiwi-base
+  type: kiwi
+
+  storeRef:
+    name: harbor-registry
+
+  activationKeyRef:
+    name: sles15-base-key
+
+  # Direct URL (not a git struct).
+  url: https://github.com/example-org/kiwi-descriptions.git#main:sles15
+
+  buildPolicy: manual
+  buildHostRef:
+    name: build-host-01
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# 4. ImageBuild — schedules a one-off build of sles15-web-server.
+#    Creating this CR triggers a build. Set the build-now annotation to re-trigger.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ImageBuild
+metadata:
+  name: sles15-web-server-v1
+  namespace: linux-platform
+  # Uncomment to re-trigger a build after it has completed or failed:
+  # annotations:
+  #   uyuni.uyuni-project.org/build-now: "true"
+spec:
+  # Reference to the ImageProfile CR.
+  profileRef:
+    name: sles15-web-server
+
+  # Version tag for the image. Defaults to "YYYYMMDD-HHMM" if omitted.
+  version: "1.0.0"
+
+  # Optionally override the build host from the profile.
+  # buildHostRef:
+  #   name: build-host-02
