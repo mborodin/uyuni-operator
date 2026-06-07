@@ -17,6 +17,21 @@ type SecretKeyRef struct {
 	Key string `json:"key"`
 }
 
+// BasicAuthRef references a Secret that contains username and password keys for HTTP Basic Auth.
+// The controller reads the credentials at reconcile time and injects them into the source URL;
+// they are never stored in status.
+type BasicAuthRef struct {
+	// Name is the Secret in the same namespace.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// UsernameKey is the key for the username value. Defaults to "username".
+	// +kubebuilder:default="username"
+	UsernameKey string `json:"usernameKey,omitempty"`
+	// PasswordKey is the key for the password value. Defaults to "password".
+	// +kubebuilder:default="password"
+	PasswordKey string `json:"passwordKey,omitempty"`
+}
+
 // ChannelFromProject references a channel produced by a ContentProject
 // environment. Resolution is structural: the realized Uyuni channel label
 // is {project.spec.label}-{environment}-{sourceChannelLabel}.

@@ -43,4 +43,5 @@ const (
 	orgFinalizer     = uyuniv1.Group + "/organization"
 	adFinalizer      = uyuniv1.Group + "/autoinstalldistribution"
 	apFinalizer      = uyuniv1.Group + "/autoinstallprofile"
+	ibFinalizer      = uyuniv1.Group + "/imagebuild"
 )
