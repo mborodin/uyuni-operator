@@ -54,6 +54,14 @@ type SystemSpec struct {
 	// least one of: network[].macAddress, hostname.
 	PreCreate bool `json:"preCreate,omitempty"`
 
+	// +kubebuilder:default=true
+	// If true, schedule a Salt highstate run (system.scheduleApplyHighstate)
+	// the first time the system completes registration and is fully
+	// reconciled — applying all assigned states (channels, config channels,
+	// formulas, etc.) immediately rather than waiting for the next scheduled
+	// highstate.
+	ApplyHighState bool `json:"applyHighState,omitempty"`
+
 	// Hostname used in the pre-created profile. Defaults to minionId via
 	// the SystemDefaulter mutating webhook.
 	Hostname string `json:"hostname,omitempty"`

@@ -304,6 +304,13 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
 	}
 
+	// Record the resolved/desired channels in status up front — independent of
+	// whether we can issue the Uyuni-side calls yet (e.g. while still waiting
+	// for the minion to leave its bootstrap base entitlement, see below) — so
+	// status always reflects what the System CR is converging towards.
+	sys.Status.BaseChannelLabel = res.BaseChannelLabel
+	sys.Status.ChildChannelLabels = res.ChildChannelLabels
+
 	if current.BaseChannelLabel == "" {
 		// No current subscription (e.g. freshly registered "Bootstrap" system) —
 		// scheduleChangeChannels has nothing to schedule a change against and
@@ -338,8 +345,6 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
 	}
-	sys.Status.BaseChannelLabel = res.BaseChannelLabel
-	sys.Status.ChildChannelLabels = res.ChildChannelLabels
 
 	// 3. Config channels (direct first, then group-sourced).
 	desiredCCs, ccWait, err := r.resolveOrderedConfigChannels(ctx, sys)
@@ -441,6 +446,16 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	if !t.IsZero() {
 		mt := metav1.NewTime(t)
 		sys.Status.LastCheckinTime = &mt
+	}
+
+	// Apply high state once, the moment the system completes registration and
+	// reaches full reconciliation for the first time — applies all assigned
+	// states (channels, config channels, formulas, etc.) immediately instead
+	// of waiting for the next scheduled highstate run.
+	if sys.Spec.ApplyHighState && sys.Status.Phase != "Reconciled" {
+		if _, err := uc.ScheduleHighstate(ctx, []int{sys.Status.UyuniServerID}, r.Now(), false); err != nil {
+			return r.fail(ctx, sys, "UpdateFailed", err)
+		}
 	}
 	sys.Status.Phase = "Reconciled"
 	sys.Status.ObservedGeneration = sys.Generation

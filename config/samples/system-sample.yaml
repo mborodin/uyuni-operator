@@ -17,7 +17,7 @@
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: System
 metadata:
-  name: web-01
+  name: branchserver-01
   namespace: linux-platform
 spec:
   # Immutable after creation — the Salt minion ID the system will register with.
@@ -94,16 +94,33 @@ spec:
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: System
 metadata:
-  name: db-01
+  name: storehub-01
   namespace: linux-platform
 spec:
   minionId: db-01.example.com
   type: storehub
+
+  # Pre-create a system profile in Uyuni before the machine boots — same
+  # pattern as branchserver-01, so the operator can assign a base channel right away
+  # instead of waiting indefinitely for an external minion registration.
+  preCreate: true
+  hostname: db-01.example.com
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:ee:02"
+      ipAddress: "10.0.0.102"
+
   description: "Primary database server"
-  contactMethod: ssh-push
+  # NOTE: contact method cannot be changed after a Salt system is bootstrapped
+  # ("Changing the contact method is not allowed for Salt systems") — must
+  # match what the system gets created with (default for pre-created profiles).
+  contactMethod: default
 
   baseChannelRef:
     name: opensuse-leap-15-6-x86-64    # SoftwareChannel CR
+
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
 
   # No ConfigChannel CRs exist in this namespace yet (only ConfigurationChannel
   # CRs, a different kind), so configChannelRefs is left unset here.
@@ -118,13 +135,59 @@ spec:
     tier: data
     owner: dba-team
 
+  deletionPolicy: Orphan
+  adoptionTimeout: 24h0m0s
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Pre-created PoS (point-of-sale) system — same pattern as branchserver-01/storehub-01.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: System
+metadata:
+  name: pos-01
+  namespace: linux-platform
+spec:
+  minionId: pos-01.example.com
+  type: pos
+
+  preCreate: true
+  hostname: pos-01.example.com
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:ee:03"
+      ipAddress: "10.0.0.103"
+
+  description: "Point of sale terminal"
+  contactMethod: default
+
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+
+  groupRefs:
+    - name: test-managed-linux
+
+  addOns:
+    - monitoring_entitled
+
+  customInfo:
+    tier: retail
+    owner: platform-team
+
+  deletionPolicy: Orphan
+  adoptionTimeout: 24h0m0s
+
   organizationRef:
     name: pantheon-of-goods
 
 ---
 # Triggering a reinstall on a live system:
 #
-# kubectl annotate system web-01 -n linux-platform \
+# kubectl annotate system branchserver-01 -n linux-platform \
 #   uyuni.uyuni-project.org/reinstall-now=true
 #
 # The reconciler will:

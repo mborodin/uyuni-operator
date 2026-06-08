@@ -70,6 +70,15 @@ spec:
               adoptionTimeout:
                 description: 'Defaulted by webhook: 24h if PreCreate, 30m otherwise.'
                 type: string
+              applyHighState:
+                default: true
+                description: |-
+                  If true, schedule a Salt highstate run (system.scheduleApplyHighstate)
+                  the first time the system completes registration and is fully
+                  reconciled — applying all assigned states (channels, config channels,
+                  formulas, etc.) immediately rather than waiting for the next scheduled
+                  highstate.
+                type: boolean
               baseChannelFrom:
                 description: |-
                   ChannelFromProject references a channel produced by a ContentProject
