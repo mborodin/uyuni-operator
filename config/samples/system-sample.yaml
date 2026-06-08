@@ -44,15 +44,15 @@ spec:
   # Software channels — use a ContentProject environment for automatic promotion.
   baseChannelFrom:
     contentProjectRef:
-      name: sles15sp5-baseline
+      name: test-leap-platform
     environment: prod
-    sourceChannelLabel: sles-15-sp5-pool-x86_64
+    sourceChannelLabel: opensuse_leap15_6-x86_64
 
   childChannelsFrom:
     - contentProjectRef:
-        name: sles15sp5-baseline
+        name: test-leap-platform
       environment: prod
-      sourceChannelLabel: sles-15-sp5-updates-x86_64
+      sourceChannelLabel: opensuse_leap15_6-updates-x86_64
 
   # Autoinstall: Cobbler/Kickstart profile to provision this system.
   # The reconciler calls system.provisionSystem after the profile is pre-created.
@@ -62,15 +62,14 @@ spec:
 
   # Config channels assigned directly to this system (priority order: index 0 = highest).
   # These outrank any channels inherited from groupRefs.
-  configChannelRefs:
-    - name: web-server-hardening    # ConfigChannel CR in the same namespace
-    - name: ntp-baseline
+  # No ConfigChannel CRs exist in this namespace yet (only ConfigurationChannel
+  # CRs, a different kind), so configChannelRefs is left unset here.
 
   # Groups this system should belong to (system-side declaration).
   # Preferred over SystemGroup.spec.memberRefs.
   groupRefs:
-    - name: web-servers
-    - name: prod-monitoring
+    - name: test-web-servers
+    - name: test-managed-linux
 
   # Add-ons (Uyuni entitlements granted to this system).
   addOns:
@@ -108,13 +107,13 @@ spec:
   contactMethod: ssh-push
 
   baseChannelRef:
-    name: sles-15-sp5-x86-64    # SoftwareChannel CR
+    name: opensuse-leap-15-6-x86-64    # SoftwareChannel CR
 
-  configChannelRefs:
-    - name: db-hardening
+  # No ConfigChannel CRs exist in this namespace yet (only ConfigurationChannel
+  # CRs, a different kind), so configChannelRefs is left unset here.
 
   groupRefs:
-    - name: database-servers
+    - name: test-database-servers
 
   addOns:
     - monitoring_entitled
