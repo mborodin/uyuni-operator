@@ -26,7 +26,7 @@ type SystemGroupReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=configchannels,verbs=get;list;watch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=configurationchannels,verbs=get;list;watch
 
 func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var sg uyuniv1.SystemGroup
@@ -191,17 +191,17 @@ func (r *SystemGroupReconciler) resolveMembers(ctx context.Context, uc uyuni.API
 
 func (r *SystemGroupReconciler) resolveConfigChannels(ctx context.Context, sg *uyuniv1.SystemGroup) (labels []string, wait string, err error) {
 	for _, ref := range sg.Spec.ConfigChannelRefs {
-		var cc uyuniv1.ConfigChannel
+		var cc uyuniv1.ConfigurationChannel
 		if err := r.Get(ctx, types.NamespacedName{Namespace: sg.Namespace, Name: ref.Name}, &cc); err != nil {
 			if client.IgnoreNotFound(err) == nil {
-				return nil, fmt.Sprintf("ConfigChannel %q not found", ref.Name), nil
+				return nil, fmt.Sprintf("ConfigurationChannel %q not found", ref.Name), nil
 			}
 			return nil, "", err
 		}
 		if cc.Status.UyuniID == 0 {
-			return nil, fmt.Sprintf("ConfigChannel %q not yet realized", ref.Name), nil
+			return nil, fmt.Sprintf("ConfigurationChannel %q not yet realized", ref.Name), nil
 		}
-		labels = append(labels, cc.Spec.Label)
+		labels = append(labels, cc.Spec.ID)
 	}
 	return labels, "", nil
 }
@@ -217,7 +217,7 @@ func (r *SystemGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&uyuniv1.SystemGroup{}).
 		Watches(&uyuniv1.System{},
 			handler.EnqueueRequestsFromMapFunc(r.groupsForSystem)).
-		Watches(&uyuniv1.ConfigChannel{},
+		Watches(&uyuniv1.ConfigurationChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.groupsForConfigChannel)).
 		Complete(r)
 }

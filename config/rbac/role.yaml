@@ -71,7 +71,6 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - autoinstallprofiles
-  - configchannels
   verbs:
   - get
   - list

@@ -24,7 +24,7 @@ type ActivationKeyReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=activationkeys,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=activationkeys/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=activationkeys/finalizers,verbs=update
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=softwarechannels;systemgroups;configchannels,verbs=get;list;watch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=softwarechannels;systemgroups;configurationchannels,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=contentprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=contentprojects/finalizers,verbs=update
 
@@ -236,17 +236,17 @@ func (r *ActivationKeyReconciler) resolveSystemGroups(ctx context.Context, ak *u
 
 func (r *ActivationKeyReconciler) resolveConfigChannels(ctx context.Context, ak *uyuniv1.ActivationKey) (labels []string, wait string, err error) {
 	for _, ref := range ak.Spec.ConfigChannelRefs {
-		var cc uyuniv1.ConfigChannel
+		var cc uyuniv1.ConfigurationChannel
 		if err := r.Get(ctx, types.NamespacedName{Namespace: ak.Namespace, Name: ref.Name}, &cc); err != nil {
 			if client.IgnoreNotFound(err) == nil {
-				return nil, fmt.Sprintf("ConfigChannel %q not found", ref.Name), nil
+				return nil, fmt.Sprintf("ConfigurationChannel %q not found", ref.Name), nil
 			}
 			return nil, "", err
 		}
 		if cc.Status.UyuniID == 0 {
-			return nil, fmt.Sprintf("ConfigChannel %q not yet realized", ref.Name), nil
+			return nil, fmt.Sprintf("ConfigurationChannel %q not yet realized", ref.Name), nil
 		}
-		labels = append(labels, cc.Spec.Label)
+		labels = append(labels, cc.Spec.ID)
 	}
 	return labels, "", nil
 }

@@ -56,7 +56,7 @@ rules:
 - apiGroups:
   - uyuni.uyuni-project.org
   resources:
-  - configchannels
+  - configurationchannels
   - softwarechannels
   - systemgroups
   - systems

@@ -26,7 +26,7 @@ type SystemReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/finalizers,verbs=update
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups;configchannels;softwarechannels;contentprojects,verbs=get;list;watch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups;configurationchannels;softwarechannels;contentprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=organizations,verbs=get;list;watch
 
 func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -445,19 +445,19 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 	seen := map[string]bool{}
 
 	for _, ref := range sys.Spec.ConfigChannelRefs {
-		var cc uyuniv1.ConfigChannel
+		var cc uyuniv1.ConfigurationChannel
 		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: ref.Name}, &cc); err != nil {
 			if client.IgnoreNotFound(err) == nil {
-				return nil, fmt.Sprintf("ConfigChannel %q not found", ref.Name), nil
+				return nil, fmt.Sprintf("ConfigurationChannel %q not found", ref.Name), nil
 			}
 			return nil, "", err
 		}
 		if cc.Status.UyuniID == 0 {
-			return nil, fmt.Sprintf("ConfigChannel %q not yet realized", ref.Name), nil
+			return nil, fmt.Sprintf("ConfigurationChannel %q not yet realized", ref.Name), nil
 		}
-		if !seen[cc.Spec.Label] {
-			labels = append(labels, cc.Spec.Label)
-			seen[cc.Spec.Label] = true
+		if !seen[cc.Spec.ID] {
+			labels = append(labels, cc.Spec.ID)
+			seen[cc.Spec.ID] = true
 		}
 	}
 
@@ -470,7 +470,7 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 			return nil, "", err
 		}
 		for _, ccRef := range sg.Spec.ConfigChannelRefs {
-			var cc uyuniv1.ConfigChannel
+			var cc uyuniv1.ConfigurationChannel
 			if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: ccRef.Name}, &cc); err != nil {
 				if client.IgnoreNotFound(err) == nil {
 					continue
@@ -480,9 +480,9 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 			if cc.Status.UyuniID == 0 {
 				continue
 			}
-			if !seen[cc.Spec.Label] {
-				labels = append(labels, cc.Spec.Label)
-				seen[cc.Spec.Label] = true
+			if !seen[cc.Spec.ID] {
+				labels = append(labels, cc.Spec.ID)
+				seen[cc.Spec.ID] = true
 			}
 		}
 	}
@@ -546,7 +546,7 @@ func (r *SystemReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&uyuniv1.System{}).
 		Watches(&uyuniv1.SystemGroup{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForGroup)).
-		Watches(&uyuniv1.ConfigChannel{},
+		Watches(&uyuniv1.ConfigurationChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForConfigChannel)).
 		Watches(&uyuniv1.SoftwareChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForSoftwareChannel)).

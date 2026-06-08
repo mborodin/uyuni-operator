@@ -2,53 +2,6 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-type ConfigChannelSpec struct {
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9._-]+$`
-	// Immutable after creation.
-	Label string `json:"label"`
-
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	Description string `json:"description,omitempty"`
-
-	// +kubebuilder:validation:Enum=normal;state;dictionary
-	// +kubebuilder:default=normal
-	// Immutable after creation.
-	Type string `json:"type"`
-
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
-}
-
-type ConfigChannelStatus struct {
-	UyuniID            int                `json:"uyuniId,omitempty"`
-	FileCount          int                `json:"fileCount,omitempty"`
-	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
-	Conditions         []metav1.Condition `json:"conditions,omitempty"`
-}
-
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Label",type=string,JSONPath=`.spec.label`
-// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
-// +kubebuilder:printcolumn:name="Files",type=integer,JSONPath=`.status.fileCount`
-// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
-// +kubebuilder:printcolumn:name="Drift",type=string,JSONPath=`.status.conditions[?(@.type=='UyuniDrift')].status`
-type ConfigChannel struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ConfigChannelSpec   `json:"spec,omitempty"`
-	Status            ConfigChannelStatus `json:"status,omitempty"`
-}
-
-// +kubebuilder:object:root=true
-type ConfigChannelList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ConfigChannel `json:"items"`
-}
-
 type ConfigFileSpec struct {
 	// +kubebuilder:validation:Required
 	ChannelRef LocalObjectRef `json:"channelRef"`
@@ -107,7 +60,6 @@ type ConfigFileList struct {
 
 func init() {
 	SchemeBuilder.Register(
-		&ConfigChannel{}, &ConfigChannelList{},
 		&ConfigFile{}, &ConfigFileList{},
 	)
 }
