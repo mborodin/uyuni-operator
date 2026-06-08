@@ -259,15 +259,25 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	}
 
 	// 1. System details (description, contact method).
+	// Each field is included in the update only when it actually needs to
+	// change — Uyuni rejects any setDetails call that carries contact_method
+	// for Salt-managed systems, even when the value matches the current one.
 	wantContact := sys.Spec.ContactMethod
 	if wantContact == "" {
 		wantContact = "default"
 	}
-	if current.Description != sys.Spec.Description || current.ContactMethod != wantContact {
-		if err := uc.SetSystemDetails(ctx, sys.Status.UyuniServerID, uyuni.SystemDetailsUpdate{
-			Description:   sys.Spec.Description,
-			ContactMethod: wantContact,
-		}); err != nil {
+	var detailsUpdate uyuni.SystemDetailsUpdate
+	needsUpdate := false
+	if current.Description != sys.Spec.Description {
+		detailsUpdate.Description = sys.Spec.Description
+		needsUpdate = true
+	}
+	if current.ContactMethod != wantContact {
+		detailsUpdate.ContactMethod = wantContact
+		needsUpdate = true
+	}
+	if needsUpdate {
+		if err := uc.SetSystemDetails(ctx, sys.Status.UyuniServerID, detailsUpdate); err != nil {
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
 	}
