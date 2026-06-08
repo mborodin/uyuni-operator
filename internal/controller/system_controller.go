@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -376,6 +377,15 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	addOns, rmOns := diffStringSets(currentAddOns, sys.Spec.AddOns)
 	if len(addOns) > 0 {
 		if _, err := uc.AddEntitlements(ctx, sys.Status.UyuniServerID, addOns); err != nil {
+			if strings.Contains(err.Error(), "Invalid entitlement") {
+				// Uyuni rejects add-on entitlements while the system still
+				// carries the "bootstrap_entitled" base entitlement — it
+				// upgrades to a real base entitlement (e.g. management) once
+				// the minion completes its first full registration/checkin.
+				setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+					"WaitingForBaseEntitlement", "system has not completed registration yet (still on bootstrap base entitlement); cannot grant add-on entitlements")
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
+			}
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
 	}
