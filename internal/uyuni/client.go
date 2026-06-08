@@ -783,18 +783,7 @@ func (c *Client) SetChildChannels(ctx context.Context, serverID int, labels []st
 }
 
 func (c *Client) ListEntitlements(ctx context.Context, serverID int) ([]string, error) {
-	type ent struct {
-		Label string `json:"label"`
-	}
-	list, err := apiGet[[]ent](c, fmt.Sprintf("system/getEntitlements?sid=%d", serverID))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, len(list))
-	for i, e := range list {
-		out[i] = e.Label
-	}
-	return out, nil
+	return apiGet[[]string](c, fmt.Sprintf("system/getEntitlements?sid=%d", serverID))
 }
 
 func (c *Client) AddEntitlements(ctx context.Context, serverID int, addons []string) (int, error) {
