@@ -65,8 +65,8 @@ type ContentProjectSpec struct {
 
 	SourceRefs []LocalObjectRef `json:"sourceRefs,omitempty"`
 
-	// +kubebuilder:validation:MinItems=1
-	Environments []ProjectEnvironment `json:"environments"`
+	// Environments are now managed via separate ClmEnvironment CRDs
+	Environments []ProjectEnvironment `json:"environments,omitempty"`
 
 	Filters []ProjectFilter `json:"filters,omitempty"`
 

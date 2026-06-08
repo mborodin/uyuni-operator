@@ -64,7 +64,9 @@ spec:
 | `SystemGroup` | A logical group of systems |
 | `ConfigChannel` + `ConfigFile` | Salt state/normal/dictionary channels and their contents |
 | `ImageStore` + `ImageProfile` | Image storage and kiwi/dockerfile build profiles |
-| `ContentProject` + `ContentProjectPromotion` | CLM project, environments, filters; promotions as Job-shaped CRs |
+| `ContentProject` | CLM project, filters, build settings (environments managed separately) |
+| `ClmEnvironment` | CLM project environments (dev/test/prod), promotion chains |
+| `ContentProjectPromotion` | Promotions between environments as Job-shaped CRs |
 | `Task` | Scheduled actions: highstate apply, remote command, reboot, patch install, config deploy |
 
 See `config/samples/end-to-end.yaml` for a complete worked example.
@@ -496,6 +498,509 @@ kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f
 | `spec.cluster is immutable` | Tried to change provider/cluster | Delete and recreate with new cluster |
 | Resource stuck in deletion | Finalizer blocking | Use force-delete annotation |
 | Members not syncing | System resources not ready | Ensure System CRs exist and have UyuniServerID |
+
+## Managing Content Projects
+
+The `ContentProject` resource allows you to manage Uyuni Content Lifecycle Management (CLM) projects declaratively. Environments are now managed separately via `ClmEnvironment` CRDs.
+
+### Quick Start
+
+```bash
+# Create a new content project (without environments field)
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProject
+metadata:
+  name: leap-platform
+  namespace: linux-platform
+spec:
+  label: leap-platform                    # Immutable project identifier
+  name: openSUSE Leap Platform            # Display name
+  description: Leap 15.6 package builds
+  sourceRefs:
+    - name: opensuse-leap-15-6-x86-64    # Reference to SoftwareChannel
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+
+# Check status
+kubectl get contentproject -n linux-platform -o wide
+kubectl describe contentproject leap-platform -n linux-platform
+```
+
+### Create a Project with Filters
+
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProject
+metadata:
+  name: filtered-project
+  namespace: linux-platform
+spec:
+  label: filtered-project
+  name: Filtered Content
+  description: Project with package filters
+  sourceRefs:
+    - name: opensuse-leap-15-6-x86-64
+  filters:
+    - name: no-rc-kernels
+      type: package
+      rule: deny                          # Exclude matching packages
+      criteria:
+        field: name
+        matcher: matches
+        value: "kernel.*-rc[0-9]+"
+    - name: critical-updates-only
+      type: errata
+      rule: allow                         # Include only critical updates
+      criteria:
+        field: advisory_type
+        matcher: equals
+        value: "Security Advisory"
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+```
+
+### Enable Auto-Build
+
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProject
+metadata:
+  name: auto-build-project
+  namespace: linux-platform
+spec:
+  label: auto-build-project
+  name: Auto-Build Project
+  description: Automatically builds when sources change
+  sourceRefs:
+    - name: opensuse-leap-15-6-x86-64
+  build:
+    autoBuildSources: true               # Build when source channels change
+    schedule: "0 4 * * 1"                # Weekly build at 4 AM Monday
+    message: "automated build by uyuni-operator"
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+```
+
+### Update a Content Project
+
+You can update `name`, `description`, `filters`, and `build` settings:
+
+```bash
+# Update project name
+kubectl patch contentproject leap-platform -n linux-platform \
+  --type merge -p '{"spec":{"name":"openSUSE Leap 15.6 Platform"}}'
+
+# Update description
+kubectl patch contentproject leap-platform -n linux-platform \
+  --type merge -p '{"spec":{"description":"Updated: Production builds for Leap"}}'
+
+# Enable auto-build schedule
+kubectl patch contentproject leap-platform -n linux-platform \
+  --type merge -p '{"spec":{"build":{"schedule":"0 4 * * 1"}}}'
+```
+
+**Immutable Fields (Cannot be changed):**
+- `spec.label` — Project identifier in Uyuni
+- `spec.sourceRefs` — Source channels (recreate project to change)
+
+### Managing Environments Separately
+
+**Recommended approach:** Environments are now managed via separate `ClmEnvironment` CRDs. This gives you:
+- **Single source of truth** — environments defined only in ClmEnvironment CRDs, not in ContentProject.spec
+- **Independent lifecycle** — create/update/delete environments without affecting the project
+- **Full DELETE automation** — deleting a ClmEnvironment automatically removes it from Uyuni UI
+- **Cleaner architecture** — projects and promotion chains are separate concerns
+
+**Important:** Do NOT use the `spec.environments` field in ContentProject anymore. It is now optional and kept only for backward compatibility. All environments must be managed via separate ClmEnvironment resources.
+
+```bash
+# After creating ContentProject, add environments via ClmEnvironment CRDs
+kubectl apply -f - <<'EOF'
+---
+# Root environment (dev)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: dev-env
+  namespace: linux-platform
+spec:
+  id: dev
+  name: Development
+  description: Development environment
+  projectRef:
+    name: leap-platform
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Test environment (promotes from dev)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: test-env
+  namespace: linux-platform
+spec:
+  id: test
+  name: Testing
+  description: Testing environment
+  projectRef:
+    name: leap-platform
+  predecessor: dev                       # Promotes from 'dev'
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Production environment (promotes from test)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: prod-env
+  namespace: linux-platform
+spec:
+  id: prod
+  name: Production
+  description: Production environment
+  projectRef:
+    name: leap-platform
+  predecessor: test                      # Promotes from 'test'
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+```
+
+### Delete a Content Project
+
+```bash
+# Normal delete (removes from both Kubernetes and Uyuni)
+kubectl delete contentproject leap-platform -n linux-platform
+```
+
+**What happens:**
+1. Operator sees deletion timestamp on ContentProject
+2. **Cascades to all ClmEnvironment resources** in that project
+3. Removes all environments from Uyuni automatically
+4. Removes project from Uyuni
+5. Removes finalizers and deletes all resources from Kubernetes
+
+**Note:** Deleting the ContentProject will also delete all associated `ClmEnvironment` resources. If you only want to remove specific environments, delete individual `ClmEnvironment` CRs instead (see next section).
+
+### Monitor Status
+
+```bash
+# Watch content projects
+kubectl get contentproject -n linux-platform -w
+
+# Check detailed status
+kubectl describe contentproject leap-platform -n linux-platform
+
+# View operator logs
+kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f
+
+# Check projects in Uyuni UI
+# Navigate to: https://your-uyuni/rhn/manager/do/contentmanagement/projects
+```
+
+### Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `Ready: False` | Source channel not found | Ensure SoftwareChannel exists, check `kubectl describe` |
+| `spec.label is immutable` | Tried to change project label | Delete and recreate with new label |
+| Build failed | Invalid filter criteria | Check YAML syntax, verify filter field/matcher values |
+| Environments not appearing | Not using ClmEnvironment CRDs | Create separate ClmEnvironment resources for each environment |
+| Project stuck in deletion | Environments have finalizers blocking | Delete environments first with `kubectl delete clmenvironment` |
+| Manual UI cleanup needed after delete | Using force-delete annotation | Environments remain in Uyuni UI as orphans; manually clean up via UI if needed |
+
+## Managing CLM Environments
+
+The `ClmEnvironment` resource allows you to manage Uyuni Content Lifecycle Management (CLM) environments declaratively with multi-cluster support.
+
+### Quick Start
+
+**Prerequisites:** A `ContentProject` must be created first. See "Managing Content Projects" section.
+
+```bash
+# Create a new CLM environment
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: dev-env
+  namespace: linux-platform
+spec:
+  id: dev                              # Immutable environment label
+  name: Development
+  description: Development environment
+  projectRef:
+    name: leap-platform                # Reference to parent ContentProject
+  organizationRef:
+    name: pantheon-of-goods
+  # No cluster field → uses default UyuniProvider
+EOF
+
+# Check status
+kubectl get clmenvironment -n linux-platform -o wide
+kubectl describe clmenvironment dev-env -n linux-platform
+```
+
+**Note:** The `cluster` field is optional. Omit it to use the default UyuniProvider (faster for single Uyuni setups).
+
+### Create Promotion Chain
+
+Environments form a promotion chain: dev → test → prod
+
+```bash
+# Root environment (dev)
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: dev-env
+  namespace: linux-platform
+spec:
+  id: dev
+  name: Development
+  projectRef:
+    name: leap-platform
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+
+# Test environment (promotes from dev)
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: test-env
+  namespace: linux-platform
+spec:
+  id: test
+  name: Testing
+  projectRef:
+    name: leap-platform
+  predecessor: dev                     # Promotes from 'dev'
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+
+# Production environment (promotes from test)
+kubectl apply -f - <<'EOF'
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: prod-env
+  namespace: linux-platform
+spec:
+  id: prod
+  name: Production
+  projectRef:
+    name: leap-platform
+  predecessor: test                    # Promotes from 'test'
+  organizationRef:
+    name: pantheon-of-goods
+EOF
+```
+
+### Update an Environment
+
+You can update the `name` and `description` fields after creation:
+
+```bash
+# Update description
+kubectl patch clmenvironment dev-env -n linux-platform \
+  --type merge -p '{"spec":{"description":"Updated: Development v2"}}'
+
+# Update name
+kubectl patch clmenvironment dev-env -n linux-platform \
+  --type merge -p '{"spec":{"name":"Dev Environment"}}'
+```
+
+**Immutable Fields (Cannot be changed):**
+- `spec.id` — Environment label in Uyuni (uniquely identifies environment)
+- `spec.projectRef` — Parent ContentProject
+- `spec.cluster` — Provider/cluster selection
+
+If you need to change an immutable field, delete and recreate the resource.
+
+### Multi-Cluster Environments
+
+For multiple Uyuni instances, specify different clusters:
+
+```yaml
+spec:
+  id: prod
+  name: Production
+  projectRef:
+    name: leap-platform
+  cluster:
+    name: prod-uyuni  # Reference different UyuniProvider
+  predecessor: test
+```
+
+Omit the cluster field to use the default UyuniProvider:
+
+```yaml
+spec:
+  id: dev
+  name: Development
+  projectRef:
+    name: leap-platform
+  # No cluster field → uses default UyuniProvider
+```
+
+### Delete an Environment
+
+```bash
+# Normal delete (removes from both Kubernetes and Uyuni UI)
+kubectl delete clmenvironment dev-env -n linux-platform
+```
+
+**What happens:**
+1. Operator sees deletion timestamp on ClmEnvironment
+2. Sends HTTP DELETE request to Uyuni API with full environment object
+3. Uyuni removes the environment from the project
+4. Operator removes finalizer after successful Uyuni cleanup
+5. Resource deleted from Kubernetes
+
+**Result:** The environment is completely removed from both Kubernetes **and Uyuni UI**. No manual UI cleanup needed.
+
+### Force Delete (Skip Uyuni Cleanup)
+
+Use when Uyuni is unreachable but you want to remove the Kubernetes resource:
+
+```bash
+# Add force-delete annotation
+kubectl annotate clmenvironment dev-env \
+  -n linux-platform \
+  uyuni.uyuni-project.org/force-delete=true \
+  --overwrite
+
+# Delete
+kubectl delete clmenvironment dev-env -n linux-platform
+```
+
+### Monitor Status
+
+```bash
+# Watch real-time changes
+kubectl get clmenvironment -n linux-platform -w
+
+# Check detailed status
+kubectl describe clmenvironment dev-env -n linux-platform
+
+# View operator logs
+kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f
+
+# Check environments in Uyuni UI
+# Navigate to: https://your-uyuni/rhn/manager/do/contentmanagement/project_environments
+```
+
+### Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `Ready: False` | Project not found or configuration error | Ensure ContentProject exists, check `kubectl describe` |
+| `spec.id is immutable` | Tried to change environment ID | Delete and recreate with new ID |
+| `spec.projectRef is immutable` | Tried to change parent project | Delete and recreate with new project |
+| `spec.cluster is immutable` | Tried to change provider/cluster | Delete and recreate with new cluster |
+| Resource stuck in deletion | Finalizer blocking | Use force-delete annotation |
+| Predecessor not found | Referenced predecessor environment doesn't exist | Ensure predecessor environment is created first |
+| Environment not deleted from Uyuni | DELETE request failed (check logs) | Run `kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f` to see DEBUG messages |
+| Manual cleanup needed in Uyuni UI | Used force-delete annotation | Environment remains in Uyuni UI as orphan; manually remove via UI if needed |
+
+## Complete DELETE Automation
+
+The operator provides **full DELETE automation** — deleting resources from Kubernetes automatically removes them from Uyuni UI with zero manual steps.
+
+### Environment Deletion Workflow
+
+```bash
+# Delete a single environment
+kubectl delete clmenvironment dev-env -n linux-platform
+```
+
+**Automation flow:**
+1. Kubernetes marks resource for deletion (adds deletion timestamp)
+2. Operator detects finalizer and begins cleanup
+3. Operator sends HTTP DELETE to Uyuni API with full environment object
+4. Uyuni removes environment from project
+5. Operator verifies success and removes finalizer
+6. Kubernetes garbage collects the resource
+
+**Result:** Environment is removed from both Kubernetes **and Uyuni UI** automatically. No manual UI cleanup needed.
+
+### Project Deletion Workflow (With Cascade)
+
+```bash
+# Delete project and all its environments at once
+kubectl delete contentproject leap-platform -n linux-platform
+```
+
+**Automation flow:**
+1. Kubernetes marks ContentProject for deletion
+2. Operator detects finalizer on ContentProject
+3. Kubernetes garbage collector automatically deletes all child ClmEnvironment resources
+4. Each ClmEnvironment deletion triggers its own DELETE to Uyuni API
+5. After all environments are deleted, ContentProject DELETE is sent to Uyuni
+6. All finalizers are removed
+7. All resources cleaned up from Kubernetes
+
+**Result:** Project and all environments removed from Kubernetes **and Uyuni UI** in a single cascade operation. No manual steps required.
+
+### Selective Environment Deletion
+
+```bash
+# Delete only specific environments, keep project
+kubectl delete clmenvironment test-env -n linux-platform
+kubectl delete clmenvironment prod-env -n linux-platform
+# dev-env remains
+```
+
+The ContentProject is unaffected. Only the deleted ClmEnvironment resources are removed from Uyuni.
+
+### Force Delete (Emergency Only)
+
+Use when Uyuni is unreachable but you want to clean up Kubernetes:
+
+```bash
+# Mark for force delete (skips Uyuni API call)
+kubectl annotate clmenvironment dev-env -n linux-platform \
+  uyuni.uyuni-project.org/force-delete=true --overwrite
+
+# Delete from Kubernetes only
+kubectl delete clmenvironment dev-env -n linux-platform
+```
+
+**What happens:**
+- Operator skips HTTP DELETE to Uyuni
+- Resource removed from Kubernetes immediately
+- Environment remains in Uyuni UI as orphan
+- **Manual cleanup in Uyuni UI required** (remove via Web UI)
+
+Use sparingly and document any orphaned resources created this way.
+
+### Monitoring DELETE Operations
+
+Check operator logs to see DELETE automation in action:
+
+```bash
+# Watch DELETE operations in real-time
+kubectl logs -n uyuni-operator-system -l control-plane=controller-manager -f | grep -E "DELETE|RemoveEnvironment|RemoveProject"
+```
+
+**Example log output:**
+```
+DEBUG: RemoveEnvironment called for project=leap-platform, env=dev
+DEBUG: Sending DELETE request for env=dev with payload: map[...]
+DEBUG: DELETE with body response: {"success":true,"messages":null,"errors":null,...}
+DEBUG: Environment dev deleted successfully
+```
 
 ## Annotations
 

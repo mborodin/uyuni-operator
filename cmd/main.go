@@ -146,6 +146,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.ClmEnvironmentReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClmEnvironment")
+		os.Exit(1)
+	}
+
 	if err := (&webhook.OrganizationValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "OrganizationValidator")
 		os.Exit(1)
@@ -193,6 +201,11 @@ func main() {
 
 	if err := (&webhook.SystemGroupValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "SystemGroupValidator")
+		os.Exit(1)
+	}
+
+	if err := (&webhook.ClmEnvironmentValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ClmEnvironmentValidator")
 		os.Exit(1)
 	}
 
