@@ -1,0 +1,197 @@
+# Autoinstall Sample — full provisioning chain
+# Apply with: kubectl apply -f config/samples/autoinstall-sample.yaml
+#
+# Order of dependencies (bottom-up):
+#   SoftwareChannel → AutoinstallDistribution → AutoinstallProfile → System
+#
+# The operator is tolerant of out-of-order apply (GitOps-safe): each resource
+# waits for its dependencies to be realized before proceeding.
+
+---
+# 1. AutoinstallDistribution — Cobbler tree pointing at a local SLES 15 SP5 mirror
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: AutoinstallDistribution
+metadata:
+  name: sles-15-sp5-x86-64-dist
+  namespace: linux-platform
+spec:
+  # Cobbler tree label. Immutable after creation.
+  label: sles-15-sp5-x86-64-dist
+
+  # Absolute path to the distribution tree on the Uyuni server.
+  basePath: /srv/www/cobbler/distro_mirror/SLES-15-SP5-x86_64
+
+  # SoftwareChannel CR whose realized label is passed to kickstart.tree.create.
+  channelRef:
+    name: sles-15-sp5-x86-64
+
+  # OS family identifier — controls Cobbler's install type.
+  installType: suse_leap15generic
+
+  # Extra kernel arguments passed at boot time.
+  kernelOptions: "console=ttyS0 console=tty0"
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# 2a. AutoinstallProfile (inline AutoYaST file)
+#     Uses kickstart.importFile; the file is authoritative.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: AutoinstallProfile
+metadata:
+  name: sles-15-sp5-autoyast
+  namespace: linux-platform
+spec:
+  # Cobbler profile label. Immutable after creation.
+  label: sles-15-sp5-autoyast
+
+  # AutoinstallDistribution CR providing the OS tree.
+  # Immutable after creation.
+  distributionRef:
+    name: sles-15-sp5-x86-64-dist
+
+  # Root password is read from a Secret at reconcile time.
+  rootPasswordSecretRef:
+    name: autoinstall-root-pass
+    key: password
+
+  # Child channels subscribed to the system during installation.
+  childChannelRefs:
+    - name: sles-15-sp5-updates-x86-64
+    - name: sles-manager-tools-15-pool-x86-64
+
+  # Inline AutoYaST file. When set, uses kickstart.importFile.
+  # scripts and variables fields are ignored.
+  kickstartContents: |
+    <?xml version="1.0"?>
+    <!DOCTYPE profile>
+    <profile xmlns="http://www.suse.com/1.0/yast2ns" xmlns:config="http://www.suse.com/1.0/configns">
+      <bootloader>
+        <global>
+          <timeout config:type="integer">8</timeout>
+        </global>
+      </bootloader>
+      <keyboard>
+        <keymap>english-us</keymap>
+      </keyboard>
+      <language>
+        <language>en_US</language>
+      </language>
+      <timezone>
+        <timezone>UTC</timezone>
+      </timezone>
+      <software>
+        <patterns config:type="list">
+          <pattern>base</pattern>
+          <pattern>minimal_base</pattern>
+        </patterns>
+      </software>
+    </profile>
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# 2b. AutoinstallProfile (script-based, no inline file)
+#     Uses kickstart.createProfile; scripts/variables are managed individually.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: AutoinstallProfile
+metadata:
+  name: sles-15-sp5-hardened
+  namespace: linux-platform
+spec:
+  label: sles-15-sp5-hardened
+
+  distributionRef:
+    name: sles-15-sp5-x86-64-dist
+
+  rootPasswordSecretRef:
+    name: autoinstall-root-pass
+    key: password
+
+  virtualizationType: none
+
+  childChannelRefs:
+    - name: sles-15-sp5-updates-x86-64
+
+  # Cobbler template variables substituted into the kickstart file.
+  variables:
+    ntp_server: ntp.example.com
+    dns_server: "10.0.0.1"
+
+  updateType: all
+  preserveKsFile: true
+
+  # Pre/post installation scripts. Each name is the reconcile key.
+  scripts:
+    - name: pre-partition
+      type: pre
+      interpreter: /bin/bash
+      contents: |
+        #!/bin/bash
+        echo "Wiping partition table on /dev/sda"
+        dd if=/dev/zero of=/dev/sda bs=512 count=34
+
+    - name: post-harden
+      type: post
+      chroot: true
+      interpreter: /bin/bash
+      contents: |
+        #!/bin/bash
+        # Disable root SSH login
+        sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+        systemctl enable sshd
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# 3. System using profileRef (links to the AutoinstallProfile CR above)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: System
+metadata:
+  name: web-02
+  namespace: linux-platform
+spec:
+  minionId: web-02.example.com
+  preCreate: true
+  hostname: web-02.example.com
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:ee:02"
+      ipAddress: "10.0.0.102"
+
+  description: "Frontend web server — provisioned via AutoinstallProfile CR"
+  contactMethod: default
+
+  baseChannelRef:
+    name: sles-15-sp5-x86-64
+
+  # Reference the AutoinstallProfile CR instead of a bare profile string.
+  # The reconciler resolves spec.label from the referenced CR at runtime.
+  autoinstall:
+    profileRef:
+      name: sles-15-sp5-autoyast
+    # earliest: "2025-01-01T03:00:00Z"  # optional: defer the action
+
+  configChannelRefs:
+    - name: web-server-hardening
+
+  groupRefs:
+    - name: web-servers
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Secret providing the root password for the AutoinstallProfile.
+# In production, manage this via sealed-secrets, Vault, or external-secrets.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: autoinstall-root-pass
+  namespace: linux-platform
+type: Opaque
+stringData:
+  password: "changeme-in-production"

@@ -8,9 +8,11 @@ import (
 // Condition type names used across reconcilers. Kept here so they don't
 // drift across files.
 const (
-	condReady      = "Ready"
-	condUyuniDrift = "UyuniDrift"
-	condBuildHost  = "BuildHost"
+	condReady                = "Ready"
+	condUyuniDrift           = "UyuniDrift"
+	condBuildHost            = "BuildHost"
+	condPreProvisioned       = "PreProvisioned"
+	condAutoinstallScheduled = "AutoinstallScheduled"
 )
 
 // setCondition is the generic primitive. setReady and similar are thin

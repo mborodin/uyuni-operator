@@ -2,6 +2,24 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+// AutoinstallSpec configures Cobbler/Kickstart-based OS provisioning via Uyuni.
+// Exactly one of Profile or ProfileRef must be set; the webhook enforces mutual exclusion.
+type AutoinstallSpec struct {
+	// Profile is the bare Cobbler/Kickstart profile label registered in Uyuni.
+	// Immutable once the first provisioning action has been scheduled.
+	// Mutually exclusive with ProfileRef.
+	Profile string `json:"profile,omitempty"`
+
+	// ProfileRef references an AutoinstallProfile CR in the same namespace.
+	// The reconciler resolves spec.label from the CR at runtime.
+	// Mutually exclusive with Profile.
+	ProfileRef *LocalObjectRef `json:"profileRef,omitempty"`
+
+	// Earliest is the earliest time at which to schedule the autoinstall action.
+	// Defaults to immediate execution.
+	Earliest *metav1.Time `json:"earliest,omitempty"`
+}
+
 type NetworkInterface struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
@@ -51,18 +69,57 @@ type SystemSpec struct {
 	AdoptionTimeout metav1.Duration `json:"adoptionTimeout,omitempty"`
 
 	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+
+	// ConfigChannelRefs lists config channels subscribed directly to this system,
+	// in priority order (index 0 = highest). These always outrank channels
+	// inherited from spec.groupRefs.
+	ConfigChannelRefs []LocalObjectRef `json:"configChannelRefs,omitempty"`
+
+	// GroupRefs declares which SystemGroups this system should belong to.
+	// The reconciler adds/removes group membership to match this list.
+	// Preferred over SystemGroup.spec.memberRefs (system-side declaration).
+	GroupRefs []LocalObjectRef `json:"groupRefs,omitempty"`
+
+	// Autoinstall configures Cobbler/Kickstart-based OS provisioning. When set,
+	// the reconciler calls system.provisionSystem after the system profile is
+	// pre-created (preCreate must also be true for initial provisioning).
+	Autoinstall *AutoinstallSpec `json:"autoinstall,omitempty"`
+
+	// ContactMethod controls how the Uyuni server communicates with this system.
+	// +kubebuilder:validation:Enum=default;ssh-push;ssh-push-tunnel
+	// +kubebuilder:default=default
+	ContactMethod string `json:"contactMethod,omitempty"`
 }
 
 type SystemStatus struct {
 	UyuniServerID int `json:"uyuniServerId,omitempty"`
 
-	// +kubebuilder:validation:Enum=Pending;PreProvisioned;Registered;Reconciled
+	// +kubebuilder:validation:Enum=Pending;PreProvisioned;Reprovisioning;Registered;Reconciled
 	Phase string `json:"phase,omitempty"`
 
-	BaseChannelLabel   string             `json:"baseChannelLabel,omitempty"`
-	ChildChannelLabels []string           `json:"childChannelLabels,omitempty"`
-	ActiveAddOns       []string           `json:"activeAddOns,omitempty"`
-	LastCheckinTime    *metav1.Time       `json:"lastCheckinTime,omitempty"`
+	// PhaseTransitionTime records when Phase last changed. Used to enforce AdoptionTimeout.
+	PhaseTransitionTime *metav1.Time `json:"phaseTransitionTime,omitempty"`
+
+	BaseChannelLabel   string       `json:"baseChannelLabel,omitempty"`
+	ChildChannelLabels []string     `json:"childChannelLabels,omitempty"`
+	ActiveAddOns       []string     `json:"activeAddOns,omitempty"`
+	LastCheckinTime    *metav1.Time `json:"lastCheckinTime,omitempty"`
+
+	// ConfigChannelLabels is the realized ordered config channel subscription
+	// (direct refs first, then group-sourced). Used to detect and apply drift.
+	ConfigChannelLabels []string `json:"configChannelLabels,omitempty"`
+
+	// GroupNames is the set of Uyuni group names the system was last placed in.
+	// Used to compute removals on next reconcile.
+	GroupNames []string `json:"groupNames,omitempty"`
+
+	// AutoinstallActionID is the Uyuni action ID of the last scheduled provisioning.
+	AutoinstallActionID int `json:"autoinstallActionId,omitempty"`
+
+	// AutoinstallStatus reflects the Uyuni-side outcome of the last provisioning action.
+	// +kubebuilder:validation:Enum=Scheduled;Completed;Failed
+	AutoinstallStatus string `json:"autoinstallStatus,omitempty"`
+
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
@@ -97,6 +154,8 @@ type SystemGroupSpec struct {
 
 	Description string `json:"description,omitempty"`
 
+	// Deprecated: use System.spec.groupRefs instead. System-side declaration is
+	// the authoritative source; this field is retained for backward compatibility.
 	MemberRefs        []LocalObjectRef `json:"memberRefs,omitempty"`
 	StaticMinionIDs   []string         `json:"staticMinionIds,omitempty"`
 	ConfigChannelRefs []LocalObjectRef `json:"configChannelRefs,omitempty"`
