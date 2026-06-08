@@ -601,18 +601,29 @@ func (c *Client) FindSystemByMinionID(ctx context.Context, minionID string) (*Sy
 }
 
 func (c *Client) FindSystemByMAC(ctx context.Context, mac string) (*SystemDetails, error) {
-	type netInfo struct {
-		HWAddr   string `json:"hw_addr"`
-		ServerID int    `json:"server_id"`
+	// Uyuni has no bulk "list all network devices" call; system.getNetworkDevices
+	// is per-system (sessionKey, sid). Walk the visible systems and inspect each
+	// one's network devices for a matching hardware address.
+	type sysInfo struct {
+		ID int `json:"id"`
 	}
-	list, err := apiGet[[]netInfo](c, "system/listAllNetworkDevices")
+	type netInfo struct {
+		HWAddr string `json:"hardware_address"`
+	}
+	systems, err := apiGet[[]sysInfo](c, "system/listSystems")
 	if err != nil {
 		return nil, err
 	}
 	norm := strings.ToLower(strings.ReplaceAll(mac, "-", ":"))
-	for _, ni := range list {
-		if strings.ToLower(ni.HWAddr) == norm {
-			return c.GetSystemDetails(ctx, ni.ServerID)
+	for _, s := range systems {
+		devices, err := apiGet[[]netInfo](c, fmt.Sprintf("system/getNetworkDevices?sid=%d", s.ID))
+		if err != nil {
+			continue
+		}
+		for _, ni := range devices {
+			if strings.ToLower(ni.HWAddr) == norm {
+				return c.GetSystemDetails(ctx, s.ID)
+			}
 		}
 	}
 	return nil, &notFoundError{msg: fmt.Sprintf("system with MAC %q not found", mac)}
