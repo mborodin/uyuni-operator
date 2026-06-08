@@ -87,6 +87,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.SystemReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+		Now:     time.Now,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "System")
+		os.Exit(1)
+	}
+
 	if err := (&controller.ActivationKeyReconciler{
 		Client:  mgr.GetClient(),
 		Clients: clientPool,
