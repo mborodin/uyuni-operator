@@ -2,6 +2,15 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+// +kubebuilder:validation:Enum=pos;storehub;branchserver
+type SystemType string
+
+const (
+	SystemTypePOS          SystemType = "pos"
+	SystemTypeStoreHub     SystemType = "storehub"
+	SystemTypeBranchServer SystemType = "branchserver"
+)
+
 // AutoinstallSpec configures Cobbler/Kickstart-based OS provisioning via Uyuni.
 // Exactly one of Profile or ProfileRef must be set; the webhook enforces mutual exclusion.
 type AutoinstallSpec struct {
@@ -35,6 +44,10 @@ type SystemSpec struct {
 	// +kubebuilder:validation:Required
 	// Immutable after creation.
 	MinionID string `json:"minionId"`
+
+	// +kubebuilder:validation:Enum=pos;storehub;branchserver
+	// SystemType classifies the system role. Optional; omit for generic managed systems.
+	SystemType SystemType `json:"type,omitempty"`
 
 	// If true, create an empty system profile in Uyuni before the system
 	// boots, so configuration applies on first registration. Requires at
@@ -127,6 +140,7 @@ type SystemStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="MinionID",type=string,JSONPath=`.spec.minionId`
+// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="UyuniID",type=integer,JSONPath=`.status.uyuniServerId`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="BaseChannel",type=string,JSONPath=`.status.baseChannelLabel`
