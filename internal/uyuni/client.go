@@ -408,6 +408,7 @@ type wireSystem struct {
 	ContactMethod      string   `json:"contact_method"`
 	BaseChannelLabel   string   `json:"base_channel_label"`
 	ChildChannelLabels []string `json:"child_channel_labels"`
+	BaseEntitlement    string   `json:"base_entitlement"`
 	LastCheckin        string   `json:"last_checkin"`
 }
 
@@ -811,6 +812,7 @@ func wireSystemToDetails(w *wireSystem) *SystemDetails {
 		ContactMethod:      w.ContactMethod,
 		BaseChannelLabel:   w.BaseChannelLabel,
 		ChildChannelLabels: w.ChildChannelLabels,
+		BaseEntitlement:    w.BaseEntitlement,
 	}
 }
 

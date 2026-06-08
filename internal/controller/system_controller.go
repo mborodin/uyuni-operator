@@ -309,6 +309,18 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		// scheduleChangeChannels has nothing to schedule a change against and
 		// rejects these with "No method exists with the matching parameters".
 		// Subscribe directly instead.
+		//
+		// While the system is still on the temporary "bootstrap_entitled" base
+		// entitlement, the minion hasn't completed its first check-in yet, so
+		// Uyuni schedules the subscription as an action that the client can
+		// never execute — it ends up "Failed" in the system's history. Wait
+		// until the minion finishes registering before issuing the call, to
+		// avoid spamming Uyuni with one doomed action per reconcile.
+		if current.BaseEntitlement == "bootstrap_entitled" {
+			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+				"WaitingForBaseEntitlement", "system has not completed registration yet (still on bootstrap base entitlement); cannot subscribe to software channels")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
+		}
 		if res.BaseChannelLabel != "" && res.BaseChannelLabel != current.BaseChannelLabel {
 			if err := uc.SetBaseChannel(ctx, sys.Status.UyuniServerID, res.BaseChannelLabel); err != nil {
 				return r.fail(ctx, sys, "UpdateFailed", err)

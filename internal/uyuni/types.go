@@ -13,7 +13,12 @@ type SystemDetails struct {
 	ContactMethod      string
 	BaseChannelLabel   string
 	ChildChannelLabels []string
-	LastCheckin        time.Time
+	// BaseEntitlement is e.g. "bootstrap_entitled" while the system is still
+	// completing its first registration, or "management_entitled" etc. once
+	// fully registered. Channel subscriptions and add-on entitlements cannot
+	// be applied while the system is still "bootstrap_entitled".
+	BaseEntitlement string
+	LastCheckin     time.Time
 }
 
 // SystemDetailsUpdate carries the mutable fields written by system.setDetails.
