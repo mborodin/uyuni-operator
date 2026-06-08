@@ -787,23 +787,16 @@ func (c *Client) ListEntitlements(ctx context.Context, serverID int) ([]string, 
 }
 
 func (c *Client) AddEntitlements(ctx context.Context, serverID int, addons []string) (int, error) {
-	type resp struct {
-		Count int `json:"count"`
-	}
-	r, err := apiPost[resp](c, "system/addEntitlements", map[string]any{
-		"sid":         serverID,
-		"entitlement": addons,
+	return apiPost[int](c, "system/addEntitlements", map[string]any{
+		"sid":          serverID,
+		"entitlements": addons,
 	})
-	if err != nil {
-		return 0, err
-	}
-	return r.Count, nil
 }
 
 func (c *Client) RemoveEntitlements(ctx context.Context, serverID int, addons []string) error {
 	_, err := apiPost[any](c, "system/removeEntitlements", map[string]any{
-		"sid":         serverID,
-		"entitlement": addons,
+		"sid":          serverID,
+		"entitlements": addons,
 	})
 	return err
 }
