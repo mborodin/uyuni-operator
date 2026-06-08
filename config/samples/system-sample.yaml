@@ -21,7 +21,7 @@ metadata:
   namespace: linux-platform
 spec:
   # Immutable after creation — the Salt minion ID the system will register with.
-  minionId: web-01.example.com
+  minionId: branchserver-01.example.com
 
   # Optional system role classification: pos, storehub, or branchserver.
   type: branchserver
@@ -29,7 +29,7 @@ spec:
   # Pre-create a system profile in Uyuni before the machine boots.
   # Required for PXE boot flows. Needs at least one MAC address or a hostname.
   preCreate: true
-  hostname: web-01.example.com
+  hostname: branchserver-01.example.com
   network:
     - name: eth0
       macAddress: "aa:bb:cc:dd:ee:01"
@@ -97,14 +97,14 @@ metadata:
   name: storehub-01
   namespace: linux-platform
 spec:
-  minionId: db-01.example.com
+  minionId: storehub-01.example.com
   type: storehub
 
   # Pre-create a system profile in Uyuni before the machine boots — same
   # pattern as branchserver-01, so the operator can assign a base channel right away
   # instead of waiting indefinitely for an external minion registration.
   preCreate: true
-  hostname: db-01.example.com
+  hostname: storehub-01.example.com
   network:
     - name: eth0
       macAddress: "aa:bb:cc:dd:ee:02"
