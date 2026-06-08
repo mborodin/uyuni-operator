@@ -664,14 +664,17 @@ func (c *Client) GetSystemDetails(ctx context.Context, serverID int) (*SystemDet
 }
 
 func (c *Client) SetSystemDetails(ctx context.Context, serverID int, d SystemDetailsUpdate) error {
-	body := map[string]any{"sid": serverID}
+	details := map[string]any{}
 	if d.Description != "" {
-		body["server_name"] = d.Description
+		details["description"] = d.Description
 	}
 	if d.ContactMethod != "" {
-		body["contact_method"] = d.ContactMethod
+		details["contact_method"] = d.ContactMethod
 	}
-	_, err := apiPost[any](c, "system/setDetails", body)
+	_, err := apiPost[any](c, "system/setDetails", map[string]any{
+		"sid":     serverID,
+		"details": details,
+	})
 	return err
 }
 
