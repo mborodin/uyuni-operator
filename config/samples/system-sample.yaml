@@ -4,7 +4,7 @@
 # Demonstrates:
 #   - Pre-create a system profile before PXE boot (preCreate: true)
 #   - Cobbler/Kickstart autoinstallation (spec.autoinstall)
-#   - Software channel assignment via ContentProject environment
+#   - Software channel assignment via direct SoftwareChannel refs
 #   - Direct config channel subscription
 #   - Group membership (system-side declaration)
 #   - Add-ons (entitlements)
@@ -41,18 +41,14 @@ spec:
   # +kubebuilder:validation:Enum=default;ssh-push;ssh-push-tunnel
   contactMethod: default
 
-  # Software channels — use a ContentProject environment for automatic promotion.
-  baseChannelFrom:
-    contentProjectRef:
-      name: test-leap-platform
-    environment: prod
-    sourceChannelLabel: opensuse_leap15_6-x86_64
+  # Software channels — direct refs to SoftwareChannel CRs (bypasses the
+  # ContentProject/environment build pipeline; test-leap-platform's "prod"
+  # environment hasn't been built yet, so direct refs are used here instead).
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
 
-  childChannelsFrom:
-    - contentProjectRef:
-        name: test-leap-platform
-      environment: prod
-      sourceChannelLabel: opensuse_leap15_6-updates-x86_64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
 
   # Autoinstall: Cobbler/Kickstart profile to provision this system.
   # The reconciler calls system.provisionSystem after the profile is pre-created.

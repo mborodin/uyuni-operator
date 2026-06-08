@@ -48,6 +48,14 @@ type API interface {
 
 	ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error)
 
+	// SetBaseChannel and SetChildChannels perform an immediate (unscheduled)
+	// channel subscription. Used for systems with no current base channel —
+	// system.scheduleChangeChannels requires an existing subscription to
+	// schedule a change action against and rejects "Bootstrap"-type systems
+	// with "No method exists with the matching parameters".
+	SetBaseChannel(ctx context.Context, serverID int, label string) error
+	SetChildChannels(ctx context.Context, serverID int, labels []string) error
+
 	// ListSystemConfigChannels returns the ordered config channel label list
 	// subscribed directly to the system (system.config.listChannels).
 	ListSystemConfigChannels(ctx context.Context, serverID int) ([]string, error)

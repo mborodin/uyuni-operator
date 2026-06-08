@@ -766,6 +766,22 @@ func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base 
 	return r.ActionID, nil
 }
 
+func (c *Client) SetBaseChannel(ctx context.Context, serverID int, label string) error {
+	_, err := apiPost[any](c, "system/setBaseChannel", map[string]any{
+		"sid":                serverID,
+		"base_channel_label": label,
+	})
+	return err
+}
+
+func (c *Client) SetChildChannels(ctx context.Context, serverID int, labels []string) error {
+	_, err := apiPost[any](c, "system/setChildChannels", map[string]any{
+		"sid":                  serverID,
+		"child_channel_labels": labels,
+	})
+	return err
+}
+
 func (c *Client) ListEntitlements(ctx context.Context, serverID int) ([]string, error) {
 	type ent struct {
 		Label string `json:"label"`

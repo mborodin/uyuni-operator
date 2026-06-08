@@ -303,7 +303,22 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
 	}
 
-	if current.BaseChannelLabel != res.BaseChannelLabel ||
+	if current.BaseChannelLabel == "" {
+		// No current subscription (e.g. freshly registered "Bootstrap" system) —
+		// scheduleChangeChannels has nothing to schedule a change against and
+		// rejects these with "No method exists with the matching parameters".
+		// Subscribe directly instead.
+		if res.BaseChannelLabel != "" && res.BaseChannelLabel != current.BaseChannelLabel {
+			if err := uc.SetBaseChannel(ctx, sys.Status.UyuniServerID, res.BaseChannelLabel); err != nil {
+				return r.fail(ctx, sys, "UpdateFailed", err)
+			}
+		}
+		if !stringSlicesEqual(current.ChildChannelLabels, res.ChildChannelLabels) {
+			if err := uc.SetChildChannels(ctx, sys.Status.UyuniServerID, res.ChildChannelLabels); err != nil {
+				return r.fail(ctx, sys, "UpdateFailed", err)
+			}
+		}
+	} else if current.BaseChannelLabel != res.BaseChannelLabel ||
 		!stringSlicesEqual(current.ChildChannelLabels, res.ChildChannelLabels) {
 		if _, err := uc.ScheduleChangeChannels(ctx, sys.Status.UyuniServerID,
 			res.BaseChannelLabel, res.ChildChannelLabels, r.Now()); err != nil {
