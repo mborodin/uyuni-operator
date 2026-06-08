@@ -4,7 +4,7 @@
 # Demonstrates:
 #   - Pre-create a system profile before PXE boot (preCreate: true)
 #   - Cobbler/Kickstart autoinstallation (spec.autoinstall)
-#   - Software channel assignment via ContentProject environment
+#   - Software channel assignment via direct SoftwareChannel refs
 #   - Direct config channel subscription
 #   - Group membership (system-side declaration)
 #   - Add-ons (entitlements)
@@ -17,16 +17,19 @@
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: System
 metadata:
-  name: web-01
+  name: branchserver-01
   namespace: linux-platform
 spec:
   # Immutable after creation — the Salt minion ID the system will register with.
-  minionId: web-01.example.com
+  minionId: branchserver-01.example.com
+
+  # Optional system role classification: pos, storehub, or branchserver.
+  type: branchserver
 
   # Pre-create a system profile in Uyuni before the machine boots.
   # Required for PXE boot flows. Needs at least one MAC address or a hostname.
   preCreate: true
-  hostname: web-01.example.com
+  hostname: branchserver-01.example.com
   network:
     - name: eth0
       macAddress: "aa:bb:cc:dd:ee:01"
@@ -38,18 +41,14 @@ spec:
   # +kubebuilder:validation:Enum=default;ssh-push;ssh-push-tunnel
   contactMethod: default
 
-  # Software channels — use a ContentProject environment for automatic promotion.
-  baseChannelFrom:
-    contentProjectRef:
-      name: sles15sp5-baseline
-    environment: prod
-    sourceChannelLabel: sles-15-sp5-pool-x86_64
+  # Software channels — direct refs to SoftwareChannel CRs (bypasses the
+  # ContentProject/environment build pipeline; test-leap-platform's "prod"
+  # environment hasn't been built yet, so direct refs are used here instead).
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
 
-  childChannelsFrom:
-    - contentProjectRef:
-        name: sles15sp5-baseline
-      environment: prod
-      sourceChannelLabel: sles-15-sp5-updates-x86_64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
 
   # Autoinstall: Cobbler/Kickstart profile to provision this system.
   # The reconciler calls system.provisionSystem after the profile is pre-created.
@@ -59,15 +58,14 @@ spec:
 
   # Config channels assigned directly to this system (priority order: index 0 = highest).
   # These outrank any channels inherited from groupRefs.
-  configChannelRefs:
-    - name: web-server-hardening    # ConfigChannel CR in the same namespace
-    - name: ntp-baseline
+  # No ConfigChannel CRs exist in this namespace yet (only ConfigurationChannel
+  # CRs, a different kind), so configChannelRefs is left unset here.
 
   # Groups this system should belong to (system-side declaration).
   # Preferred over SystemGroup.spec.memberRefs.
   groupRefs:
-    - name: web-servers
-    - name: prod-monitoring
+    - name: test-web-servers
+    - name: test-managed-linux
 
   # Add-ons (Uyuni entitlements granted to this system).
   addOns:
@@ -96,21 +94,39 @@ spec:
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: System
 metadata:
-  name: db-01
+  name: storehub-01
   namespace: linux-platform
 spec:
-  minionId: db-01.example.com
+  minionId: storehub-01.example.com
+  type: storehub
+
+  # Pre-create a system profile in Uyuni before the machine boots — same
+  # pattern as branchserver-01, so the operator can assign a base channel right away
+  # instead of waiting indefinitely for an external minion registration.
+  preCreate: true
+  hostname: storehub-01.example.com
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:ee:02"
+      ipAddress: "10.0.0.102"
+
   description: "Primary database server"
-  contactMethod: ssh-push
+  # NOTE: contact method cannot be changed after a Salt system is bootstrapped
+  # ("Changing the contact method is not allowed for Salt systems") — must
+  # match what the system gets created with (default for pre-created profiles).
+  contactMethod: default
 
   baseChannelRef:
-    name: sles-15-sp5-x86-64    # SoftwareChannel CR
+    name: opensuse-leap-15-6-x86-64    # SoftwareChannel CR
 
-  configChannelRefs:
-    - name: db-hardening
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+
+  # No ConfigChannel CRs exist in this namespace yet (only ConfigurationChannel
+  # CRs, a different kind), so configChannelRefs is left unset here.
 
   groupRefs:
-    - name: database-servers
+    - name: test-database-servers
 
   addOns:
     - monitoring_entitled
@@ -119,13 +135,59 @@ spec:
     tier: data
     owner: dba-team
 
+  deletionPolicy: Orphan
+  adoptionTimeout: 24h0m0s
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Pre-created PoS (point-of-sale) system — same pattern as branchserver-01/storehub-01.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: System
+metadata:
+  name: pos-01
+  namespace: linux-platform
+spec:
+  minionId: pos-01.example.com
+  type: pos
+
+  preCreate: true
+  hostname: pos-01.example.com
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:ee:03"
+      ipAddress: "10.0.0.103"
+
+  description: "Point of sale terminal"
+  contactMethod: default
+
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+
+  groupRefs:
+    - name: test-managed-linux
+
+  addOns:
+    - monitoring_entitled
+
+  customInfo:
+    tier: retail
+    owner: platform-team
+
+  deletionPolicy: Orphan
+  adoptionTimeout: 24h0m0s
+
   organizationRef:
     name: pantheon-of-goods
 
 ---
 # Triggering a reinstall on a live system:
 #
-# kubectl annotate system web-01 -n linux-platform \
+# kubectl annotate system branchserver-01 -n linux-platform \
 #   uyuni.uyuni-project.org/reinstall-now=true
 #
 # The reconciler will:

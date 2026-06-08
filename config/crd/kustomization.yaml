@@ -1,6 +1,6 @@
 resources:
 - bases/uyuni.uyuni-project.org_activationkeys.yaml
-- bases/uyuni.uyuni-project.org_configchannels.yaml
+- bases/uyuni.uyuni-project.org_autoinstallprofiles.yaml
 - bases/uyuni.uyuni-project.org_configfiles.yaml
 - bases/uyuni.uyuni-project.org_contentprojectpromotions.yaml
 - bases/uyuni.uyuni-project.org_contentprojects.yaml

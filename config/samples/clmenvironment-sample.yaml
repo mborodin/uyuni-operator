@@ -17,6 +17,7 @@ spec:
   description: Test CLM project for Leap 15.6
   sourceRefs:
     - name: opensuse-leap-15-6-x86-64
+    - name: opensuse-leap-15-6-updates-x86-64
   organizationRef:
     name: pantheon-of-goods
 

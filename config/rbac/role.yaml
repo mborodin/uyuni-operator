@@ -23,6 +23,7 @@ rules:
   - repositories
   - softwarechannels
   - systemgroups
+  - systems
   - uyuniproviders
   verbs:
   - create
@@ -43,6 +44,7 @@ rules:
   - repositories/finalizers
   - softwarechannels/finalizers
   - systemgroups/finalizers
+  - systems/finalizers
   - tasks/finalizers
   verbs:
   - update
@@ -58,6 +60,7 @@ rules:
   - repositories/status
   - softwarechannels/status
   - systemgroups/status
+  - systems/status
   - tasks/status
   - uyuniproviders/status
   verbs:
@@ -67,8 +70,7 @@ rules:
 - apiGroups:
   - uyuni.uyuni-project.org
   resources:
-  - configchannels
-  - systems
+  - autoinstallprofiles
   verbs:
   - get
   - list

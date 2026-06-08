@@ -198,10 +198,10 @@ func (v *SystemValidator) warnIfGroupMissing(ctx context.Context, ns, name strin
 }
 
 func (v *SystemValidator) warnIfConfigChannelMissing(ctx context.Context, ns, name string, path *field.Path) string {
-	var cc uyuniv1.ConfigChannel
+	var cc uyuniv1.ConfigurationChannel
 	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &cc); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			return fmt.Sprintf("%s: ConfigChannel %q not found in namespace %q (may be applied alongside in the same commit)",
+			return fmt.Sprintf("%s: ConfigurationChannel %q not found in namespace %q (may be applied alongside in the same commit)",
 				path.String(), name, ns)
 		}
 		return ""

@@ -408,6 +408,7 @@ type wireSystem struct {
 	ContactMethod      string   `json:"contact_method"`
 	BaseChannelLabel   string   `json:"base_channel_label"`
 	ChildChannelLabels []string `json:"child_channel_labels"`
+	BaseEntitlement    string   `json:"base_entitlement"`
 	LastCheckin        string   `json:"last_checkin"`
 }
 
@@ -601,31 +602,45 @@ func (c *Client) FindSystemByMinionID(ctx context.Context, minionID string) (*Sy
 }
 
 func (c *Client) FindSystemByMAC(ctx context.Context, mac string) (*SystemDetails, error) {
-	type netInfo struct {
-		HWAddr   string `json:"hw_addr"`
-		ServerID int    `json:"server_id"`
+	// Uyuni has no bulk "list all network devices" call; system.getNetworkDevices
+	// is per-system (sessionKey, sid). Walk the visible systems and inspect each
+	// one's network devices for a matching hardware address.
+	type sysInfo struct {
+		ID int `json:"id"`
 	}
-	list, err := apiGet[[]netInfo](c, "system/listAllNetworkDevices")
+	type netInfo struct {
+		HWAddr string `json:"hardware_address"`
+	}
+	systems, err := apiGet[[]sysInfo](c, "system/listSystems")
 	if err != nil {
 		return nil, err
 	}
 	norm := strings.ToLower(strings.ReplaceAll(mac, "-", ":"))
-	for _, ni := range list {
-		if strings.ToLower(ni.HWAddr) == norm {
-			return c.GetSystemDetails(ctx, ni.ServerID)
+	for _, s := range systems {
+		devices, err := apiGet[[]netInfo](c, fmt.Sprintf("system/getNetworkDevices?sid=%d", s.ID))
+		if err != nil {
+			continue
+		}
+		for _, ni := range devices {
+			if strings.ToLower(ni.HWAddr) == norm {
+				return c.GetSystemDetails(ctx, s.ID)
+			}
 		}
 	}
 	return nil, &notFoundError{msg: fmt.Sprintf("system with MAC %q not found", mac)}
 }
 
 func (c *Client) CreateSystemProfile(ctx context.Context, name string, data SystemProfileData) (int, error) {
-	type resp struct {
-		ID int `json:"id"`
+	profileData := map[string]any{}
+	if data.HWAddress != "" {
+		profileData["hwAddress"] = data.HWAddress
 	}
-	r, err := apiPost[resp](c, "system/createSystemProfile", map[string]any{
-		"host_name":  data.Hostname,
-		"hw_address": data.HWAddress,
-		"name":       name,
+	if data.Hostname != "" {
+		profileData["hostname"] = data.Hostname
+	}
+	id, err := apiPost[int](c, "system/createSystemProfile", map[string]any{
+		"systemName": name,
+		"data":       profileData,
 	})
 	if err != nil {
 		// Uyuni returns a specific error when the system already exists; surface
@@ -638,7 +653,7 @@ func (c *Client) CreateSystemProfile(ctx context.Context, name string, data Syst
 		}
 		return 0, err
 	}
-	return r.ID, nil
+	return id, nil
 }
 
 func (c *Client) GetSystemDetails(ctx context.Context, serverID int) (*SystemDetails, error) {
@@ -650,14 +665,17 @@ func (c *Client) GetSystemDetails(ctx context.Context, serverID int) (*SystemDet
 }
 
 func (c *Client) SetSystemDetails(ctx context.Context, serverID int, d SystemDetailsUpdate) error {
-	body := map[string]any{"sid": serverID}
+	details := map[string]any{}
 	if d.Description != "" {
-		body["server_name"] = d.Description
+		details["description"] = d.Description
 	}
 	if d.ContactMethod != "" {
-		body["contact_method"] = d.ContactMethod
+		details["contact_method"] = d.ContactMethod
 	}
-	_, err := apiPost[any](c, "system/setDetails", body)
+	_, err := apiPost[any](c, "system/setDetails", map[string]any{
+		"sid":     serverID,
+		"details": details,
+	})
 	return err
 }
 
@@ -749,39 +767,37 @@ func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base 
 	return r.ActionID, nil
 }
 
+func (c *Client) SetBaseChannel(ctx context.Context, serverID int, label string) error {
+	_, err := apiPost[any](c, "system/setBaseChannel", map[string]any{
+		"sid":          serverID,
+		"channelLabel": label,
+	})
+	return err
+}
+
+func (c *Client) SetChildChannels(ctx context.Context, serverID int, labels []string) error {
+	_, err := apiPost[any](c, "system/setChildChannels", map[string]any{
+		"sid":                serverID,
+		"channelIdsOrLabels": labels,
+	})
+	return err
+}
+
 func (c *Client) ListEntitlements(ctx context.Context, serverID int) ([]string, error) {
-	type ent struct {
-		Label string `json:"label"`
-	}
-	list, err := apiGet[[]ent](c, fmt.Sprintf("system/getEntitlements?sid=%d", serverID))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, len(list))
-	for i, e := range list {
-		out[i] = e.Label
-	}
-	return out, nil
+	return apiGet[[]string](c, fmt.Sprintf("system/getEntitlements?sid=%d", serverID))
 }
 
 func (c *Client) AddEntitlements(ctx context.Context, serverID int, addons []string) (int, error) {
-	type resp struct {
-		Count int `json:"count"`
-	}
-	r, err := apiPost[resp](c, "system/addEntitlements", map[string]any{
-		"sid":         serverID,
-		"entitlement": addons,
+	return apiPost[int](c, "system/addEntitlements", map[string]any{
+		"sid":          serverID,
+		"entitlements": addons,
 	})
-	if err != nil {
-		return 0, err
-	}
-	return r.Count, nil
 }
 
 func (c *Client) RemoveEntitlements(ctx context.Context, serverID int, addons []string) error {
 	_, err := apiPost[any](c, "system/removeEntitlements", map[string]any{
-		"sid":         serverID,
-		"entitlement": addons,
+		"sid":          serverID,
+		"entitlements": addons,
 	})
 	return err
 }
@@ -796,6 +812,7 @@ func wireSystemToDetails(w *wireSystem) *SystemDetails {
 		ContactMethod:      w.ContactMethod,
 		BaseChannelLabel:   w.BaseChannelLabel,
 		ChildChannelLabels: w.ChildChannelLabels,
+		BaseEntitlement:    w.BaseEntitlement,
 	}
 }
 
@@ -855,7 +872,7 @@ func (c *Client) ListSystemsInGroup(ctx context.Context, name string) ([]int, er
 func (c *Client) AddSystemsToGroup(ctx context.Context, name string, serverIDs []int) error {
 	_, err := apiPost[any](c, "systemgroup/addOrRemoveSystems", map[string]any{
 		"systemGroupName": name,
-		"systemIds":       serverIDs,
+		"serverIds":       serverIDs,
 		"add":             true,
 	})
 	return err
@@ -864,7 +881,7 @@ func (c *Client) AddSystemsToGroup(ctx context.Context, name string, serverIDs [
 func (c *Client) RemoveSystemsFromGroup(ctx context.Context, name string, serverIDs []int) error {
 	_, err := apiPost[any](c, "systemgroup/addOrRemoveSystems", map[string]any{
 		"systemGroupName": name,
-		"systemIds":       serverIDs,
+		"serverIds":       serverIDs,
 		"add":             false,
 	})
 	return err

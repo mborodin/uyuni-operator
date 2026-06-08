@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,7 +27,7 @@ type SystemReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/finalizers,verbs=update
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups;configchannels;softwarechannels;contentprojects,verbs=get;list;watch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups;configurationchannels;softwarechannels;contentprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=organizations,verbs=get;list;watch
 
 func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -259,15 +260,25 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	}
 
 	// 1. System details (description, contact method).
+	// Each field is included in the update only when it actually needs to
+	// change — Uyuni rejects any setDetails call that carries contact_method
+	// for Salt-managed systems, even when the value matches the current one.
 	wantContact := sys.Spec.ContactMethod
 	if wantContact == "" {
 		wantContact = "default"
 	}
-	if current.Description != sys.Spec.Description || current.ContactMethod != wantContact {
-		if err := uc.SetSystemDetails(ctx, sys.Status.UyuniServerID, uyuni.SystemDetailsUpdate{
-			Description:   sys.Spec.Description,
-			ContactMethod: wantContact,
-		}); err != nil {
+	var detailsUpdate uyuni.SystemDetailsUpdate
+	needsUpdate := false
+	if current.Description != sys.Spec.Description {
+		detailsUpdate.Description = sys.Spec.Description
+		needsUpdate = true
+	}
+	if current.ContactMethod != wantContact {
+		detailsUpdate.ContactMethod = wantContact
+		needsUpdate = true
+	}
+	if needsUpdate {
+		if err := uc.SetSystemDetails(ctx, sys.Status.UyuniServerID, detailsUpdate); err != nil {
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
 	}
@@ -293,15 +304,47 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
 	}
 
-	if current.BaseChannelLabel != res.BaseChannelLabel ||
+	// Record the resolved/desired channels in status up front — independent of
+	// whether we can issue the Uyuni-side calls yet (e.g. while still waiting
+	// for the minion to leave its bootstrap base entitlement, see below) — so
+	// status always reflects what the System CR is converging towards.
+	sys.Status.BaseChannelLabel = res.BaseChannelLabel
+	sys.Status.ChildChannelLabels = res.ChildChannelLabels
+
+	if current.BaseChannelLabel == "" {
+		// No current subscription (e.g. freshly registered "Bootstrap" system) —
+		// scheduleChangeChannels has nothing to schedule a change against and
+		// rejects these with "No method exists with the matching parameters".
+		// Subscribe directly instead.
+		//
+		// While the system is still on the temporary "bootstrap_entitled" base
+		// entitlement, the minion hasn't completed its first check-in yet, so
+		// Uyuni schedules the subscription as an action that the client can
+		// never execute — it ends up "Failed" in the system's history. Wait
+		// until the minion finishes registering before issuing the call, to
+		// avoid spamming Uyuni with one doomed action per reconcile.
+		if current.BaseEntitlement == "bootstrap_entitled" {
+			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+				"WaitingForBaseEntitlement", "system has not completed registration yet (still on bootstrap base entitlement); cannot subscribe to software channels")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
+		}
+		if res.BaseChannelLabel != "" && res.BaseChannelLabel != current.BaseChannelLabel {
+			if err := uc.SetBaseChannel(ctx, sys.Status.UyuniServerID, res.BaseChannelLabel); err != nil {
+				return r.fail(ctx, sys, "UpdateFailed", err)
+			}
+		}
+		if !stringSlicesEqual(current.ChildChannelLabels, res.ChildChannelLabels) {
+			if err := uc.SetChildChannels(ctx, sys.Status.UyuniServerID, res.ChildChannelLabels); err != nil {
+				return r.fail(ctx, sys, "UpdateFailed", err)
+			}
+		}
+	} else if current.BaseChannelLabel != res.BaseChannelLabel ||
 		!stringSlicesEqual(current.ChildChannelLabels, res.ChildChannelLabels) {
 		if _, err := uc.ScheduleChangeChannels(ctx, sys.Status.UyuniServerID,
 			res.BaseChannelLabel, res.ChildChannelLabels, r.Now()); err != nil {
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
 	}
-	sys.Status.BaseChannelLabel = res.BaseChannelLabel
-	sys.Status.ChildChannelLabels = res.ChildChannelLabels
 
 	// 3. Config channels (direct first, then group-sourced).
 	desiredCCs, ccWait, err := r.resolveOrderedConfigChannels(ctx, sys)
@@ -351,6 +394,15 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	addOns, rmOns := diffStringSets(currentAddOns, sys.Spec.AddOns)
 	if len(addOns) > 0 {
 		if _, err := uc.AddEntitlements(ctx, sys.Status.UyuniServerID, addOns); err != nil {
+			if strings.Contains(err.Error(), "Invalid entitlement") {
+				// Uyuni rejects add-on entitlements while the system still
+				// carries the "bootstrap_entitled" base entitlement — it
+				// upgrades to a real base entitlement (e.g. management) once
+				// the minion completes its first full registration/checkin.
+				setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+					"WaitingForBaseEntitlement", "system has not completed registration yet (still on bootstrap base entitlement); cannot grant add-on entitlements")
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
+			}
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
 	}
@@ -395,6 +447,16 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		mt := metav1.NewTime(t)
 		sys.Status.LastCheckinTime = &mt
 	}
+
+	// Apply high state once, the moment the system completes registration and
+	// reaches full reconciliation for the first time — applies all assigned
+	// states (channels, config channels, formulas, etc.) immediately instead
+	// of waiting for the next scheduled highstate run.
+	if sys.Spec.ApplyHighState && sys.Status.Phase != "Reconciled" {
+		if _, err := uc.ScheduleHighstate(ctx, []int{sys.Status.UyuniServerID}, r.Now(), false); err != nil {
+			return r.fail(ctx, sys, "UpdateFailed", err)
+		}
+	}
 	sys.Status.Phase = "Reconciled"
 	sys.Status.ObservedGeneration = sys.Generation
 	setCondition(&sys.Status.Conditions, condPreProvisioned, metav1.ConditionFalse, sys.Generation,
@@ -435,19 +497,19 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 	seen := map[string]bool{}
 
 	for _, ref := range sys.Spec.ConfigChannelRefs {
-		var cc uyuniv1.ConfigChannel
+		var cc uyuniv1.ConfigurationChannel
 		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: ref.Name}, &cc); err != nil {
 			if client.IgnoreNotFound(err) == nil {
-				return nil, fmt.Sprintf("ConfigChannel %q not found", ref.Name), nil
+				return nil, fmt.Sprintf("ConfigurationChannel %q not found", ref.Name), nil
 			}
 			return nil, "", err
 		}
 		if cc.Status.UyuniID == 0 {
-			return nil, fmt.Sprintf("ConfigChannel %q not yet realized", ref.Name), nil
+			return nil, fmt.Sprintf("ConfigurationChannel %q not yet realized", ref.Name), nil
 		}
-		if !seen[cc.Spec.Label] {
-			labels = append(labels, cc.Spec.Label)
-			seen[cc.Spec.Label] = true
+		if !seen[cc.Spec.ID] {
+			labels = append(labels, cc.Spec.ID)
+			seen[cc.Spec.ID] = true
 		}
 	}
 
@@ -460,7 +522,7 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 			return nil, "", err
 		}
 		for _, ccRef := range sg.Spec.ConfigChannelRefs {
-			var cc uyuniv1.ConfigChannel
+			var cc uyuniv1.ConfigurationChannel
 			if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: ccRef.Name}, &cc); err != nil {
 				if client.IgnoreNotFound(err) == nil {
 					continue
@@ -470,9 +532,9 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 			if cc.Status.UyuniID == 0 {
 				continue
 			}
-			if !seen[cc.Spec.Label] {
-				labels = append(labels, cc.Spec.Label)
-				seen[cc.Spec.Label] = true
+			if !seen[cc.Spec.ID] {
+				labels = append(labels, cc.Spec.ID)
+				seen[cc.Spec.ID] = true
 			}
 		}
 	}
@@ -536,7 +598,7 @@ func (r *SystemReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&uyuniv1.System{}).
 		Watches(&uyuniv1.SystemGroup{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForGroup)).
-		Watches(&uyuniv1.ConfigChannel{},
+		Watches(&uyuniv1.ConfigurationChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForConfigChannel)).
 		Watches(&uyuniv1.SoftwareChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForSoftwareChannel)).

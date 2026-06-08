@@ -144,16 +144,31 @@ func resolveFromProject(ctx context.Context, c client.Client, namespace string, 
 		return "", "", "", err
 	}
 
-	// Env declared in spec? (Hard error — likely a typo, webhook should
-	// have caught at admission unless the project was modified later.)
-	envInSpec := false
+	// Env declared? Environments are managed via separate ClmEnvironment CRs
+	// (cp.Spec.Environments is legacy and stays empty under that model), so
+	// look for a ClmEnvironment in this namespace pointing at the project
+	// with a matching id. (Hard error — likely a typo; the webhook can't
+	// fully validate this since admission can be bypassed.)
+	var envs uyuniv1.ClmEnvironmentList
+	if err := c.List(ctx, &envs, client.InNamespace(namespace)); err != nil {
+		return "", "", "", err
+	}
+	envDeclared := false
 	for _, e := range cp.Spec.Environments {
 		if e.Label == ref.Environment {
-			envInSpec = true
+			envDeclared = true
 			break
 		}
 	}
-	if !envInSpec {
+	if !envDeclared {
+		for _, e := range envs.Items {
+			if e.Spec.ProjectRef.Name == cp.Name && e.Spec.Id == ref.Environment {
+				envDeclared = true
+				break
+			}
+		}
+	}
+	if !envDeclared {
 		return "", "", fmt.Sprintf(
 			"environment %q not declared in ContentProject %q",
 			ref.Environment, cp.Name), nil
