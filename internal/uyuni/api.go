@@ -123,7 +123,7 @@ type API interface {
 	ListProjectEnvironments(ctx context.Context, projectLabel string) ([]ProjectEnvironmentInfo, error)
 	CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error
 	UpdateEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error
-	RemoveEnvironment(ctx context.Context, projectLabel, envLabel string) error
+	RemoveEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error
 
 	ListFilters(ctx context.Context) ([]FilterDetails, error)
 	CreateFilter(ctx context.Context, name, entityType, rule string, criteria FilterCriteriaWire) (*FilterDetails, error)

@@ -63,6 +63,8 @@ spec:
               description:
                 type: string
               environments:
+                description: Environments are now managed via separate ClmEnvironment
+                  CRDs
                 items:
                   properties:
                     description:
@@ -79,7 +81,6 @@ spec:
                   - label
                   - name
                   type: object
-                minItems: 1
                 type: array
               filters:
                 items:
@@ -167,7 +168,6 @@ spec:
                   type: object
                 type: array
             required:
-            - environments
             - label
             - name
             type: object
