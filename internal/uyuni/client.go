@@ -888,7 +888,7 @@ func (c *Client) ListSystemsInGroup(ctx context.Context, name string) ([]int, er
 func (c *Client) AddSystemsToGroup(ctx context.Context, name string, serverIDs []int) error {
 	_, err := apiPost[any](c, "systemgroup/addOrRemoveSystems", map[string]any{
 		"systemGroupName": name,
-		"systemIds":       serverIDs,
+		"serverIds":       serverIDs,
 		"add":             true,
 	})
 	return err
@@ -897,7 +897,7 @@ func (c *Client) AddSystemsToGroup(ctx context.Context, name string, serverIDs [
 func (c *Client) RemoveSystemsFromGroup(ctx context.Context, name string, serverIDs []int) error {
 	_, err := apiPost[any](c, "systemgroup/addOrRemoveSystems", map[string]any{
 		"systemGroupName": name,
-		"systemIds":       serverIDs,
+		"serverIds":       serverIDs,
 		"add":             false,
 	})
 	return err
