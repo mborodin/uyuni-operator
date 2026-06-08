@@ -630,13 +630,16 @@ func (c *Client) FindSystemByMAC(ctx context.Context, mac string) (*SystemDetail
 }
 
 func (c *Client) CreateSystemProfile(ctx context.Context, name string, data SystemProfileData) (int, error) {
-	type resp struct {
-		ID int `json:"id"`
+	profileData := map[string]any{}
+	if data.HWAddress != "" {
+		profileData["hwAddress"] = data.HWAddress
 	}
-	r, err := apiPost[resp](c, "system/createSystemProfile", map[string]any{
-		"host_name":  data.Hostname,
-		"hw_address": data.HWAddress,
-		"name":       name,
+	if data.Hostname != "" {
+		profileData["hostname"] = data.Hostname
+	}
+	id, err := apiPost[int](c, "system/createSystemProfile", map[string]any{
+		"systemName": name,
+		"data":       profileData,
 	})
 	if err != nil {
 		// Uyuni returns a specific error when the system already exists; surface
@@ -649,7 +652,7 @@ func (c *Client) CreateSystemProfile(ctx context.Context, name string, data Syst
 		}
 		return 0, err
 	}
-	return r.ID, nil
+	return id, nil
 }
 
 func (c *Client) GetSystemDetails(ctx context.Context, serverID int) (*SystemDetails, error) {
