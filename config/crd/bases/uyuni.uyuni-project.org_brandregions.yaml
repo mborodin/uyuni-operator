@@ -1,0 +1,433 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: brandregions.uyuni.uyuni-project.org
+spec:
+  group: uyuni.uyuni-project.org
+  names:
+    kind: BrandRegion
+    listKind: BrandRegionList
+    plural: brandregions
+    singular: brandregion
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.brand
+      name: Brand
+      type: string
+    - jsonPath: .spec.region
+      name: Region
+      type: string
+    - jsonPath: .status.systemCount.branchserver
+      name: BranchServers
+      type: integer
+    - jsonPath: .status.systemCount.storehub
+      name: StoreHubs
+      type: integer
+    - jsonPath: .status.systemCount.pos
+      name: POS
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              activationKeys:
+                description: ActivationKeys lists the activation keys owned by this BrandRegion.
+                items:
+                  properties:
+                    description:
+                      type: string
+                    entitlements:
+                      items:
+                        type: string
+                      type: array
+                    name:
+                      type: string
+                    systemGroupRefs:
+                      items:
+                        properties:
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
+              baseChannelFrom:
+                properties:
+                  contentProjectRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  environment:
+                    pattern: ^[a-z0-9-]+$
+                    type: string
+                  sourceChannelLabel:
+                    type: string
+                required:
+                - contentProjectRef
+                - environment
+                - sourceChannelLabel
+                type: object
+              baseChannelRef:
+                description: BaseChannelRef is the base software channel for all managed ActivationKeys.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              brand:
+                description: Brand identifier (e.g. "delhaize"). Immutable after creation.
+                pattern: ^[a-z0-9-]+$
+                type: string
+              childChannelRefs:
+                items:
+                  properties:
+                    name:
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              childChannelsFrom:
+                items:
+                  properties:
+                    contentProjectRef:
+                      properties:
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    environment:
+                      pattern: ^[a-z0-9-]+$
+                      type: string
+                    sourceChannelLabel:
+                      type: string
+                  required:
+                  - contentProjectRef
+                  - environment
+                  - sourceChannelLabel
+                  type: object
+                type: array
+              configChannels:
+                description: ConfigChannels lists the ConfigurationChannel CRs to create as children.
+                items:
+                  properties:
+                    name:
+                      type: string
+                    spec:
+                      properties:
+                        cluster:
+                          type: string
+                        description:
+                          type: string
+                        id:
+                          pattern: ^[a-zA-Z0-9._-]+$
+                          type: string
+                        name:
+                          type: string
+                        type:
+                          enum:
+                          - normal
+                          - state
+                          - dictionary
+                          type: string
+                        url:
+                          pattern: ^https?://.+
+                          type: string
+                      required:
+                      - id
+                      - name
+                      - type
+                      type: object
+                  required:
+                  - name
+                  - spec
+                  type: object
+                type: array
+              organization:
+                description: Organization defines the Uyuni organization owned by this BrandRegion.
+                properties:
+                  credentialsSecretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  import:
+                    properties:
+                      organizationId:
+                        minimum: 1
+                        type: integer
+                    required:
+                    - organizationId
+                    type: object
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              provider:
+                description: Provider defines the UyuniProvider created for this region.
+                properties:
+                  caCertSecretRef:
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    type: object
+                  credentialsSecretRef:
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    type: object
+                  insecureSkipVerify:
+                    type: boolean
+                  timeout:
+                    type: string
+                  url:
+                    pattern: ^https?://.+
+                    type: string
+                required:
+                - credentialsSecretRef
+                - url
+                type: object
+              region:
+                description: Region identifier (e.g. "emea"). Immutable after creation.
+                pattern: ^[a-z0-9-]+$
+                type: string
+              repositories:
+                description: Repositories lists the Repository CRs to create as children.
+                items:
+                  properties:
+                    name:
+                      type: string
+                    spec:
+                      properties:
+                        hasSignedMetadata:
+                          type: boolean
+                        label:
+                          pattern: ^[a-z0-9._-]+$
+                          type: string
+                        type:
+                          enum:
+                          - yum
+                          - deb
+                          - uln
+                          type: string
+                        url:
+                          pattern: ^(https?|file|ftp|uln)://.+
+                          type: string
+                      required:
+                      - label
+                      - url
+                      type: object
+                  required:
+                  - name
+                  - spec
+                  type: object
+                type: array
+              softwareChannels:
+                description: SoftwareChannels lists the SoftwareChannel CRs to create as children.
+                items:
+                  properties:
+                    name:
+                      type: string
+                    spec:
+                      properties:
+                        arch:
+                          pattern: ^channel-(x86_64|aarch64|ppc64le|s390x|i386)$
+                          type: string
+                        checksum:
+                          enum:
+                          - sha1
+                          - sha256
+                          - sha384
+                          - sha512
+                          type: string
+                        description:
+                          type: string
+                        label:
+                          pattern: ^[a-z0-9._-]+$
+                          type: string
+                        name:
+                          type: string
+                        parentChannelRef:
+                          properties:
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        repositoryRefs:
+                          items:
+                            properties:
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                        summary:
+                          type: string
+                        sync:
+                          properties:
+                            cron:
+                              type: string
+                            syncOnCreate:
+                              type: boolean
+                          type: object
+                      required:
+                      - label
+                      - name
+                      - summary
+                      type: object
+                  required:
+                  - name
+                  - spec
+                  type: object
+                type: array
+              systemGroups:
+                description: SystemGroups lists the Uyuni system groups owned by this BrandRegion.
+                items:
+                  properties:
+                    configChannelRefs:
+                      items:
+                        properties:
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    description:
+                      type: string
+                    name:
+                      type: string
+                    systemType:
+                      enum:
+                      - pos
+                      - storehub
+                      - branchserver
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+            required:
+            - brand
+            - organization
+            - provider
+            - region
+            type: object
+          status:
+            properties:
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              managedActivationKeys:
+                items:
+                  type: string
+                type: array
+              managedConfigChannels:
+                items:
+                  type: string
+                type: array
+              managedGroups:
+                items:
+                  type: string
+                type: array
+              managedOrganization:
+                type: string
+              managedProvider:
+                type: string
+              managedRepositories:
+                items:
+                  type: string
+                type: array
+              managedSoftwareChannels:
+                items:
+                  type: string
+                type: array
+              observedGeneration:
+                format: int64
+                type: integer
+              systemCount:
+                properties:
+                  branchserver:
+                    type: integer
+                  pos:
+                    type: integer
+                  storehub:
+                    type: integer
+                  total:
+                    type: integer
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
