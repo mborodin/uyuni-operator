@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -201,8 +202,20 @@ func (r *BrandRegionReconciler) reconcileOrganization(ctx context.Context, br *u
 		}
 		return r.Create(ctx, org)
 	}
+	needsUpdate := false
 	if existing.Spec.Name != br.Spec.Organization.Name {
 		existing.Spec.Name = br.Spec.Organization.Name
+		needsUpdate = true
+	}
+	if !reflect.DeepEqual(existing.Spec.CredentialsSecretRef, br.Spec.Organization.CredentialsSecretRef) {
+		existing.Spec.CredentialsSecretRef = br.Spec.Organization.CredentialsSecretRef
+		needsUpdate = true
+	}
+	if !reflect.DeepEqual(existing.Spec.Import, br.Spec.Organization.Import) {
+		existing.Spec.Import = br.Spec.Organization.Import
+		needsUpdate = true
+	}
+	if needsUpdate {
 		return r.Update(ctx, &existing)
 	}
 	return nil

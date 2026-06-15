@@ -8,6 +8,16 @@ stringData:
   username: uyuni
   password: elp2ZlBVaGdNUldKQlBpSV
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: delhaize-org-creds
+  namespace: uyuni-operator-system
+type: Opaque
+stringData:
+  username: delhaize-admin
+  password: Delhaize@2024!
+---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: BrandRegionClaim
 metadata:
@@ -26,6 +36,8 @@ spec:
 
   organization:
     name: Delhaize
+    credentialsSecretRef:
+      name: delhaize-org-creds
 
   repositories:
     - name: leap-15-6-oss
