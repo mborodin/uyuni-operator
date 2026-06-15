@@ -264,9 +264,17 @@ func (r *BrandRegionReconciler) reconcileSoftwareChannel(ctx context.Context, br
 		}
 		return r.Create(ctx, sc)
 	}
-	// Ensure the channel is owned by this BrandRegion's org, not a foreign org.
+	// Sync spec fields managed by BrandRegion: org, repos, sync schedule, label.
+	needsUpdate := false
 	if existing.Spec.OrganizationRef == nil || existing.Spec.OrganizationRef.Name != orgRef.Name {
 		existing.Spec.OrganizationRef = orgRef
+		needsUpdate = true
+	}
+	if !reflect.DeepEqual(existing.Spec.RepositoryRefs, spec.Spec.RepositoryRefs) {
+		existing.Spec.RepositoryRefs = spec.Spec.RepositoryRefs
+		needsUpdate = true
+	}
+	if needsUpdate {
 		return r.Update(ctx, &existing)
 	}
 	return nil
