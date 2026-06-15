@@ -2,7 +2,7 @@
 kind: Secret
 metadata:
   name: uyuni-emea-creds
-  namespace: uyuni-operator-system
+  namespace: linux-platform
 type: Opaque
 stringData:
   username: uyuni
@@ -12,7 +12,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: delhaize-org-creds
-  namespace: uyuni-operator-system
+  namespace: linux-platform
 type: Opaque
 stringData:
   username: delhaize-admin
@@ -31,7 +31,7 @@ spec:
     url: https://rke-uyuni.nexa-dev.delhaize.test
     credentialsSecretRef:
       name: uyuni-emea-creds
-      namespace: uyuni-operator-system
+      namespace: linux-platform
     insecureSkipVerify: true
 
   organization:
