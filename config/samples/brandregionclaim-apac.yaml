@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: uyuni-emea-creds
+  name: uyuni-apac-creds
   namespace: linux-platform
 type: Opaque
 stringData:
@@ -11,51 +11,51 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: delhaize-org-creds
+  name: belgium-apac-org-creds
   namespace: linux-platform
 type: Opaque
 stringData:
-  username: delhaize-admin
-  password: Delhaize@2024!
+  username: belgium-dll
+  password: belgium-dll
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: BrandRegionClaim
 metadata:
-  name: delhaize-emea
+  name: delhaize-apac
   namespace: linux-platform
 spec:
   brand: delhaize
-  region: emea
+  region: apac
 
   provider:
     url: https://rke-uyuni.nexa-dev.delhaize.test
     credentialsSecretRef:
-      name: uyuni-emea-creds
+      name: uyuni-apac-creds
       namespace: linux-platform
     insecureSkipVerify: true
 
   organization:
-    name: Delhaize
+    name: Belgium DLL
     credentialsSecretRef:
-      name: delhaize-org-creds
+      name: belgium-apac-org-creds
 
   repositories:
     - name: leap-15-6-oss
       spec:
-        label: opensuse_leap15_6-x86_64-repo
+        label: opensuse_leap15_6-apac-x86_64-repo
         url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
         type: yum
     - name: leap-15-6-updates-oss
       spec:
-        label: opensuse_leap15_6-updates-x86_64-repo
+        label: opensuse_leap15_6-apac-updates-x86_64-repo
         url: http://download.opensuse.org/update/leap/15.6/oss/
         type: yum
 
   softwareChannels:
     - name: opensuse-leap-15-6-x86-64
       spec:
-        label: opensuse_leap15_6-x86_64
-        name: openSUSE Leap 15.6 (x86_64)
+        label: opensuse_leap15_6-apac-x86_64
+        name: openSUSE Leap 15.6 APAC (x86_64)
         summary: openSUSE Leap 15.6 base channel
         arch: channel-x86_64
         repositoryRefs:
@@ -65,8 +65,8 @@ spec:
           syncOnCreate: true
     - name: opensuse-leap-15-6-updates-x86-64
       spec:
-        label: opensuse_leap15_6-updates-x86_64
-        name: openSUSE Leap 15.6 Updates (x86_64)
+        label: opensuse_leap15_6-apac-updates-x86_64
+        name: openSUSE Leap 15.6 APAC Updates (x86_64)
         summary: openSUSE Leap 15.6 update channel
         arch: channel-x86_64
         parentChannelRef:
@@ -79,9 +79,9 @@ spec:
   configChannels:
     - name: baseline
       spec:
-        id: delhaize-emea-baseline
-        name: Delhaize EMEA Baseline
-        description: "Common Salt states for all Delhaize EMEA systems"
+        id: delhaize-apac-baseline
+        name: Delhaize APAC Baseline
+        description: "Common Salt states for all Delhaize APAC systems"
         type: state
 
   baseChannelRef:
@@ -92,40 +92,40 @@ spec:
   stateRepository:
     url: https://github.com/myorg/uyuni-salt-states
     branch: main
-    subPath: states/delhaize/emea
+    subPath: states/delhaize/apac
 
   systemGroups:
     - name: branchservers
-      description: "Delhaize EMEA — Branch Servers"
+      description: "Delhaize APAC — Branch Servers"
       systemType: branchserver
       configChannelRefs:
         - name: baseline
     - name: storehubs
-      description: "Delhaize EMEA — Store Hubs"
+      description: "Delhaize APAC — Store Hubs"
       systemType: storehub
       configChannelRefs:
         - name: baseline
     - name: pos
-      description: "Delhaize EMEA — POS Terminals"
+      description: "Delhaize APAC — POS Terminals"
       systemType: pos
       configChannelRefs:
         - name: baseline
 
   activationKeys:
     - name: branchserver
-      description: "Delhaize EMEA branchserver registration key"
+      description: "Delhaize APAC branchserver registration key"
       entitlements:
         - monitoring_entitled
       systemGroupRefs:
         - name: branchservers
     - name: storehub
-      description: "Delhaize EMEA storehub registration key"
+      description: "Delhaize APAC storehub registration key"
       entitlements:
         - monitoring_entitled
       systemGroupRefs:
         - name: storehubs
     - name: pos
-      description: "Delhaize EMEA POS registration key"
+      description: "Delhaize APAC POS registration key"
       entitlements:
         - monitoring_entitled
       systemGroupRefs:

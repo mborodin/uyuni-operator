@@ -223,9 +223,29 @@ func (r *BrandRegionReconciler) reconcileOrganization(ctx context.Context, br *u
 	return nil
 }
 
+func brChildName(brName, name string) string {
+	return brName + "-" + name
+}
+
+func prefixRefs(brName string, refs []uyuniv1.LocalObjectRef) []uyuniv1.LocalObjectRef {
+	out := make([]uyuniv1.LocalObjectRef, len(refs))
+	for i, r := range refs {
+		out[i] = uyuniv1.LocalObjectRef{Name: brChildName(brName, r.Name)}
+	}
+	return out
+}
+
+func prefixRef(brName string, ref *uyuniv1.LocalObjectRef) *uyuniv1.LocalObjectRef {
+	if ref == nil {
+		return nil
+	}
+	return &uyuniv1.LocalObjectRef{Name: brChildName(brName, ref.Name)}
+}
+
 func (r *BrandRegionReconciler) reconcileRepository(ctx context.Context, br *uyuniv1.BrandRegion, spec uyuniv1.BrandRegionRepository, orgRef *uyuniv1.LocalObjectRef) error {
+	name := brChildName(br.Name, spec.Name)
 	var existing uyuniv1.Repository
-	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: spec.Name}, &existing)
+	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: name}, &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
@@ -234,7 +254,7 @@ func (r *BrandRegionReconciler) reconcileRepository(ctx context.Context, br *uyu
 		repoSpec.OrganizationRef = orgRef
 		repo := &uyuniv1.Repository{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:            spec.Name,
+				Name:            name,
 				Namespace:       br.Namespace,
 				OwnerReferences: []metav1.OwnerReference{brandRegionOwnerRef(br)},
 			},
@@ -246,17 +266,21 @@ func (r *BrandRegionReconciler) reconcileRepository(ctx context.Context, br *uyu
 }
 
 func (r *BrandRegionReconciler) reconcileSoftwareChannel(ctx context.Context, br *uyuniv1.BrandRegion, spec uyuniv1.BrandRegionSoftwareChannel, orgRef *uyuniv1.LocalObjectRef) error {
+	name := brChildName(br.Name, spec.Name)
 	var existing uyuniv1.SoftwareChannel
-	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: spec.Name}, &existing)
+	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: name}, &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
+	expectedRepoRefs := prefixRefs(br.Name, spec.Spec.RepositoryRefs)
 	if err != nil {
 		scSpec := spec.Spec
 		scSpec.OrganizationRef = orgRef
+		scSpec.RepositoryRefs = expectedRepoRefs
+		scSpec.ParentChannelRef = prefixRef(br.Name, spec.Spec.ParentChannelRef)
 		sc := &uyuniv1.SoftwareChannel{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:            spec.Name,
+				Name:            name,
 				Namespace:       br.Namespace,
 				OwnerReferences: []metav1.OwnerReference{brandRegionOwnerRef(br)},
 			},
@@ -264,14 +288,13 @@ func (r *BrandRegionReconciler) reconcileSoftwareChannel(ctx context.Context, br
 		}
 		return r.Create(ctx, sc)
 	}
-	// Sync spec fields managed by BrandRegion: org, repos, sync schedule, label.
 	needsUpdate := false
 	if existing.Spec.OrganizationRef == nil || existing.Spec.OrganizationRef.Name != orgRef.Name {
 		existing.Spec.OrganizationRef = orgRef
 		needsUpdate = true
 	}
-	if !reflect.DeepEqual(existing.Spec.RepositoryRefs, spec.Spec.RepositoryRefs) {
-		existing.Spec.RepositoryRefs = spec.Spec.RepositoryRefs
+	if !reflect.DeepEqual(existing.Spec.RepositoryRefs, expectedRepoRefs) {
+		existing.Spec.RepositoryRefs = expectedRepoRefs
 		needsUpdate = true
 	}
 	if needsUpdate {
@@ -281,15 +304,16 @@ func (r *BrandRegionReconciler) reconcileSoftwareChannel(ctx context.Context, br
 }
 
 func (r *BrandRegionReconciler) reconcileConfigChannel(ctx context.Context, br *uyuniv1.BrandRegion, spec uyuniv1.BrandRegionConfigChannel) error {
+	name := brChildName(br.Name, spec.Name)
 	var existing uyuniv1.ConfigurationChannel
-	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: spec.Name}, &existing)
+	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: name}, &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
 	if err != nil {
 		cc := &uyuniv1.ConfigurationChannel{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:            spec.Name,
+				Name:            name,
 				Namespace:       br.Namespace,
 				OwnerReferences: []metav1.OwnerReference{brandRegionOwnerRef(br)},
 			},
@@ -315,58 +339,61 @@ func (r *BrandRegionReconciler) reconcileConfigChannel(ctx context.Context, br *
 }
 
 func (r *BrandRegionReconciler) reconcileSystemGroup(ctx context.Context, br *uyuniv1.BrandRegion, spec uyuniv1.BrandRegionGroup, orgRef *uyuniv1.LocalObjectRef) error {
+	name := brChildName(br.Name, spec.Name)
 	var existing uyuniv1.SystemGroup
-	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: spec.Name}, &existing)
+	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: name}, &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
+	expectedCCRefs := prefixRefs(br.Name, spec.ConfigChannelRefs)
 	if err != nil {
 		sg := &uyuniv1.SystemGroup{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:            spec.Name,
+				Name:            name,
 				Namespace:       br.Namespace,
 				OwnerReferences: []metav1.OwnerReference{brandRegionOwnerRef(br)},
 			},
 			Spec: uyuniv1.SystemGroupSpec{
 				Name:              spec.Name,
 				Description:       spec.Description,
-				ConfigChannelRefs: spec.ConfigChannelRefs,
+				ConfigChannelRefs: expectedCCRefs,
 				OrganizationRef:   orgRef,
 			},
 		}
 		return r.Create(ctx, sg)
 	}
-	wantCCNames := localRefNames(spec.ConfigChannelRefs)
+	wantCCNames := localRefNames(expectedCCRefs)
 	haveCCNames := localRefNames(existing.Spec.ConfigChannelRefs)
 	if existing.Spec.Description != spec.Description || !stringSlicesEqual(haveCCNames, wantCCNames) {
 		existing.Spec.Description = spec.Description
-		existing.Spec.ConfigChannelRefs = spec.ConfigChannelRefs
+		existing.Spec.ConfigChannelRefs = expectedCCRefs
 		return r.Update(ctx, &existing)
 	}
 	return nil
 }
 
 func (r *BrandRegionReconciler) reconcileActivationKey(ctx context.Context, br *uyuniv1.BrandRegion, spec uyuniv1.BrandRegionActivationKey, orgRef *uyuniv1.LocalObjectRef) error {
+	name := brChildName(br.Name, spec.Name)
 	var existing uyuniv1.ActivationKey
-	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: spec.Name}, &existing)
+	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: name}, &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
 	if err != nil {
 		ak := &uyuniv1.ActivationKey{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:            spec.Name,
+				Name:            name,
 				Namespace:       br.Namespace,
 				OwnerReferences: []metav1.OwnerReference{brandRegionOwnerRef(br)},
 			},
 			Spec: uyuniv1.ActivationKeySpec{
 				Key:               spec.Name,
 				Description:       spec.Description,
-				SystemGroupRefs:   spec.SystemGroupRefs,
+				SystemGroupRefs:   prefixRefs(br.Name, spec.SystemGroupRefs),
 				Entitlements:      spec.Entitlements,
-				BaseChannelRef:    br.Spec.BaseChannelRef,
+				BaseChannelRef:    prefixRef(br.Name, br.Spec.BaseChannelRef),
 				BaseChannelFrom:   br.Spec.BaseChannelFrom,
-				ChildChannelRefs:  br.Spec.ChildChannelRefs,
+				ChildChannelRefs:  prefixRefs(br.Name, br.Spec.ChildChannelRefs),
 				ChildChannelsFrom: br.Spec.ChildChannelsFrom,
 				OrganizationRef:   orgRef,
 			},
