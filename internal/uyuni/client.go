@@ -935,7 +935,7 @@ func (c *Client) CreateActivationKey(ctx context.Context, in ActivationKeyDetail
 }
 
 func (c *Client) GetActivationKey(ctx context.Context, key string) (*ActivationKeyDetails, error) {
-	r, err := apiGet[wireActivationKey](c, "activationkey/getDetails?activation_key="+url.QueryEscape(key))
+	r, err := apiGet[wireActivationKey](c, "activationkey/getDetails?key="+url.QueryEscape(key))
 	if err != nil {
 		return nil, asNotFound(err)
 	}

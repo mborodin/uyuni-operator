@@ -21,6 +21,10 @@ type ConfigurationChannelSpec struct {
 	// Name of the UyuniProvider to use. Empty → default provider.
 	Cluster string `json:"cluster,omitempty"`
 
+	// Name of the Organization CR whose credentials to use when creating this channel.
+	// When set, the channel is created in that organization's context (org-scoped).
+	OrganizationRef string `json:"organizationRef,omitempty"`
+
 	// +kubebuilder:validation:Pattern=`^https?://.+`
 	// Repository URL. Not forwarded to Uyuni; stored as operator metadata only.
 	URL string `json:"url,omitempty"`

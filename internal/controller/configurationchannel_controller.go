@@ -28,11 +28,17 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	var clusterRef *uyuni.LocalObjectRef
-	if cc.Spec.Cluster != "" {
-		clusterRef = &uyuni.LocalObjectRef{Name: cc.Spec.Cluster}
+	var uc uyuni.API
+	var err error
+	if cc.Spec.OrganizationRef != "" {
+		uc, err = r.Clients.ForOrganization(ctx, cc.Spec.OrganizationRef, cc.Namespace)
+	} else {
+		var clusterRef *uyuni.LocalObjectRef
+		if cc.Spec.Cluster != "" {
+			clusterRef = &uyuni.LocalObjectRef{Name: cc.Spec.Cluster}
+		}
+		uc, err = r.Clients.For(ctx, clusterRef, cc.Namespace)
 	}
-	uc, err := r.Clients.For(ctx, clusterRef, cc.Namespace)
 	if err != nil {
 		return r.fail(ctx, &cc, "ProviderError", err)
 	}

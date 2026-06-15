@@ -281,10 +281,19 @@ func (r *BrandRegionReconciler) reconcileConfigChannel(ctx context.Context, br *
 			Spec: spec.Spec,
 		}
 		cc.Spec.Cluster = br.Name
+		cc.Spec.OrganizationRef = br.Name
 		return r.Create(ctx, cc)
 	}
+	needsUpdate := false
 	if existing.Spec.Cluster != br.Name {
 		existing.Spec.Cluster = br.Name
+		needsUpdate = true
+	}
+	if existing.Spec.OrganizationRef != br.Name {
+		existing.Spec.OrganizationRef = br.Name
+		needsUpdate = true
+	}
+	if needsUpdate {
 		return r.Update(ctx, &existing)
 	}
 	return nil
