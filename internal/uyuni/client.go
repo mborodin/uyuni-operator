@@ -1834,14 +1834,14 @@ type wireOrg struct {
 
 func (c *Client) CreateOrganization(ctx context.Context, name, adminLogin, adminPass, adminFirstName, adminLastName, adminEmail string) (int, error) {
 	r, err := apiPost[wireOrg](c, "org/create", map[string]any{
-		"name":          name,
+		"orgName":       name,
 		"adminLogin":    adminLogin,
 		"adminPassword": adminPass,
-		"adminPrefix":   "Mr.",
+		"prefix":        "Mr.",
 		"firstName":     adminFirstName,
 		"lastName":      adminLastName,
 		"email":         adminEmail,
-		"pam":           false,
+		"usePamAuth":    false,
 	})
 	if err != nil {
 		return 0, err
