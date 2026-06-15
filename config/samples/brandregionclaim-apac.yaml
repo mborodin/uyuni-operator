@@ -111,6 +111,30 @@ spec:
       configChannelRefs:
         - name: baseline
 
+  contentProjects:
+    - name: leap-platform
+      label: delhaize-apac-leap-platform
+      displayName: Delhaize APAC Leap Platform
+      description: "CLM project for openSUSE Leap 15.6 APAC content lifecycle"
+      sourceRefs:
+        - name: opensuse-leap-15-6-x86-64
+        - name: opensuse-leap-15-6-updates-x86-64
+      environments:
+        - name: dev
+          id: dev
+          displayName: Development
+          description: "Latest content — not production-ready"
+        - name: test
+          id: test
+          displayName: Testing
+          description: "Validated content for QA"
+          predecessor: dev
+        - name: prod
+          id: prod
+          displayName: Production
+          description: "Promoted and approved content"
+          predecessor: test
+
   activationKeys:
     - name: branchserver
       description: "Delhaize APAC branchserver registration key"

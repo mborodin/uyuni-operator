@@ -249,6 +249,46 @@ spec:
                         type: string
                       sourceChannelLabel:
                         type: string
+                contentProjects:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, label, displayName]
+                    properties:
+                      name:
+                        type: string
+                        pattern: ^[a-z0-9-]+$
+                      label:
+                        type: string
+                      displayName:
+                        type: string
+                      description:
+                        type: string
+                      sourceRefs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                      environments:
+                        type: array
+                        items:
+                          type: object
+                          required: [name, id, displayName]
+                          properties:
+                            name:
+                              type: string
+                              pattern: ^[a-z0-9-]+$
+                            id:
+                              type: string
+                              pattern: ^[a-z0-9-]+$
+                            displayName:
+                              type: string
+                            description:
+                              type: string
+                            predecessor:
+                              type: string
                 systemGroups:
                   type: array
                   items:
@@ -314,6 +354,10 @@ spec:
                   items:
                     type: string
                 managedActivationKeys:
+                  type: array
+                  items:
+                    type: string
+                managedContentProjects:
                   type: array
                   items:
                     type: string
