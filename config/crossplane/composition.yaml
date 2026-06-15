@@ -1,0 +1,182 @@
+---
+# Crossplane Composition — XBrandRegion → BrandRegion (uyuni-operator)
+#
+# Architecture:
+#   User creates BrandRegionClaim (namespace-scoped)
+#     → Crossplane creates XBrandRegion (composite)
+#       → This Composition creates a BrandRegion CR (provider-kubernetes Object)
+#         → uyuni-operator's BrandRegionReconciler handles all child resources
+#
+# Prerequisites:
+#   - Crossplane installed
+#   - provider-kubernetes installed with a ProviderConfig pointing to the
+#     same cluster (or a remote cluster) running uyuni-operator
+#   - XRD applied: config/crossplane/xrd.yaml
+#
+# Apply with:
+#   kubectl apply -f config/crossplane/composition.yaml
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xbrandregion.uyuni.uyuni-project.org
+  labels:
+    crossplane.io/xrd: xbrandregions.uyuni.uyuni-project.org
+spec:
+  compositeTypeRef:
+    apiVersion: uyuni.uyuni-project.org/v1alpha1
+    kind: XBrandRegion
+  resources:
+    - name: brandregion
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          # providerConfigRef.name must match an installed ProviderConfig for
+          # provider-kubernetes that targets the uyuni-operator cluster.
+          providerConfigRef:
+            name: uyuni-cluster
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: BrandRegion
+              metadata:
+                # namespace is patched from the claim's namespace
+                namespace: default
+              spec: {}
+      patches:
+        # ── Identity ────────────────────────────────────────────────────────────
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.metadata.name
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+
+        # ── Required spec fields ─────────────────────────────────────────────────
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.brand
+          toFieldPath: spec.forProvider.manifest.spec.brand
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.region
+          toFieldPath: spec.forProvider.manifest.spec.region
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.provider
+          toFieldPath: spec.forProvider.manifest.spec.provider
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.organization
+          toFieldPath: spec.forProvider.manifest.spec.organization
+
+        # ── Optional spec fields ─────────────────────────────────────────────────
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.stateRepository
+          toFieldPath: spec.forProvider.manifest.spec.stateRepository
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.repositories
+          toFieldPath: spec.forProvider.manifest.spec.repositories
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels
+          toFieldPath: spec.forProvider.manifest.spec.softwareChannels
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels
+          toFieldPath: spec.forProvider.manifest.spec.configChannels
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.baseChannelRef
+          toFieldPath: spec.forProvider.manifest.spec.baseChannelRef
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.baseChannelFrom
+          toFieldPath: spec.forProvider.manifest.spec.baseChannelFrom
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.childChannelRefs
+          toFieldPath: spec.forProvider.manifest.spec.childChannelRefs
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.childChannelsFrom
+          toFieldPath: spec.forProvider.manifest.spec.childChannelsFrom
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.systemGroups
+          toFieldPath: spec.forProvider.manifest.spec.systemGroups
+          policy:
+            fromFieldPath: Optional
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys
+          toFieldPath: spec.forProvider.manifest.spec.activationKeys
+          policy:
+            fromFieldPath: Optional
+
+        # ── Status back-propagation ──────────────────────────────────────────────
+        # Surface BrandRegion status fields back to the XBrandRegion composite.
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedProvider
+          toFieldPath: status.managedProvider
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedOrganization
+          toFieldPath: status.managedOrganization
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedRepositories
+          toFieldPath: status.managedRepositories
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedSoftwareChannels
+          toFieldPath: status.managedSoftwareChannels
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedConfigChannels
+          toFieldPath: status.managedConfigChannels
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedGroups
+          toFieldPath: status.managedGroups
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedActivationKeys
+          toFieldPath: status.managedActivationKeys
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.systemCount
+          toFieldPath: status.systemCount
+          policy:
+            fromFieldPath: Optional

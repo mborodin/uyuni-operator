@@ -343,6 +343,30 @@ spec:
                   - name
                   type: object
                 type: array
+              stateRepository:
+                description: Git repository from which Salt minions pull their state. Stored as metadata; wire it to ConfigurationChannels of type "state".
+                properties:
+                  branch:
+                    default: main
+                    type: string
+                  credentialsSecretRef:
+                    description: Secret with Git credentials. Keys "username"+"password" for HTTPS, "sshPrivateKey" for SSH.
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    type: object
+                  subPath:
+                    description: Directory within the repository containing Salt states. Defaults to repository root.
+                    type: string
+                  url:
+                    description: Git repository URL (HTTPS or SSH).
+                    minLength: 1
+                    type: string
+                required:
+                - url
+                type: object
             required:
             - brand
             - organization

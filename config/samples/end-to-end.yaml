@@ -148,6 +148,17 @@ spec:
       configChannelRefs:
         - name: delhaize-emea-baseline
 
+  # ── State repository ────────────────────────────────────────────────────────
+  # Git repo from which Salt minions pull their configuration state.
+  # Reference this when creating ConfigurationChannels of type "state".
+  stateRepository:
+    url: https://github.com/myorg/uyuni-salt-states
+    branch: main
+    subPath: states/delhaize/emea
+    credentialsSecretRef:
+      name: github-salt-creds
+      namespace: uyuni-operator-system
+
   # ── Activation keys ─────────────────────────────────────────────────────────
   # Base channel, child channels and organizationRef are inherited from above.
   activationKeys:

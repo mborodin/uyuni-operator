@@ -1,0 +1,330 @@
+---
+# CompositeResourceDefinition for BrandRegion
+#
+# Registers two new types with Crossplane:
+#   - XBrandRegion        (cluster-scoped composite, created by the Composition)
+#   - BrandRegionClaim    (namespace-scoped claim, created by end users)
+#
+# Prerequisites:
+#   - Crossplane installed (crossplane.io)
+#   - provider-kubernetes installed and configured with a ProviderConfig
+#     that has write access to the cluster running uyuni-operator
+#
+# Apply with:
+#   kubectl apply -f config/crossplane/xrd.yaml
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xbrandregions.uyuni.uyuni-project.org
+spec:
+  group: uyuni.uyuni-project.org
+  names:
+    kind: XBrandRegion
+    plural: xbrandregions
+  claimNames:
+    kind: BrandRegionClaim
+    plural: brandregionclaims
+  defaultCompositionRef:
+    name: xbrandregion.uyuni.uyuni-project.org
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - brand
+                - region
+                - provider
+                - organization
+              properties:
+                brand:
+                  description: Brand identifier (e.g. "delhaize"). Immutable after creation.
+                  type: string
+                  pattern: ^[a-z0-9-]+$
+                region:
+                  description: Region identifier (e.g. "emea"). Immutable after creation.
+                  type: string
+                  pattern: ^[a-z0-9-]+$
+                provider:
+                  description: Uyuni spoke connection — creates a cluster-scoped UyuniProvider CR.
+                  type: object
+                  required:
+                    - url
+                    - credentialsSecretRef
+                  properties:
+                    url:
+                      type: string
+                      pattern: ^https?://.+
+                    credentialsSecretRef:
+                      type: object
+                      required: [name, namespace]
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                    insecureSkipVerify:
+                      type: boolean
+                    timeout:
+                      type: string
+                    caCertSecretRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                organization:
+                  description: Uyuni organization owned by this BrandRegion.
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                    credentialsSecretRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                    import:
+                      type: object
+                      required: [organizationId]
+                      properties:
+                        organizationId:
+                          type: integer
+                          minimum: 1
+                stateRepository:
+                  description: Git repository from which Salt minions pull state.
+                  type: object
+                  required: [url]
+                  properties:
+                    url:
+                      type: string
+                      minLength: 1
+                    branch:
+                      type: string
+                      default: main
+                    subPath:
+                      type: string
+                    credentialsSecretRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                repositories:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, spec]
+                    properties:
+                      name:
+                        type: string
+                      spec:
+                        type: object
+                        required: [label, url]
+                        properties:
+                          label:
+                            type: string
+                          url:
+                            type: string
+                          type:
+                            type: string
+                            enum: [yum, deb, uln]
+                          hasSignedMetadata:
+                            type: boolean
+                softwareChannels:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, spec]
+                    properties:
+                      name:
+                        type: string
+                      spec:
+                        type: object
+                        required: [label, name, summary]
+                        properties:
+                          label:
+                            type: string
+                          name:
+                            type: string
+                          summary:
+                            type: string
+                          description:
+                            type: string
+                          arch:
+                            type: string
+                          checksum:
+                            type: string
+                            enum: [sha1, sha256, sha384, sha512]
+                          parentChannelRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                          repositoryRefs:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                          sync:
+                            type: object
+                            properties:
+                              cron:
+                                type: string
+                              syncOnCreate:
+                                type: boolean
+                configChannels:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, spec]
+                    properties:
+                      name:
+                        type: string
+                      spec:
+                        type: object
+                        required: [id, name, type]
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          type:
+                            type: string
+                            enum: [normal, state, dictionary]
+                          description:
+                            type: string
+                          url:
+                            type: string
+                          cluster:
+                            type: string
+                baseChannelRef:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                baseChannelFrom:
+                  type: object
+                  required: [contentProjectRef, environment, sourceChannelLabel]
+                  properties:
+                    contentProjectRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                    environment:
+                      type: string
+                    sourceChannelLabel:
+                      type: string
+                childChannelRefs:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                childChannelsFrom:
+                  type: array
+                  items:
+                    type: object
+                    required: [contentProjectRef, environment, sourceChannelLabel]
+                    properties:
+                      contentProjectRef:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                      environment:
+                        type: string
+                      sourceChannelLabel:
+                        type: string
+                systemGroups:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                      description:
+                        type: string
+                      systemType:
+                        type: string
+                        enum: [pos, storehub, branchserver]
+                      configChannelRefs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                activationKeys:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                      description:
+                        type: string
+                      entitlements:
+                        type: array
+                        items:
+                          type: string
+                      systemGroupRefs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+            status:
+              type: object
+              properties:
+                managedProvider:
+                  type: string
+                managedOrganization:
+                  type: string
+                managedRepositories:
+                  type: array
+                  items:
+                    type: string
+                managedSoftwareChannels:
+                  type: array
+                  items:
+                    type: string
+                managedConfigChannels:
+                  type: array
+                  items:
+                    type: string
+                managedGroups:
+                  type: array
+                  items:
+                    type: string
+                managedActivationKeys:
+                  type: array
+                  items:
+                    type: string
+                systemCount:
+                  type: object
+                  properties:
+                    branchserver:
+                      type: integer
+                    storehub:
+                      type: integer
+                    pos:
+                      type: integer
+                    total:
+                      type: integer

@@ -104,6 +104,29 @@ type BrandRegionActivationKey struct {
 	Entitlements []string `json:"entitlements,omitempty"`
 }
 
+// BrandRegionStateRepository references the Git repository from which Salt
+// minions pull their state. This is stored as a BrandRegion-level declaration;
+// the operator makes it available to ConfigurationChannels of type "state"
+// and exposes it in status for downstream consumers.
+type BrandRegionStateRepository struct {
+	// URL of the Git repository. Supports HTTPS (https://) and SSH (ssh://, git@...) formats.
+	// +kubebuilder:validation:MinLength=1
+	URL string `json:"url"`
+
+	// Branch to check out. Defaults to "main".
+	// +kubebuilder:default="main"
+	Branch string `json:"branch,omitempty"`
+
+	// SubPath is the directory within the repository that contains Salt states.
+	// Defaults to the repository root.
+	SubPath string `json:"subPath,omitempty"`
+
+	// CredentialsSecretRef references a Secret with Git credentials.
+	// For HTTPS: keys "username" and "password".
+	// For SSH: key "sshPrivateKey".
+	CredentialsSecretRef *corev1.SecretReference `json:"credentialsSecretRef,omitempty"`
+}
+
 // BrandRegionSystemCount holds per-type system counters tracked in status.
 type BrandRegionSystemCount struct {
 	BranchServer int `json:"branchserver,omitempty"`
@@ -162,6 +185,11 @@ type BrandRegionSpec struct {
 	// An ActivationKey CR is created for each entry, pre-wired with base channel
 	// and organization from this BrandRegion.
 	ActivationKeys []BrandRegionActivationKey `json:"activationKeys,omitempty"`
+
+	// StateRepository is the Git repository from which Salt minions in this
+	// region pull their configuration state. Stored as metadata on the BrandRegion;
+	// use it to wire ConfigurationChannels of type "state" to a centralised repo.
+	StateRepository *BrandRegionStateRepository `json:"stateRepository,omitempty"`
 }
 
 type BrandRegionStatus struct {
