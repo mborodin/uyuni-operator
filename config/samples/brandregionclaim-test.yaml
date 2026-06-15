@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uyuni-emea-creds
+  namespace: linux-platform
+type: Opaque
+stringData:
+  username: uyuni
+  password: elp2ZlBVaGdNUldKQlBpSV
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: delhaize-org-creds
+  namespace: linux-platform
+type: Opaque
+stringData:
+  username: delhaize-admin
+  password: Delhaize@2024!
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: BrandRegionClaim
+metadata:
+  name: delhaize-emea
+  namespace: linux-platform
+spec:
+  brand: delhaize
+  region: emea
+
+  provider:
+    url: https://rke-uyuni.nexa-dev.delhaize.test
+    credentialsSecretRef:
+      name: uyuni-emea-creds
+      namespace: linux-platform
+    insecureSkipVerify: true
+
+  organization:
+    name: Delhaize
+    credentialsSecretRef:
+      name: delhaize-org-creds
+
+  repositories:
+    - name: leap-15-6-oss
+      spec:
+        label: opensuse_leap15_6-x86_64-repo
+        url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
+        type: yum
+    - name: leap-15-6-updates-oss
+      spec:
+        label: opensuse_leap15_6-updates-x86_64-repo
+        url: http://download.opensuse.org/update/leap/15.6/oss/
+        type: yum
+
+  softwareChannels:
+    - name: opensuse-leap-15-6-x86-64
+      spec:
+        label: opensuse_leap15_6-x86_64
+        name: openSUSE Leap 15.6 (x86_64)
+        summary: openSUSE Leap 15.6 base channel
+        arch: channel-x86_64
+        repositoryRefs:
+          - name: leap-15-6-oss
+        sync:
+          cron: "0 0 3 ? * *"
+          syncOnCreate: true
+    - name: opensuse-leap-15-6-updates-x86-64
+      spec:
+        label: opensuse_leap15_6-updates-x86_64
+        name: openSUSE Leap 15.6 Updates (x86_64)
+        summary: openSUSE Leap 15.6 update channel
+        arch: channel-x86_64
+        parentChannelRef:
+          name: opensuse-leap-15-6-x86-64
+        repositoryRefs:
+          - name: leap-15-6-updates-oss
+        sync:
+          cron: "0 30 3 ? * *"
+
+  configChannels:
+    - name: baseline
+      spec:
+        id: delhaize-emea-baseline
+        name: Delhaize EMEA Baseline
+        description: "Common Salt states for all Delhaize EMEA systems"
+        type: state
+
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+
+  stateRepository:
+    url: https://github.com/myorg/uyuni-salt-states
+    branch: main
+    subPath: states/delhaize/emea
+
+  systemGroups:
+    - name: branchservers
+      description: "Delhaize EMEA — Branch Servers"
+      systemType: branchserver
+      configChannelRefs:
+        - name: baseline
+    - name: storehubs
+      description: "Delhaize EMEA — Store Hubs"
+      systemType: storehub
+      configChannelRefs:
+        - name: baseline
+    - name: pos
+      description: "Delhaize EMEA — POS Terminals"
+      systemType: pos
+      configChannelRefs:
+        - name: baseline
+
+  activationKeys:
+    - name: branchserver
+      description: "Delhaize EMEA branchserver registration key"
+      entitlements:
+        - monitoring_entitled
+      systemGroupRefs:
+        - name: branchservers
+    - name: storehub
+      description: "Delhaize EMEA storehub registration key"
+      entitlements:
+        - monitoring_entitled
+      systemGroupRefs:
+        - name: storehubs
+    - name: pos
+      description: "Delhaize EMEA POS registration key"
+      entitlements:
+        - monitoring_entitled
+      systemGroupRefs:
+        - name: pos

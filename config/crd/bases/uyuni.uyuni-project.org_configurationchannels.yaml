@@ -61,6 +61,11 @@ spec:
                 type: string
               name:
                 type: string
+              organizationRef:
+                description: Name of the Organization CR whose credentials to use
+                  when creating this channel. When set, the channel is created in
+                  that organization's context (org-scoped).
+                type: string
               type:
                 default: normal
                 description: Immutable after creation.

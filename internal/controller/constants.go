@@ -27,6 +27,7 @@ func orgRef(ref *uyuniv1.LocalObjectRef) string {
 // Finalizer strings, all rooted in the current API group. Centralized so
 // reconcilers reference these constants rather than hardcoding strings.
 const (
+	brFinalizer      = uyuniv1.Group + "/brandregion"
 	sysFinalizer     = uyuniv1.Group + "/system"
 	sgFinalizer      = uyuniv1.Group + "/systemgroup"
 	akFinalizer      = uyuniv1.Group + "/activationkey"

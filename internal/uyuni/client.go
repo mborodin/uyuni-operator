@@ -430,7 +430,7 @@ type wireActivationKey struct {
 	UniversalDefault bool     `json:"universal_default"`
 	Disabled         bool     `json:"disabled"`
 	ContactMethod    string   `json:"contact_method"`
-	ServerGroupIDs   []int    `json:"server_group_ids"`
+	ServerGroupIDs   []int    `json:"serverGroupIds"`
 }
 
 type wireChannel struct {
@@ -458,12 +458,16 @@ type wireRepo struct {
 	HasSignedMetadata bool   `json:"hasSignedMetadata"`
 }
 
+type wireConfigChannelType struct {
+	Label string `json:"label"`
+}
+
 type wireConfigChannel struct {
-	ID          int    `json:"id"`
-	Label       string `json:"label"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
+	ID                int                    `json:"id"`
+	Label             string                 `json:"label"`
+	Name              string                 `json:"name"`
+	Description       string                 `json:"description"`
+	ConfigChannelType wireConfigChannelType  `json:"configChannelType"`
 }
 
 type wireConfigFile struct {
@@ -889,16 +893,16 @@ func (c *Client) RemoveSystemsFromGroup(ctx context.Context, name string, server
 
 func (c *Client) SubscribeGroupToConfigChannel(ctx context.Context, groupName, channelLabel string) error {
 	_, err := apiPost[any](c, "systemgroup/subscribeConfigChannel", map[string]any{
-		"systemGroupName":    groupName,
-		"configChannelLabel": channelLabel,
+		"systemGroupName":     groupName,
+		"configChannelLabels": []string{channelLabel},
 	})
 	return err
 }
 
 func (c *Client) UnsubscribeGroupFromConfigChannel(ctx context.Context, groupName, channelLabel string) error {
 	_, err := apiPost[any](c, "systemgroup/unsubscribeConfigChannel", map[string]any{
-		"systemGroupName":    groupName,
-		"configChannelLabel": channelLabel,
+		"systemGroupName":     groupName,
+		"configChannelLabels": []string{channelLabel},
 	})
 	return err
 }
@@ -921,12 +925,12 @@ func (c *Client) CreateActivationKey(ctx context.Context, in ActivationKeyDetail
 		Key string `json:"key"`
 	}
 	r, err := apiPost[resp](c, "activationkey/create", map[string]any{
-		"key":                in.Key,
-		"description":        in.Description,
-		"base_channel_label": in.BaseChannelLabel,
-		"usage_limit":        in.UsageLimit,
-		"entitlements":       in.Entitlements,
-		"universal_default":  in.UniversalDefault,
+		"key":              in.Key,
+		"description":      in.Description,
+		"baseChannelLabel": in.BaseChannelLabel,
+		"usageLimit":       in.UsageLimit,
+		"entitlements":     in.Entitlements,
+		"universalDefault": in.UniversalDefault,
 	})
 	if err != nil {
 		return "", err
@@ -935,7 +939,7 @@ func (c *Client) CreateActivationKey(ctx context.Context, in ActivationKeyDetail
 }
 
 func (c *Client) GetActivationKey(ctx context.Context, key string) (*ActivationKeyDetails, error) {
-	r, err := apiGet[wireActivationKey](c, "activationkey/getDetails?activation_key="+url.QueryEscape(key))
+	r, err := apiGet[wireActivationKey](c, "activationkey/getDetails?key="+url.QueryEscape(key))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -951,36 +955,36 @@ func (c *Client) DeleteActivationKey(ctx context.Context, key string) error {
 
 func (c *Client) SetActivationKeyDetails(ctx context.Context, key string, d ActivationKeyDetails) error {
 	_, err := apiPost[any](c, "activationkey/setDetails", map[string]any{
-		"key":                key,
-		"description":        d.Description,
-		"base_channel_label": d.BaseChannelLabel,
-		"usage_limit":        d.UsageLimit,
-		"universal_default":  d.UniversalDefault,
-		"contact_method":     d.ContactMethod,
+		"key":              key,
+		"description":      d.Description,
+		"baseChannelLabel": d.BaseChannelLabel,
+		"usageLimit":       d.UsageLimit,
+		"universalDefault": d.UniversalDefault,
+		"contactMethod":    d.ContactMethod,
 	})
 	return err
 }
 
 func (c *Client) AddChildChannels(ctx context.Context, key string, labels []string) error {
 	_, err := apiPost[any](c, "activationkey/addChildChannels", map[string]any{
-		"key":                  key,
-		"child_channel_labels": labels,
+		"key":               key,
+		"childChannelLabels": labels,
 	})
 	return err
 }
 
 func (c *Client) RemoveChildChannels(ctx context.Context, key string, labels []string) error {
 	_, err := apiPost[any](c, "activationkey/removeChildChannels", map[string]any{
-		"key":                  key,
-		"child_channel_labels": labels,
+		"key":               key,
+		"childChannelLabels": labels,
 	})
 	return err
 }
 
 func (c *Client) SetActivationKeyConfigChannels(ctx context.Context, key string, channelLabels []string) error {
 	_, err := apiPost[any](c, "activationkey/setConfigChannels", map[string]any{
-		"keys":                  []string{key},
-		"config_channel_labels": channelLabels,
+		"keys":               []string{key},
+		"configChannelLabels": channelLabels,
 	})
 	return err
 }
@@ -994,7 +998,7 @@ func (c *Client) SetActivationKeyGroups(ctx context.Context, key string, groupID
 	if len(existing.ServerGroupIDs) > 0 {
 		if _, err := apiPost[any](c, "activationkey/removeServerGroups", map[string]any{
 			"key":              key,
-			"server_group_ids": existing.ServerGroupIDs,
+			"serverGroupIds": existing.ServerGroupIDs,
 		}); err != nil {
 			return err
 		}
@@ -1002,7 +1006,7 @@ func (c *Client) SetActivationKeyGroups(ctx context.Context, key string, groupID
 	if len(groupIDs) > 0 {
 		if _, err := apiPost[any](c, "activationkey/addServerGroups", map[string]any{
 			"key":              key,
-			"server_group_ids": groupIDs,
+			"serverGroupIds": groupIDs,
 		}); err != nil {
 			return err
 		}
@@ -1078,6 +1082,14 @@ func (c *Client) DeleteChannel(ctx context.Context, label string) error {
 		"channelLabel": label,
 	})
 	return asNotFound(err)
+}
+
+func (c *Client) SetChannelGloballySubscribable(ctx context.Context, label string, subscribable bool) error {
+	_, err := apiPost[any](c, "channel/software/setGloballySubscribable", map[string]any{
+		"channelLabel": label,
+		"subscribable": subscribable,
+	})
+	return err
 }
 
 func (c *Client) ListChannelRepos(ctx context.Context, label string) ([]string, error) {
@@ -1232,7 +1244,7 @@ func (c *Client) UpdateConfigChannel(ctx context.Context, label, name, descripti
 
 func (c *Client) DeleteConfigChannel(ctx context.Context, label string) error {
 	_, err := apiPost[any](c, "configchannel/deleteChannels", map[string]any{
-		"channel_labels": []string{label},
+		"channelLabels": []string{label},
 	})
 	return asNotFound(err)
 }
@@ -1297,7 +1309,7 @@ func wireConfigChanToDetails(w *wireConfigChannel) *ConfigChannelDetails {
 		Label:       w.Label,
 		Name:        w.Name,
 		Description: w.Description,
-		Type:        w.Type,
+		Type:        w.ConfigChannelType.Label,
 	}
 }
 
@@ -1834,14 +1846,14 @@ type wireOrg struct {
 
 func (c *Client) CreateOrganization(ctx context.Context, name, adminLogin, adminPass, adminFirstName, adminLastName, adminEmail string) (int, error) {
 	r, err := apiPost[wireOrg](c, "org/create", map[string]any{
-		"name":           name,
-		"admin_login":    adminLogin,
-		"admin_password": adminPass,
-		"admin_prefix":   "Mr.",
-		"first_name":     adminFirstName,
-		"last_name":      adminLastName,
-		"email":          adminEmail,
-		"pam":            false,
+		"orgName":       name,
+		"adminLogin":    adminLogin,
+		"adminPassword": adminPass,
+		"prefix":        "Mr.",
+		"firstName":     adminFirstName,
+		"lastName":      adminLastName,
+		"email":         adminEmail,
+		"usePamAuth":    false,
 	})
 	if err != nil {
 		return 0, err

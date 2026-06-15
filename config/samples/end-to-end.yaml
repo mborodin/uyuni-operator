@@ -1,145 +1,279 @@
-# End-to-end sample for the uyuni.uyuni-project.org operator.
-# Apply with: kubectl apply -f end-to-end.yaml
+# End-to-end sample — Delhaize EMEA full regional deployment via BrandRegion
 #
-# Note the new API group throughout. Annotations and finalizers also use
-# uyuni.uyuni-project.org as the prefix. If you have CRs from a previous
-# operator version using uyuni.io/*, the operator migrates them silently
-# on first reconcile after upgrade.
+# A single BrandRegion CR bootstraps everything needed for a regional Uyuni
+# fleet — from the Uyuni spoke connection all the way to activation keys.
+# The only thing NOT managed here are individual System CRs (one per device).
+#
+# Resources created/owned by the BrandRegion reconciler:
+#
+#   Cluster-scoped (finalizer handles deletion):
+#     - UyuniProvider  "delhaize-emea"
+#
+#   Namespace-scoped (owner refs → Kubernetes GC handles deletion):
+#     - Organization          "delhaize-emea"
+#     - Repository            "leap-15-6-oss"
+#     - SoftwareChannel       "opensuse-leap-15-6-x86-64"
+#     - SoftwareChannel       "opensuse-leap-15-6-updates-x86-64"
+#     - ConfigurationChannel  "delhaize-emea-baseline"
+#     - SystemGroup           "delhaize-emea-branchservers"
+#     - SystemGroup           "delhaize-emea-storehubs"
+#     - SystemGroup           "delhaize-emea-pos"
+#     - ActivationKey         "delhaize-emea-branchserver"
+#     - ActivationKey         "delhaize-emea-storehub"
+#     - ActivationKey         "delhaize-emea-pos"
+#
+# Apply with:
+#   kubectl apply -f config/samples/end-to-end.yaml
 ---
+# Credentials for the Uyuni automation account (pre-existing Secret).
 apiVersion: v1
 kind: Secret
 metadata:
-  name: uyuni-prod-creds
+  name: uyuni-emea-creds
   namespace: uyuni-operator-system
 type: Opaque
 stringData:
   username: automation
   password: replace-me
 ---
-apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: UyuniProvider
+# Credentials for the Delhaize org admin account (pre-existing Secret).
+apiVersion: v1
+kind: Secret
 metadata:
-  name: prod
-spec:
-  url: https://uyuni.customer.example
-  credentialsSecretRef:
-    name: uyuni-prod-creds
-    namespace: uyuni-operator-system
-  isDefault: true
-  timeout: 30s
+  name: delhaize-org-creds
+  namespace: linux-platform
+type: Opaque
+stringData:
+  username: delhaize-admin
+  password: replace-me
 ---
+# ── BrandRegion — the single entry point for the whole fleet ─────────────────
 apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: Repository
+kind: BrandRegion
 metadata:
-  name: leap-15-6-oss
+  name: delhaize-emea
   namespace: linux-platform
 spec:
-  label: opensuse_leap15_6-x86_64-repo
-  url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
-  type: yum
----
-apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: SoftwareChannel
-metadata:
-  name: opensuse-leap-15-6-x86-64
-  namespace: linux-platform
-spec:
-  label: opensuse_leap15_6-x86_64
-  name: openSUSE Leap 15.6 (x86_64)
-  summary: openSUSE Leap 15.6 base channel
-  arch: channel-x86_64
-  repositoryRefs:
+  brand: delhaize
+  region: emea
+
+  # ── Uyuni spoke connection ──────────────────────────────────────────────────
+  # Creates a cluster-scoped UyuniProvider CR named "delhaize-emea".
+  provider:
+    url: https://uyuni.emea.example
+    credentialsSecretRef:
+      name: uyuni-emea-creds
+      namespace: uyuni-operator-system
+    timeout: 30s
+
+  # ── Brand organization ──────────────────────────────────────────────────────
+  # Creates an Organization CR named "delhaize-emea".
+  organization:
+    name: Delhaize
+    credentialsSecretRef:
+      name: delhaize-org-creds
+
+  # ── Repositories ────────────────────────────────────────────────────────────
+  # organizationRef is auto-set to the managed organization above.
+  repositories:
     - name: leap-15-6-oss
-  sync:
-    cron: "0 0 3 ? * *"
-    syncOnCreate: true
----
-apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: ContentProject
-metadata:
-  name: leap-platform
-  namespace: linux-platform
-spec:
-  label: leap-platform
-  name: openSUSE Leap Platform
-  description: Promoted channels for the Leap 15.6 fleet
-  sourceRefs:
+      spec:
+        label: opensuse_leap15_6-x86_64-repo
+        url: http://download.opensuse.org/distribution/leap/15.6/repo/oss/
+        type: yum
+    - name: leap-15-6-updates-oss
+      spec:
+        label: opensuse_leap15_6-updates-x86_64-repo
+        url: http://download.opensuse.org/update/leap/15.6/oss/
+        type: yum
+
+  # ── Software channels ───────────────────────────────────────────────────────
+  # organizationRef is auto-set. parentChannelRef, if set, must reference a
+  # SoftwareChannel CR managed within this same BrandRegion.
+  softwareChannels:
     - name: opensuse-leap-15-6-x86-64
-  environments:
-    - { label: dev,  name: Development }
-    - { label: test, name: Testing,    predecessor: dev }
-    - { label: prod, name: Production, predecessor: test }
-  filters:
-    - name: no-rc-kernels
-      type: package
-      rule: deny
-      criteria:
-        field: name
-        matcher: matches
-        value: "kernel.*-rc[0-9]+"
-  build:
-    autoBuildSources: true
-    schedule: "0 4 * * 1"
+      spec:
+        label: opensuse_leap15_6-x86_64
+        name: openSUSE Leap 15.6 (x86_64)
+        summary: openSUSE Leap 15.6 base channel
+        arch: channel-x86_64
+        repositoryRefs:
+          - name: leap-15-6-oss
+        sync:
+          cron: "0 0 3 ? * *"
+          syncOnCreate: true
+    - name: opensuse-leap-15-6-updates-x86-64
+      spec:
+        label: opensuse_leap15_6-updates-x86_64
+        name: openSUSE Leap 15.6 Updates (x86_64)
+        summary: openSUSE Leap 15.6 update channel
+        arch: channel-x86_64
+        parentChannelRef:
+          name: opensuse-leap-15-6-x86-64
+        repositoryRefs:
+          - name: leap-15-6-updates-oss
+        sync:
+          cron: "0 30 3 ? * *"
+
+  # ── Configuration channels ──────────────────────────────────────────────────
+  configChannels:
+    - name: delhaize-emea-baseline
+      spec:
+        id: delhaize-emea-baseline
+        name: Delhaize EMEA Baseline
+        description: "Common Salt states for all Delhaize EMEA systems"
+        type: state
+
+  # ── Base channel for activation keys ───────────────────────────────────────
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+
+  # ── System groups ───────────────────────────────────────────────────────────
+  systemGroups:
+    - name: delhaize-emea-branchservers
+      description: "Delhaize EMEA — Branch Servers"
+      systemType: branchserver
+      configChannelRefs:
+        - name: delhaize-emea-baseline
+    - name: delhaize-emea-storehubs
+      description: "Delhaize EMEA — Store Hubs"
+      systemType: storehub
+      configChannelRefs:
+        - name: delhaize-emea-baseline
+    - name: delhaize-emea-pos
+      description: "Delhaize EMEA — POS Terminals"
+      systemType: pos
+      configChannelRefs:
+        - name: delhaize-emea-baseline
+
+  # ── State repository ────────────────────────────────────────────────────────
+  # Git repo from which Salt minions pull their configuration state.
+  # Reference this when creating ConfigurationChannels of type "state".
+  stateRepository:
+    url: https://github.com/myorg/uyuni-salt-states
+    branch: main
+    subPath: states/delhaize/emea
+    credentialsSecretRef:
+      name: github-salt-creds
+      namespace: uyuni-operator-system
+
+  # ── Activation keys ─────────────────────────────────────────────────────────
+  # Base channel, child channels and organizationRef are inherited from above.
+  activationKeys:
+    - name: delhaize-emea-branchserver
+      description: "Delhaize EMEA branchserver registration key"
+      entitlements:
+        - monitoring_entitled
+      systemGroupRefs:
+        - name: delhaize-emea-branchservers
+    - name: delhaize-emea-storehub
+      description: "Delhaize EMEA storehub registration key"
+      entitlements:
+        - monitoring_entitled
+      systemGroupRefs:
+        - name: delhaize-emea-storehubs
+    - name: delhaize-emea-pos
+      description: "Delhaize EMEA POS registration key"
+      entitlements:
+        - monitoring_entitled
+      systemGroupRefs:
+        - name: delhaize-emea-pos
 ---
+# ── System CRs ───────────────────────────────────────────────────────────────
+# Applied independently (one per physical device). Reference the groups and
+# channels created above by the BrandRegion.
 apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: ActivationKey
+kind: System
 metadata:
-  name: leap-prod
+  name: branchserver-be01
   namespace: linux-platform
 spec:
-  key: leap-prod
-  description: Production Leap fleet
-  baseChannelFrom:
-    contentProjectRef: { name: leap-platform }
-    environment: prod
-    sourceChannelLabel: opensuse_leap15_6-x86_64
-  systemGroupRefs:
-    - name: linux-prod
----
-apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: SystemGroup
-metadata:
-  name: linux-prod
-  namespace: linux-platform
-spec:
-  name: linux-prod
-  description: Production Linux fleet
+  minionId: branchserver-be01.emea.example
+  type: branchserver
+  preCreate: true
+  hostname: branchserver-be01.emea.example
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:01:01"
+      ipAddress: "10.1.1.1"
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+  groupRefs:
+    - name: delhaize-emea-branchservers
+  addOns:
+    - monitoring_entitled
+  organizationRef:
+    name: delhaize-emea
+  customInfo:
+    brand: delhaize
+    region: emea
+    store: BE01
+  deletionPolicy: Orphan
+  adoptionTimeout: 24h0m0s
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: System
 metadata:
-  name: web-03
+  name: storehub-be01
   namespace: linux-platform
 spec:
-  minionId: web-03.example.com
+  minionId: storehub-be01.emea.example
+  type: storehub
   preCreate: true
+  hostname: storehub-be01.emea.example
   network:
-    - { name: eth0, macAddress: "52:54:00:ab:cd:03" }
-  baseChannelFrom:
-    contentProjectRef: { name: leap-platform }
-    environment: prod
-    sourceChannelLabel: opensuse_leap15_6-x86_64
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:01:02"
+      ipAddress: "10.1.1.2"
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+  groupRefs:
+    - name: delhaize-emea-storehubs
+  addOns:
+    - monitoring_entitled
+  organizationRef:
+    name: delhaize-emea
   customInfo:
-    env: prod
-    role: web
+    brand: delhaize
+    region: emea
+    store: BE01
+  deletionPolicy: Orphan
+  adoptionTimeout: 24h0m0s
 ---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: ContentProjectPromotion
+kind: System
 metadata:
-  name: leap-2026-05-12-dev-to-test
+  name: pos-be01-01
   namespace: linux-platform
 spec:
-  projectRef: { name: leap-platform }
-  fromEnvironment: dev
-  toEnvironment: test
-  requireSourceVersion: 14
----
-apiVersion: uyuni.uyuni-project.org/v1alpha1
-kind: Task
-metadata:
-  name: deploy-nginx-config-v2
-  namespace: linux-platform
-spec:
-  target:
-    systemGroupRef: { name: linux-prod }
-  highstate: {}
+  minionId: pos-be01-01.emea.example
+  type: pos
+  preCreate: true
+  hostname: pos-be01-01.emea.example
+  network:
+    - name: eth0
+      macAddress: "aa:bb:cc:dd:01:03"
+      ipAddress: "10.1.1.3"
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+  groupRefs:
+    - name: delhaize-emea-pos
+  addOns:
+    - monitoring_entitled
+  organizationRef:
+    name: delhaize-emea
+  customInfo:
+    brand: delhaize
+    region: emea
+    store: BE01
+    terminal: "1"
+  deletionPolicy: Orphan
+  adoptionTimeout: 24h0m0s

@@ -203,18 +203,30 @@ func (r *ActivationKeyReconciler) fetchExisting(ctx context.Context, uc uyuni.AP
 		}
 		return d, err
 	}
-	// Adoption probe: predict the org-prefixed key. Uyuni's default org is 1;
-	// resolver against pool.OrgID() if multi-org is needed.
-	predicted := fmt.Sprintf("1-%s", ak.Spec.Key)
+	// Adoption probe: predict the org-prefixed key using the org's actual Uyuni ID.
+	orgID := r.resolveOrgID(ctx, ak)
+	predicted := fmt.Sprintf("%d-%s", orgID, ak.Spec.Key)
 	d, err := uc.GetActivationKey(ctx, predicted)
-	if uyuni.IsNotFound(err) {
+	if uyuni.IsNotFound(err) || err != nil {
+		// Treat any error as not-found: the key may not exist yet, or it may be in a different org.
 		return nil, nil
-	}
-	if err != nil {
-		return nil, err
 	}
 	ak.Status.UyuniKey = predicted
 	return d, nil
+}
+
+func (r *ActivationKeyReconciler) resolveOrgID(ctx context.Context, ak *uyuniv1.ActivationKey) int {
+	if ak.Spec.OrganizationRef == nil {
+		return 1
+	}
+	var org uyuniv1.Organization
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ak.Namespace, Name: ak.Spec.OrganizationRef.Name}, &org); err != nil {
+		return 1
+	}
+	if org.Status.UyuniOrgID == 0 {
+		return 1
+	}
+	return org.Status.UyuniOrgID
 }
 
 func (r *ActivationKeyReconciler) resolveSystemGroups(ctx context.Context, ak *uyuniv1.ActivationKey) (ids []int, wait string, err error) {
