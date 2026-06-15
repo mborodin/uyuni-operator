@@ -262,16 +262,12 @@ func (r *BrandRegionReconciler) reconcileSoftwareChannel(ctx context.Context, br
 			},
 			Spec: scSpec,
 		}
-		if createErr := r.Create(ctx, sc); createErr != nil {
-			return createErr
-		}
+		return r.Create(ctx, sc)
 	}
-	// Make the channel globally subscribable so org-specific admin accounts can use it.
-	if spec.Spec.Label != "" {
-		uc, clientErr := r.Clients.For(ctx, &uyuni.LocalObjectRef{Name: br.Name}, br.Namespace)
-		if clientErr == nil {
-			_ = uc.SetChannelGloballySubscribable(ctx, spec.Spec.Label, true)
-		}
+	// Ensure the channel is owned by this BrandRegion's org, not a foreign org.
+	if existing.Spec.OrganizationRef == nil || existing.Spec.OrganizationRef.Name != orgRef.Name {
+		existing.Spec.OrganizationRef = orgRef
+		return r.Update(ctx, &existing)
 	}
 	return nil
 }
