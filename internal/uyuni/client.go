@@ -458,12 +458,16 @@ type wireRepo struct {
 	HasSignedMetadata bool   `json:"hasSignedMetadata"`
 }
 
+type wireConfigChannelType struct {
+	Label string `json:"label"`
+}
+
 type wireConfigChannel struct {
-	ID          int    `json:"id"`
-	Label       string `json:"label"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
+	ID                int                    `json:"id"`
+	Label             string                 `json:"label"`
+	Name              string                 `json:"name"`
+	Description       string                 `json:"description"`
+	ConfigChannelType wireConfigChannelType  `json:"configChannelType"`
 }
 
 type wireConfigFile struct {
@@ -1305,7 +1309,7 @@ func wireConfigChanToDetails(w *wireConfigChannel) *ConfigChannelDetails {
 		Label:       w.Label,
 		Name:        w.Name,
 		Description: w.Description,
-		Type:        w.Type,
+		Type:        w.ConfigChannelType.Label,
 	}
 }
 
