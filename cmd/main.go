@@ -88,7 +88,8 @@ func main() {
 	}
 
 	if err := (&controller.BrandRegionReconciler{
-		Client: mgr.GetClient(),
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BrandRegion")
 		os.Exit(1)

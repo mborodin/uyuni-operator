@@ -1080,6 +1080,14 @@ func (c *Client) DeleteChannel(ctx context.Context, label string) error {
 	return asNotFound(err)
 }
 
+func (c *Client) SetChannelGloballySubscribable(ctx context.Context, label string, subscribable bool) error {
+	_, err := apiPost[any](c, "channel/software/setGloballySubscribable", map[string]any{
+		"channelLabel": label,
+		"subscribable": subscribable,
+	})
+	return err
+}
+
 func (c *Client) ListChannelRepos(ctx context.Context, label string) ([]string, error) {
 	type repoRef struct {
 		Label string `json:"label"`

@@ -97,6 +97,7 @@ type API interface {
 	GetChannel(ctx context.Context, label string) (*ChannelDetails, error)
 	SetChannelDetails(ctx context.Context, id int, d ChannelDetails) error
 	DeleteChannel(ctx context.Context, label string) error
+	SetChannelGloballySubscribable(ctx context.Context, label string, subscribable bool) error
 	ListChannelRepos(ctx context.Context, label string) ([]string, error)
 	AssociateRepo(ctx context.Context, channelLabel, repoLabel string) error
 	DisassociateRepo(ctx context.Context, channelLabel, repoLabel string) error

@@ -14,10 +14,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
+	"github.com/mborodin/uyuni-operator/internal/uyuni"
 )
 
 type BrandRegionReconciler struct {
 	client.Client
+	Clients uyuni.ClientPool
 }
 
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=brandregions,verbs=get;list;watch;create;update;patch;delete
@@ -260,7 +262,16 @@ func (r *BrandRegionReconciler) reconcileSoftwareChannel(ctx context.Context, br
 			},
 			Spec: scSpec,
 		}
-		return r.Create(ctx, sc)
+		if createErr := r.Create(ctx, sc); createErr != nil {
+			return createErr
+		}
+	}
+	// Make the channel globally subscribable so org-specific admin accounts can use it.
+	if spec.Spec.Label != "" {
+		uc, clientErr := r.Clients.For(ctx, &uyuni.LocalObjectRef{Name: br.Name}, br.Namespace)
+		if clientErr == nil {
+			_ = uc.SetChannelGloballySubscribable(ctx, spec.Spec.Label, true)
+		}
 	}
 	return nil
 }
