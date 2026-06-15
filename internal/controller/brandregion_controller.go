@@ -280,7 +280,12 @@ func (r *BrandRegionReconciler) reconcileConfigChannel(ctx context.Context, br *
 			},
 			Spec: spec.Spec,
 		}
+		cc.Spec.Cluster = br.Name
 		return r.Create(ctx, cc)
+	}
+	if existing.Spec.Cluster != br.Name {
+		existing.Spec.Cluster = br.Name
+		return r.Update(ctx, &existing)
 	}
 	return nil
 }
