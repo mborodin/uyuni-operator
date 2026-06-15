@@ -34,7 +34,7 @@ spec:
           # providerConfigRef.name must match an installed ProviderConfig for
           # provider-kubernetes that targets the uyuni-operator cluster.
           providerConfigRef:
-            name: uyuni-cluster
+            name: kubernetes-provider
           forProvider:
             manifest:
               apiVersion: uyuni.uyuni-project.org/v1alpha1

@@ -16,6 +16,7 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys
+  - brandregions
   - clmenvironments
   - configurationchannels
   - contentprojects
@@ -37,6 +38,7 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/finalizers
+  - brandregions/finalizers
   - clmenvironments/finalizers
   - configurationchannels/finalizers
   - contentprojects/finalizers
@@ -52,6 +54,7 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/status
+  - brandregions/status
   - clmenvironments/status
   - configurationchannels/status
   - contentprojectpromotions/status

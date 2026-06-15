@@ -1,0 +1,44 @@
+---
+# RBAC for provider-kubernetes to manage BrandRegion resources
+#
+# provider-kubernetes creates its own ServiceAccount with a name derived from
+# the package revision hash (e.g. provider-kubernetes-f8518c887488). This name
+# changes when the provider package is upgraded. If you upgrade provider-kubernetes,
+# update the subjects[].name below to match the new SA name:
+#
+#   kubectl get sa -n crossplane-system | grep provider-kubernetes
+#
+# Apply with:
+#   kubectl apply -f config/crossplane/provider-kubernetes-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: provider-kubernetes-brandregion
+rules:
+- apiGroups:
+  - uyuni.uyuni-project.org
+  resources:
+  - brandregions
+  - brandregions/status
+  - brandregions/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provider-kubernetes-brandregion
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: provider-kubernetes-brandregion
+subjects:
+- kind: ServiceAccount
+  name: provider-kubernetes-f8518c887488
+  namespace: crossplane-system
