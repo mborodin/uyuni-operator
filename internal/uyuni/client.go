@@ -889,16 +889,16 @@ func (c *Client) RemoveSystemsFromGroup(ctx context.Context, name string, server
 
 func (c *Client) SubscribeGroupToConfigChannel(ctx context.Context, groupName, channelLabel string) error {
 	_, err := apiPost[any](c, "systemgroup/subscribeConfigChannel", map[string]any{
-		"systemGroupName":    groupName,
-		"configChannelLabel": channelLabel,
+		"systemGroupName":     groupName,
+		"configChannelLabels": []string{channelLabel},
 	})
 	return err
 }
 
 func (c *Client) UnsubscribeGroupFromConfigChannel(ctx context.Context, groupName, channelLabel string) error {
 	_, err := apiPost[any](c, "systemgroup/unsubscribeConfigChannel", map[string]any{
-		"systemGroupName":    groupName,
-		"configChannelLabel": channelLabel,
+		"systemGroupName":     groupName,
+		"configChannelLabels": []string{channelLabel},
 	})
 	return err
 }
