@@ -1,5 +1,5 @@
 ---
-# RBAC for provider-kubernetes to manage BrandRegion resources
+# RBAC for provider-kubernetes to manage individual uyuni operator CRDs
 #
 # provider-kubernetes creates its own ServiceAccount with a name derived from
 # the package revision hash (e.g. provider-kubernetes-f8518c887488). This name
@@ -9,18 +9,42 @@
 #   kubectl get sa -n crossplane-system | grep provider-kubernetes
 #
 # Apply with:
-#   kubectl apply -f config/crossplane/provider-kubernetes-rbac.yaml
+#   kubectl apply -f config/rbac/provider-kubernetes-rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: provider-kubernetes-brandregion
+  name: provider-kubernetes-uyuni
 rules:
 - apiGroups:
   - uyuni.uyuni-project.org
   resources:
-  - brandregions
-  - brandregions/status
-  - brandregions/finalizers
+  - uyuniproviders
+  - uyuniproviders/status
+  - uyuniproviders/finalizers
+  - organizations
+  - organizations/status
+  - organizations/finalizers
+  - repositories
+  - repositories/status
+  - repositories/finalizers
+  - softwarechannels
+  - softwarechannels/status
+  - softwarechannels/finalizers
+  - configurationchannels
+  - configurationchannels/status
+  - configurationchannels/finalizers
+  - systemgroups
+  - systemgroups/status
+  - systemgroups/finalizers
+  - activationkeys
+  - activationkeys/status
+  - activationkeys/finalizers
+  - contentprojects
+  - contentprojects/status
+  - contentprojects/finalizers
+  - clmenvironments
+  - clmenvironments/status
+  - clmenvironments/finalizers
   verbs:
   - create
   - delete
@@ -33,11 +57,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: provider-kubernetes-brandregion
+  name: provider-kubernetes-uyuni
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: provider-kubernetes-brandregion
+  name: provider-kubernetes-uyuni
 subjects:
 - kind: ServiceAccount
   name: provider-kubernetes-f8518c887488
