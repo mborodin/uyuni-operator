@@ -1,20 +1,36 @@
 ---
-# Crossplane Composition — XBrandRegion → BrandRegion (uyuni-operator)
+# Crossplane Composition — XBrandRegion → individual uyuni-operator CRDs
 #
 # Architecture:
 #   User creates BrandRegionClaim (namespace-scoped)
-#     → Crossplane creates XBrandRegion (composite)
-#       → This Composition creates a BrandRegion CR (provider-kubernetes Object)
-#         → uyuni-operator's BrandRegionReconciler handles all child resources
+#     → Crossplane creates XBrandRegion (composite, cluster-scoped)
+#       → This Composition creates individual provider-kubernetes Objects
+#         → provider-kubernetes creates the actual uyuni operator CRDs
+#           → Each uyuni operator controller reconciles against Uyuni API
+#
+# Naming convention (mirrors what BrandRegionReconciler used to do):
+#   UyuniProvider  : {composite.name}
+#   Organization   : {composite.name}
+#   Repository N   : {composite.name}-{spec.repositories[N].name}
+#   SoftwareChannel: {composite.name}-{spec.softwareChannels[N].name}
+#   ConfigChannel  : {composite.name}-{spec.configChannels[N].name}
+#   SystemGroup    : {composite.name}-{spec.systemGroups[N].name}
+#   ActivationKey  : {composite.name}-{spec.activationKeys[N].name}
+#   ContentProject : {composite.name}-{spec.contentProjects[0].name}
+#   ClmEnvironment : {composite.name}-{spec.contentProjects[0].name}-{env.name}
+#
+# Assumptions (matches the standard BrandRegionClaim structure):
+#   - 2 repositories  (indices 0, 1)
+#   - 2 softwareChannels (indices 0=base, 1=updates/child)
+#   - 1 configChannel  (index 0)
+#   - 3 systemGroups   (indices 0, 1, 2)
+#   - 3 activationKeys (indices 0, 1, 2)
+#   - 1 contentProject (index 0) with 3 environments (dev, test, prod)
 #
 # Prerequisites:
 #   - Crossplane installed
-#   - provider-kubernetes installed with a ProviderConfig pointing to the
-#     same cluster (or a remote cluster) running uyuni-operator
+#   - provider-kubernetes installed with ProviderConfig named "kubernetes-provider"
 #   - XRD applied: config/crossplane/xrd.yaml
-#
-# Apply with:
-#   kubectl apply -f config/crossplane/composition.yaml
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -26,169 +42,1061 @@ spec:
     apiVersion: uyuni.uyuni-project.org/v1alpha1
     kind: XBrandRegion
   resources:
-    - name: brandregion
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 1. UyuniProvider  (cluster-scoped — no namespace in manifest metadata)
+    #    Named: {composite.name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: uyuniprovider
       base:
         apiVersion: kubernetes.crossplane.io/v1alpha2
         kind: Object
         spec:
-          # providerConfigRef.name must match an installed ProviderConfig for
-          # provider-kubernetes that targets the uyuni-operator cluster.
           providerConfigRef:
             name: kubernetes-provider
           forProvider:
             manifest:
               apiVersion: uyuni.uyuni-project.org/v1alpha1
-              kind: BrandRegion
-              metadata:
-                # namespace is patched from the claim's namespace
-                namespace: default
+              kind: UyuniProvider
               spec: {}
       patches:
-        # ── Identity ────────────────────────────────────────────────────────────
         - type: FromCompositeFieldPath
           fromFieldPath: metadata.name
           toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.provider.url
+          toFieldPath: spec.forProvider.manifest.spec.url
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.provider.credentialsSecretRef
+          toFieldPath: spec.forProvider.manifest.spec.credentialsSecretRef
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.provider.insecureSkipVerify
+          toFieldPath: spec.forProvider.manifest.spec.insecureSkipVerify
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.provider.timeout
+          toFieldPath: spec.forProvider.manifest.spec.timeout
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.provider.caCertSecretRef
+          toFieldPath: spec.forProvider.manifest.spec.caCertSecretRef
+          policy:
+            fromFieldPath: Optional
 
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 2. Organization
+    #    Named: {composite.name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: organization
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: Organization
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.metadata.name
         - type: FromCompositeFieldPath
           fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
           toFieldPath: spec.forProvider.manifest.metadata.namespace
-
-        # ── Required spec fields ─────────────────────────────────────────────────
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.brand
-          toFieldPath: spec.forProvider.manifest.spec.brand
-
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.providerRef.name
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.region
-          toFieldPath: spec.forProvider.manifest.spec.region
-
+          fromFieldPath: spec.organization.name
+          toFieldPath: spec.forProvider.manifest.spec.name
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.provider
-          toFieldPath: spec.forProvider.manifest.spec.provider
-
+          fromFieldPath: spec.organization.credentialsSecretRef
+          toFieldPath: spec.forProvider.manifest.spec.credentialsSecretRef
+          policy:
+            fromFieldPath: Optional
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.organization
-          toFieldPath: spec.forProvider.manifest.spec.organization
+          fromFieldPath: spec.organization.import
+          toFieldPath: spec.forProvider.manifest.spec.import
+          policy:
+            fromFieldPath: Optional
 
-        # ── Optional spec fields ─────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 3. Repository 0
+    #    Named: {composite.name}-{spec.repositories[0].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: repository-0
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: Repository
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.repositories[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.stateRepository
-          toFieldPath: spec.forProvider.manifest.spec.stateRepository
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.repositories
-          toFieldPath: spec.forProvider.manifest.spec.repositories
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.softwareChannels
-          toFieldPath: spec.forProvider.manifest.spec.softwareChannels
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: spec.repositories[0].spec.label
+          toFieldPath: spec.forProvider.manifest.spec.label
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.configChannels
-          toFieldPath: spec.forProvider.manifest.spec.configChannels
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: spec.repositories[0].spec.url
+          toFieldPath: spec.forProvider.manifest.spec.url
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.baseChannelRef
-          toFieldPath: spec.forProvider.manifest.spec.baseChannelRef
+          fromFieldPath: spec.repositories[0].spec.type
+          toFieldPath: spec.forProvider.manifest.spec.type
           policy:
             fromFieldPath: Optional
-
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.baseChannelFrom
-          toFieldPath: spec.forProvider.manifest.spec.baseChannelFrom
+          fromFieldPath: spec.repositories[0].spec.hasSignedMetadata
+          toFieldPath: spec.forProvider.manifest.spec.hasSignedMetadata
           policy:
             fromFieldPath: Optional
 
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 4. Repository 1
+    #    Named: {composite.name}-{spec.repositories[1].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: repository-1
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: Repository
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.repositories[1].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.childChannelRefs
-          toFieldPath: spec.forProvider.manifest.spec.childChannelRefs
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.childChannelsFrom
-          toFieldPath: spec.forProvider.manifest.spec.childChannelsFrom
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.systemGroups
-          toFieldPath: spec.forProvider.manifest.spec.systemGroups
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: spec.repositories[1].spec.label
+          toFieldPath: spec.forProvider.manifest.spec.label
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.activationKeys
-          toFieldPath: spec.forProvider.manifest.spec.activationKeys
-          policy:
-            fromFieldPath: Optional
-
+          fromFieldPath: spec.repositories[1].spec.url
+          toFieldPath: spec.forProvider.manifest.spec.url
         - type: FromCompositeFieldPath
-          fromFieldPath: spec.contentProjects
-          toFieldPath: spec.forProvider.manifest.spec.contentProjects
+          fromFieldPath: spec.repositories[1].spec.type
+          toFieldPath: spec.forProvider.manifest.spec.type
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.repositories[1].spec.hasSignedMetadata
+          toFieldPath: spec.forProvider.manifest.spec.hasSignedMetadata
           policy:
             fromFieldPath: Optional
 
-        # ── Status back-propagation ──────────────────────────────────────────────
-        # Surface BrandRegion status fields back to the XBrandRegion composite.
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedProvider
-          toFieldPath: status.managedProvider
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 5. SoftwareChannel 0  (base channel — no parentChannelRef)
+    #    Named: {composite.name}-{spec.softwareChannels[0].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: softwarechannel-0
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: SoftwareChannel
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.softwareChannels[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[0].spec.label
+          toFieldPath: spec.forProvider.manifest.spec.label
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[0].spec.name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[0].spec.summary
+          toFieldPath: spec.forProvider.manifest.spec.summary
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[0].spec.arch
+          toFieldPath: spec.forProvider.manifest.spec.arch
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[0].spec.description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.softwareChannels[0].spec.repositoryRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.repositoryRefs[0].name
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[0].spec.sync
+          toFieldPath: spec.forProvider.manifest.spec.sync
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedOrganization
-          toFieldPath: status.managedOrganization
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 6. SoftwareChannel 1  (child/updates channel — has parentChannelRef)
+    #    Named: {composite.name}-{spec.softwareChannels[1].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: softwarechannel-1
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: SoftwareChannel
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.softwareChannels[1].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[1].spec.label
+          toFieldPath: spec.forProvider.manifest.spec.label
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[1].spec.name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[1].spec.summary
+          toFieldPath: spec.forProvider.manifest.spec.summary
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[1].spec.arch
+          toFieldPath: spec.forProvider.manifest.spec.arch
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[1].spec.description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.softwareChannels[1].spec.parentChannelRef.name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.parentChannelRef.name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.softwareChannels[1].spec.repositoryRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.repositoryRefs[0].name
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.softwareChannels[1].spec.sync
+          toFieldPath: spec.forProvider.manifest.spec.sync
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedRepositories
-          toFieldPath: status.managedRepositories
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 7. ConfigurationChannel 0
+    #    Named: {composite.name}-{spec.configChannels[0].name}
+    #    Note: ConfigurationChannelSpec.organizationRef and .cluster are plain
+    #    strings (not LocalObjectRef) — patch directly to the string field.
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: configchannel-0
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ConfigurationChannel
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.configChannels[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.cluster
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.id
+          toFieldPath: spec.forProvider.manifest.spec.id
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.type
+          toFieldPath: spec.forProvider.manifest.spec.type
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.description
+          toFieldPath: spec.forProvider.manifest.spec.description
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedSoftwareChannels
-          toFieldPath: status.managedSoftwareChannels
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 8. SystemGroup 0
+    #    Named: {composite.name}-{spec.systemGroups[0].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: systemgroup-0
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: SystemGroup
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.systemGroups[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.systemGroups[0].name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.systemGroups[0].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.systemGroups[0].configChannelRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.configChannelRefs[0].name
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedConfigChannels
-          toFieldPath: status.managedConfigChannels
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 9. SystemGroup 1
+    #    Named: {composite.name}-{spec.systemGroups[1].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: systemgroup-1
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: SystemGroup
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.systemGroups[1].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.systemGroups[1].name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.systemGroups[1].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.systemGroups[1].configChannelRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.configChannelRefs[0].name
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedGroups
-          toFieldPath: status.managedGroups
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 10. SystemGroup 2
+    #     Named: {composite.name}-{spec.systemGroups[2].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: systemgroup-2
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: SystemGroup
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.systemGroups[2].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.systemGroups[2].name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.systemGroups[2].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.systemGroups[2].configChannelRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.configChannelRefs[0].name
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedActivationKeys
-          toFieldPath: status.managedActivationKeys
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 11. ActivationKey 0
+    #     Named: {composite.name}-{spec.activationKeys[0].name}
+    #     spec.key = short name (no prefix) — matches Uyuni activation key format
+    #     baseChannelRef and childChannelRefs come from top-level spec fields
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: activationkey-0
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ActivationKey
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.activationKeys[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[0].name
+          toFieldPath: spec.forProvider.manifest.spec.key
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[0].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[0].entitlements
+          toFieldPath: spec.forProvider.manifest.spec.entitlements
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.activationKeys[0].systemGroupRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.systemGroupRefs[0].name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.baseChannelRef.name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.baseChannelRef.name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.childChannelRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.childChannelRefs[0].name
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.managedContentProjects
-          toFieldPath: status.managedContentProjects
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 12. ActivationKey 1
+    #     Named: {composite.name}-{spec.activationKeys[1].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: activationkey-1
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ActivationKey
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.activationKeys[1].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[1].name
+          toFieldPath: spec.forProvider.manifest.spec.key
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[1].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[1].entitlements
+          toFieldPath: spec.forProvider.manifest.spec.entitlements
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.activationKeys[1].systemGroupRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.systemGroupRefs[0].name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.baseChannelRef.name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.baseChannelRef.name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.childChannelRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.childChannelRefs[0].name
           policy:
             fromFieldPath: Optional
 
-        - type: ToCompositeFieldPath
-          fromFieldPath: status.atProvider.manifest.status.systemCount
-          toFieldPath: status.systemCount
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 13. ActivationKey 2
+    #     Named: {composite.name}-{spec.activationKeys[2].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: activationkey-2
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ActivationKey
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.activationKeys[2].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[2].name
+          toFieldPath: spec.forProvider.manifest.spec.key
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[2].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.activationKeys[2].entitlements
+          toFieldPath: spec.forProvider.manifest.spec.entitlements
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.activationKeys[2].systemGroupRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.systemGroupRefs[0].name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.baseChannelRef.name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.baseChannelRef.name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.childChannelRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.childChannelRefs[0].name
+          policy:
+            fromFieldPath: Optional
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 14. ContentProject 0
+    #     Named: {composite.name}-{spec.contentProjects[0].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: contentproject-0
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ContentProject
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].label
+          toFieldPath: spec.forProvider.manifest.spec.label
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].displayName
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].sourceRefs[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.sourceRefs[0].name
+          policy:
+            fromFieldPath: Optional
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].sourceRefs[1].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.sourceRefs[1].name
+          policy:
+            fromFieldPath: Optional
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 15. ClmEnvironment dev  (environments[0] — no predecessor)
+    #     Named: {composite.name}-{contentProjects[0].name}-{environments[0].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: clmenvironment-dev
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ClmEnvironment
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].name
+              - fromFieldPath: spec.contentProjects[0].environments[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.cluster.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.projectRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[0].id
+          toFieldPath: spec.forProvider.manifest.spec.id
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[0].displayName
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[0].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[0].predecessor
+          toFieldPath: spec.forProvider.manifest.spec.predecessor
+          policy:
+            fromFieldPath: Optional
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 16. ClmEnvironment test  (environments[1] — predecessor = dev)
+    #     Named: {composite.name}-{contentProjects[0].name}-{environments[1].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: clmenvironment-test
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ClmEnvironment
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].name
+              - fromFieldPath: spec.contentProjects[0].environments[1].name
+            strategy: string
+            string:
+              fmt: "%s-%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.cluster.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.projectRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[1].id
+          toFieldPath: spec.forProvider.manifest.spec.id
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[1].displayName
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[1].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[1].predecessor
+          toFieldPath: spec.forProvider.manifest.spec.predecessor
+          policy:
+            fromFieldPath: Optional
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 17. ClmEnvironment prod  (environments[2] — predecessor = test)
+    #     Named: {composite.name}-{contentProjects[0].name}-{environments[2].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: clmenvironment-prod
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ClmEnvironment
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].name
+              - fromFieldPath: spec.contentProjects[0].environments[2].name
+            strategy: string
+            string:
+              fmt: "%s-%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.cluster.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef.name
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.contentProjects[0].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.spec.projectRef.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[2].id
+          toFieldPath: spec.forProvider.manifest.spec.id
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[2].displayName
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[2].description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects[0].environments[2].predecessor
+          toFieldPath: spec.forProvider.manifest.spec.predecessor
           policy:
             fromFieldPath: Optional
