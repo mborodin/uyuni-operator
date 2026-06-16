@@ -32,6 +32,8 @@ type BrandRegionReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=configurationchannels,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=activationkeys,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=contentprojects,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=clmenvironments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch
 
 func (r *BrandRegionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -105,7 +107,16 @@ func (r *BrandRegionReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		managedKeys = append(managedKeys, ak.Name)
 	}
 
-	// 8. Count systems by type in this namespace.
+	// 8. ContentProjects + ClmEnvironments.
+	managedCP := make([]string, 0, len(br.Spec.ContentProjects))
+	for _, cp := range br.Spec.ContentProjects {
+		if err := r.reconcileContentProject(ctx, &br, cp, orgRef); err != nil {
+			return r.fail(ctx, &br, "ContentProjectFailed", fmt.Errorf("contentProject %q: %w", cp.Name, err))
+		}
+		managedCP = append(managedCP, brChildName(br.Name, cp.Name))
+	}
+
+	// 9. Count systems by type in this namespace.
 	var systems uyuniv1.SystemList
 	if err := r.List(ctx, &systems, client.InNamespace(br.Namespace)); err != nil {
 		return ctrl.Result{}, err
@@ -130,6 +141,7 @@ func (r *BrandRegionReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	br.Status.ManagedConfigChannels = managedCC
 	br.Status.ManagedGroups = managedGroups
 	br.Status.ManagedActivationKeys = managedKeys
+	br.Status.ManagedContentProjects = managedCP
 	br.Status.SystemCount = count
 	br.Status.ObservedGeneration = br.Generation
 	setReady(&br.Status.Conditions, br.Generation, metav1.ConditionTrue, "Reconciled", "")
@@ -403,6 +415,84 @@ func (r *BrandRegionReconciler) reconcileActivationKey(ctx context.Context, br *
 	return nil
 }
 
+func (r *BrandRegionReconciler) reconcileContentProject(ctx context.Context, br *uyuniv1.BrandRegion, spec uyuniv1.BrandRegionContentProject, orgRef *uyuniv1.LocalObjectRef) error {
+	cpName := brChildName(br.Name, spec.Name)
+	var existing uyuniv1.ContentProject
+	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: cpName}, &existing)
+	if client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	wantSources := prefixRefs(br.Name, spec.SourceRefs)
+	if err != nil {
+		cp := &uyuniv1.ContentProject{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            cpName,
+				Namespace:       br.Namespace,
+				OwnerReferences: []metav1.OwnerReference{brandRegionOwnerRef(br)},
+			},
+			Spec: uyuniv1.ContentProjectSpec{
+				Label:           spec.Label,
+				Name:            spec.DisplayName,
+				Description:     spec.Description,
+				SourceRefs:      wantSources,
+				OrganizationRef: orgRef,
+			},
+		}
+		if err := r.Create(ctx, cp); err != nil {
+			return err
+		}
+	} else {
+		wantSourceNames := localRefNames(wantSources)
+		haveSourceNames := localRefNames(existing.Spec.SourceRefs)
+		if existing.Spec.Label != spec.Label || existing.Spec.Name != spec.DisplayName ||
+			existing.Spec.Description != spec.Description || !stringSlicesEqual(haveSourceNames, wantSourceNames) {
+			existing.Spec.Label = spec.Label
+			existing.Spec.Name = spec.DisplayName
+			existing.Spec.Description = spec.Description
+			existing.Spec.SourceRefs = wantSources
+			if err := r.Update(ctx, &existing); err != nil {
+				return err
+			}
+		}
+	}
+	for _, env := range spec.Environments {
+		if err := r.reconcileClmEnvironment(ctx, br, env, cpName, orgRef); err != nil {
+			return fmt.Errorf("environment %q: %w", env.Name, err)
+		}
+	}
+	return nil
+}
+
+func (r *BrandRegionReconciler) reconcileClmEnvironment(ctx context.Context, br *uyuniv1.BrandRegion, spec uyuniv1.BrandRegionEnvironment, projectCRName string, orgRef *uyuniv1.LocalObjectRef) error {
+	name := brChildName(projectCRName, spec.Name)
+	var existing uyuniv1.ClmEnvironment
+	err := r.Get(ctx, types.NamespacedName{Namespace: br.Namespace, Name: name}, &existing)
+	if client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	if err != nil {
+		clusterRef := &uyuniv1.LocalObjectRef{Name: br.Name}
+		env := &uyuniv1.ClmEnvironment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            name,
+				Namespace:       br.Namespace,
+				OwnerReferences: []metav1.OwnerReference{brandRegionOwnerRef(br)},
+			},
+			Spec: uyuniv1.ClmEnvironmentSpec{
+				Id:              spec.Id,
+				Name:            spec.DisplayName,
+				Description:     spec.Description,
+				ProjectRef:      uyuniv1.LocalObjectRef{Name: projectCRName},
+				Predecessor:     spec.Predecessor,
+				Cluster:         clusterRef,
+				OrganizationRef: orgRef,
+			},
+		}
+		return r.Create(ctx, env)
+	}
+	return nil
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func (r *BrandRegionReconciler) fail(ctx context.Context, br *uyuniv1.BrandRegion, reason string, err error) (ctrl.Result, error) {
@@ -420,6 +510,8 @@ func (r *BrandRegionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&uyuniv1.ConfigurationChannel{}).
 		Owns(&uyuniv1.SystemGroup{}).
 		Owns(&uyuniv1.ActivationKey{}).
+		Owns(&uyuniv1.ContentProject{}).
+		Owns(&uyuniv1.ClmEnvironment{}).
 		Watches(&uyuniv1.System{},
 			handler.EnqueueRequestsFromMapFunc(r.brandRegionsForSystem)).
 		Complete(r)

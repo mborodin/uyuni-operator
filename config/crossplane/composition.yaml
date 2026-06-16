@@ -131,6 +131,12 @@ spec:
           policy:
             fromFieldPath: Optional
 
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.contentProjects
+          toFieldPath: spec.forProvider.manifest.spec.contentProjects
+          policy:
+            fromFieldPath: Optional
+
         # ── Status back-propagation ──────────────────────────────────────────────
         # Surface BrandRegion status fields back to the XBrandRegion composite.
         - type: ToCompositeFieldPath
@@ -172,6 +178,12 @@ spec:
         - type: ToCompositeFieldPath
           fromFieldPath: status.atProvider.manifest.status.managedActivationKeys
           toFieldPath: status.managedActivationKeys
+          policy:
+            fromFieldPath: Optional
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.manifest.status.managedContentProjects
+          toFieldPath: status.managedContentProjects
           policy:
             fromFieldPath: Optional
 

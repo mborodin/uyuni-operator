@@ -104,6 +104,55 @@ type BrandRegionActivationKey struct {
 	Entitlements []string `json:"entitlements,omitempty"`
 }
 
+// BrandRegionEnvironment defines a CLM environment within a ContentProject.
+type BrandRegionEnvironment struct {
+	// Name is used as a suffix in the ClmEnvironment CR name (auto-prefixed with the ContentProject CR name).
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
+	Name string `json:"name"`
+
+	// Id is the Uyuni environment label (immutable after creation).
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
+	Id string `json:"id"`
+
+	// DisplayName is the human-readable environment name shown in Uyuni.
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	Description string `json:"description,omitempty"`
+
+	// Predecessor is the Id of the predecessor environment in the promotion chain.
+	// Empty means this is the root environment.
+	Predecessor string `json:"predecessor,omitempty"`
+}
+
+// BrandRegionContentProject defines a ContentProject owned by the BrandRegion.
+// The reconciler creates a ContentProject CR and a ClmEnvironment CR per environment.
+type BrandRegionContentProject struct {
+	// Name is used as a suffix in the ContentProject CR name (auto-prefixed with br.Name).
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
+	Name string `json:"name"`
+
+	// Label is the Uyuni CLM project label (immutable after creation).
+	// +kubebuilder:validation:Required
+	Label string `json:"label"`
+
+	// DisplayName is the human-readable project name shown in Uyuni.
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	Description string `json:"description,omitempty"`
+
+	// SourceRefs lists software channels (by short name, auto-prefixed with br.Name)
+	// that are attached as sources to this ContentProject.
+	SourceRefs []LocalObjectRef `json:"sourceRefs,omitempty"`
+
+	// Environments defines the promotion chain (e.g. dev → test → prod).
+	Environments []BrandRegionEnvironment `json:"environments,omitempty"`
+}
+
 // BrandRegionStateRepository references the Git repository from which Salt
 // minions pull their state. This is stored as a BrandRegion-level declaration;
 // the operator makes it available to ConfigurationChannels of type "state"
@@ -186,6 +235,10 @@ type BrandRegionSpec struct {
 	// and organization from this BrandRegion.
 	ActivationKeys []BrandRegionActivationKey `json:"activationKeys,omitempty"`
 
+	// ContentProjects lists the ContentProject CRs to create as children, each with
+	// its own promotion chain of ClmEnvironment CRs.
+	ContentProjects []BrandRegionContentProject `json:"contentProjects,omitempty"`
+
 	// StateRepository is the Git repository from which Salt minions in this
 	// region pull their configuration state. Stored as metadata on the BrandRegion;
 	// use it to wire ConfigurationChannels of type "state" to a centralised repo.
@@ -216,6 +269,9 @@ type BrandRegionStatus struct {
 
 	// ManagedActivationKeys lists the ActivationKey CR names created by this BrandRegion.
 	ManagedActivationKeys []string `json:"managedActivationKeys,omitempty"`
+
+	// ManagedContentProjects lists the ContentProject CR names created by this BrandRegion.
+	ManagedContentProjects []string `json:"managedContentProjects,omitempty"`
 
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`

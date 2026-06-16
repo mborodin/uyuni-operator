@@ -101,6 +101,56 @@ spec:
                 description: Brand identifier (e.g. "delhaize"). Immutable after creation.
                 pattern: ^[a-z0-9-]+$
                 type: string
+              contentProjects:
+                description: ContentProjects lists the ContentProject CRs to create as children,
+                  each with its own promotion chain of ClmEnvironment CRs.
+                items:
+                  properties:
+                    description:
+                      type: string
+                    displayName:
+                      type: string
+                    environments:
+                      items:
+                        properties:
+                          description:
+                            type: string
+                          displayName:
+                            type: string
+                          id:
+                            pattern: ^[a-z0-9-]+$
+                            type: string
+                          name:
+                            pattern: ^[a-z0-9-]+$
+                            type: string
+                          predecessor:
+                            type: string
+                        required:
+                        - displayName
+                        - id
+                        - name
+                        type: object
+                      type: array
+                    label:
+                      type: string
+                    name:
+                      pattern: ^[a-z0-9-]+$
+                      type: string
+                    sourceRefs:
+                      items:
+                        properties:
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                  required:
+                  - displayName
+                  - label
+                  - name
+                  type: object
+                type: array
               childChannelRefs:
                 items:
                   properties:
@@ -412,6 +462,10 @@ spec:
                   type: object
                 type: array
               managedActivationKeys:
+                items:
+                  type: string
+                type: array
+              managedContentProjects:
                 items:
                   type: string
                 type: array
