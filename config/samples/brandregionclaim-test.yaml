@@ -113,7 +113,7 @@ spec:
 
   contentProjects:
     - name: leap-platform
-      label: delhaize-emea-leap-platform
+      label: dlz-emea-leap-platform
       displayName: Delhaize EMEA Leap Platform
       description: "CLM project for openSUSE Leap 15.6 EMEA content lifecycle"
       sourceRefs:

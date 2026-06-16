@@ -113,7 +113,7 @@ spec:
 
   contentProjects:
     - name: leap-platform
-      label: delhaize-apac-leap-platform
+      label: dlz-apac-leap-platform
       displayName: Delhaize APAC Leap Platform
       description: "CLM project for openSUSE Leap 15.6 APAC content lifecycle"
       sourceRefs:

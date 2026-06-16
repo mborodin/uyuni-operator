@@ -66,17 +66,17 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// 2. Project create (best effort - Uyuni handles idempotency)
+	// 2. Project create/lookup (idempotent)
 	created, err := uc.CreateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description)
 	if err != nil {
-		// Check if project already exists (idempotent)
-		if strings.Contains(err.Error(), "already exists") {
-			fmt.Printf("Project already exists: %s\n", cp.Spec.Label)
-			cp.Status.UyuniID = 1 // Placeholder ID for existing projects
-		} else {
-			fmt.Printf("CreateProject API failed: %v\n", err)
-			cp.Status.UyuniID = 0
+		if !strings.Contains(err.Error(), "already exists") {
+			return r.fail(ctx, &cp, "CreateProjectFailed", err)
 		}
+		existing, lookupErr := uc.LookupProject(ctx, cp.Spec.Label)
+		if lookupErr != nil {
+			return r.fail(ctx, &cp, "CreateProjectFailed", fmt.Errorf("project already exists but lookup failed: %w", lookupErr))
+		}
+		cp.Status.UyuniID = existing.ID
 	} else {
 		cp.Status.UyuniID = created.ID
 	}
