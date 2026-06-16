@@ -422,6 +422,7 @@ func (r *BrandRegionReconciler) reconcileContentProject(ctx context.Context, br 
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
+	wantSources := prefixRefs(br.Name, spec.SourceRefs)
 	if err != nil {
 		cp := &uyuniv1.ContentProject{
 			ObjectMeta: metav1.ObjectMeta{
@@ -433,12 +434,25 @@ func (r *BrandRegionReconciler) reconcileContentProject(ctx context.Context, br 
 				Label:           spec.Label,
 				Name:            spec.DisplayName,
 				Description:     spec.Description,
-				SourceRefs:      prefixRefs(br.Name, spec.SourceRefs),
+				SourceRefs:      wantSources,
 				OrganizationRef: orgRef,
 			},
 		}
 		if err := r.Create(ctx, cp); err != nil {
 			return err
+		}
+	} else {
+		wantSourceNames := localRefNames(wantSources)
+		haveSourceNames := localRefNames(existing.Spec.SourceRefs)
+		if existing.Spec.Label != spec.Label || existing.Spec.Name != spec.DisplayName ||
+			existing.Spec.Description != spec.Description || !stringSlicesEqual(haveSourceNames, wantSourceNames) {
+			existing.Spec.Label = spec.Label
+			existing.Spec.Name = spec.DisplayName
+			existing.Spec.Description = spec.Description
+			existing.Spec.SourceRefs = wantSources
+			if err := r.Update(ctx, &existing); err != nil {
+				return err
+			}
 		}
 	}
 	for _, env := range spec.Environments {
