@@ -7,8 +7,11 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
 	"github.com/mborodin/uyuni-operator/internal/uyuni"
@@ -123,5 +126,23 @@ func (r *ClmEnvironmentReconciler) fail(ctx context.Context, env *uyuniv1.ClmEnv
 func (r *ClmEnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&uyuniv1.ClmEnvironment{}).
+		Watches(&uyuniv1.ContentProject{},
+			handler.EnqueueRequestsFromMapFunc(r.envsForProject)).
 		Complete(r)
+}
+
+func (r *ClmEnvironmentReconciler) envsForProject(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list uyuniv1.ClmEnvironmentList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var out []reconcile.Request
+	for _, env := range list.Items {
+		if env.Spec.ProjectRef.Name == obj.GetName() {
+			out = append(out, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: env.Namespace, Name: env.Name},
+			})
+		}
+	}
+	return out
 }

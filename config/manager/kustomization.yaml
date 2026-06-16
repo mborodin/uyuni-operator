@@ -10,7 +10,7 @@ images:
 - name: controller
   newName: fayazlinux/uyuni-operator
   #newTag: v1.0.0
-  newTag: v3.0.45
+  newTag: v3.0.46
 
 patches:
 # Add imagePullSecrets so RKE2 can authenticate with Docker Hub
