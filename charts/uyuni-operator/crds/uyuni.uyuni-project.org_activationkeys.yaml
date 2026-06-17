@@ -76,8 +76,6 @@ spec:
                       project (i.e., what's attached as a source), not the derived label.
                     type: string
                 required:
-                - contentProjectRef
-                - environment
                 - sourceChannelLabel
                 type: object
               baseChannelRef:
@@ -136,8 +134,6 @@ spec:
                         project (i.e., what's attached as a source), not the derived label.
                       type: string
                   required:
-                  - contentProjectRef
-                  - environment
                   - sourceChannelLabel
                   type: object
                 type: array

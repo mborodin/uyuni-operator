@@ -95,6 +95,12 @@ func (v *ActivationKeyValidator) validate(ctx context.Context, ak *uyuniv1.Activ
 // validateProjectRef: hard error for typos (env not declared); warning
 // only when the project itself is missing (Flux ordering tolerance).
 func (v *ActivationKeyValidator) validateProjectRef(ctx context.Context, ns string, ref *uyuniv1.ChannelFromProject, path *field.Path) (string, *field.Error) {
+	// An empty contentProjectRef means no content project channel is attached
+	// — a valid state, not a misconfiguration. Nothing to validate; the
+	// reconciler skips resolution for it too.
+	if ref.ContentProjectRef.Name == "" {
+		return "", nil
+	}
 	var cp uyuniv1.ContentProject
 	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: ref.ContentProjectRef.Name}, &cp); err != nil {
 		if client.IgnoreNotFound(err) == nil {

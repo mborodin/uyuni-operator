@@ -41,12 +41,16 @@ type BasicAuthRef struct {
 // the case where sourceChannelLabel names a channel that isn't actually a
 // source of the project.
 type ChannelFromProject struct {
-	// +kubebuilder:validation:Required
-	ContentProjectRef LocalObjectRef `json:"contentProjectRef"`
+	// ContentProjectRef is optional. When its name is empty, no content
+	// project channel is attached and resolution is skipped (the resource
+	// reconciles without a project-derived channel) rather than erroring.
+	// +optional
+	ContentProjectRef LocalObjectRef `json:"contentProjectRef,omitempty"`
 
-	// +kubebuilder:validation:Required
+	// Environment is optional; required only when ContentProjectRef is set.
+	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
-	Environment string `json:"environment"`
+	Environment string `json:"environment,omitempty"`
 
 	// SourceChannelLabel is the channel label as it exists upstream of the
 	// project (i.e., what's attached as a source), not the derived label.

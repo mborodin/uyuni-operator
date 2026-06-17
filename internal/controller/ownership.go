@@ -99,11 +99,13 @@ func isOwnedBy(dependent, owner client.Object) bool {
 // referenced by an ActivationKey's *From fields.
 func projectOwnersFromActivationKey(ak *uyuniv1.ActivationKey) map[string]bool {
 	out := map[string]bool{}
-	if ak.Spec.BaseChannelFrom != nil {
+	if ak.Spec.BaseChannelFrom != nil && ak.Spec.BaseChannelFrom.ContentProjectRef.Name != "" {
 		out[ak.Spec.BaseChannelFrom.ContentProjectRef.Name] = true
 	}
 	for _, c := range ak.Spec.ChildChannelsFrom {
-		out[c.ContentProjectRef.Name] = true
+		if c.ContentProjectRef.Name != "" {
+			out[c.ContentProjectRef.Name] = true
+		}
 	}
 	return out
 }
@@ -112,11 +114,13 @@ func projectOwnersFromActivationKey(ak *uyuniv1.ActivationKey) map[string]bool {
 // referenced by a System's *From fields.
 func projectOwnersFromSystem(sys *uyuniv1.System) map[string]bool {
 	out := map[string]bool{}
-	if sys.Spec.BaseChannelFrom != nil {
+	if sys.Spec.BaseChannelFrom != nil && sys.Spec.BaseChannelFrom.ContentProjectRef.Name != "" {
 		out[sys.Spec.BaseChannelFrom.ContentProjectRef.Name] = true
 	}
 	for _, c := range sys.Spec.ChildChannelsFrom {
-		out[c.ContentProjectRef.Name] = true
+		if c.ContentProjectRef.Name != "" {
+			out[c.ContentProjectRef.Name] = true
+		}
 	}
 	return out
 }
