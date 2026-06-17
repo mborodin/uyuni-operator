@@ -42,6 +42,26 @@ type channelRefs struct {
 func resolveChannelRefs(ctx context.Context, c client.Client, namespace string, refs channelRefs) (*channelResolution, error) {
 	out := &channelResolution{}
 
+	// A project ref with an empty contentProjectRef.name means "no channel from
+	// a content project is attached" — a legitimate state, not a
+	// misconfiguration. It arises because ChannelFromProject.ContentProjectRef
+	// is a value field, so populating baseChannelFrom at all (e.g. with only
+	// environment + sourceChannelLabel) leaves contentProjectRef as {name: ""}.
+	// Treat such refs as unset so the resource reconciles without a
+	// project-derived channel instead of failing on ContentProject "" not found.
+	if refs.BaseChannelFrom != nil && refs.BaseChannelFrom.ContentProjectRef.Name == "" {
+		refs.BaseChannelFrom = nil
+	}
+	if len(refs.ChildChannelsFrom) > 0 {
+		filtered := make([]uyuniv1.ChannelFromProject, 0, len(refs.ChildChannelsFrom))
+		for _, ref := range refs.ChildChannelsFrom {
+			if ref.ContentProjectRef.Name != "" {
+				filtered = append(filtered, ref)
+			}
+		}
+		refs.ChildChannelsFrom = filtered
+	}
+
 	// Defense-in-depth: webhook should reject these. If we see them, the
 	// cluster's webhook configuration is broken; surface that diagnostically.
 	if refs.BaseChannelRef != nil && refs.BaseChannelFrom != nil {
