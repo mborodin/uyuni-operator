@@ -1,0 +1,117 @@
+# Task Sample
+# Apply with: kubectl apply -f config/samples/task-sample.yaml
+#
+# A Task schedules one action against a target (a single System, a SystemGroup,
+# or raw Uyuni serverIds). Exactly one action kind must be set per Task — the
+# webhook enforces this. Action kinds:
+#   highstate | remoteCommand | reboot | applyPatches | applyConfigChannels
+#
+# The CR is the audit record and is garbage-collected spec.ttlAfterFinished
+# after it reaches a terminal phase (default 168h). spec.notBefore defers the
+# action to a maintenance window.
+#
+# Targets reference Systems/SystemGroups from system-sample.yaml and
+# systemgroup-sample.yaml.
+
+---
+# Apply the highstate to a whole group.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Task
+metadata:
+  name: web-servers-highstate
+  namespace: linux-platform
+spec:
+  target:
+    systemGroupRef:
+      name: test-web-servers
+  highstate:
+    test: false        # set true for a dry-run (no changes applied)
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Run a remote command on a single system.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Task
+metadata:
+  name: branchserver-refresh-patch
+  namespace: linux-platform
+spec:
+  target:
+    systemRef:
+      name: branchserver-01
+  remoteCommand:
+    command: "zypper --non-interactive refresh && zypper --non-interactive patch"
+    user: root
+    group: root
+    timeoutSeconds: 600
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Reboot a group during a maintenance window, after a 5-minute warning delay.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Task
+metadata:
+  name: database-servers-reboot
+  namespace: linux-platform
+spec:
+  target:
+    systemGroupRef:
+      name: test-database-servers
+  reboot:
+    delaySeconds: 300
+  notBefore: "2026-07-01T03:00:00Z"
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Apply only patches at or above a severity threshold.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Task
+metadata:
+  name: managed-linux-critical-patches
+  namespace: linux-platform
+spec:
+  target:
+    systemGroupRef:
+      name: test-managed-linux
+  applyPatches:
+    severityAtLeast: important   # low | moderate | important | critical
+    # includeAdvisories:          # optional: pin specific advisories instead
+    #   - openSUSE-2026-1234
+  ttlAfterFinished: 72h
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Re-apply the system's subscribed config channels.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Task
+metadata:
+  name: storehub-apply-config
+  namespace: linux-platform
+spec:
+  target:
+    systemRef:
+      name: storehub-01
+  applyConfigChannels: {}
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Targeting raw Uyuni server IDs directly (e.g. systems not managed by a CR).
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Task
+metadata:
+  name: adhoc-serverids-highstate
+  namespace: linux-platform
+spec:
+  target:
+    serverIds:
+      - 1000010000
+      - 1000010001
+  highstate:
+    test: true
+  organizationRef:
+    name: pantheon-of-goods

@@ -1,0 +1,91 @@
+# ActivationKey Sample
+# Apply with: kubectl apply -f config/samples/activationkey-sample.yaml
+#
+# Demonstrates:
+#   - Direct channel assignment (baseChannelRef + childChannelRefs)
+#   - Project-environment channel assignment (baseChannelFrom + childChannelsFrom)
+#   - System group, config channel, entitlement and package assignment
+#   - usageLimit, contactMethod and universalDefault
+#
+# spec.key is immutable after creation. Uyuni prefixes it with the org ID,
+# so the realized key is e.g. "1-leap-web-servers". baseChannelRef and
+# baseChannelFrom are mutually exclusive (the webhook enforces this), as are
+# childChannelRefs and childChannelsFrom.
+
+---
+# Variant 1 — direct SoftwareChannel references.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ActivationKey
+metadata:
+  name: leap-web-servers
+  namespace: linux-platform
+spec:
+  key: leap-web-servers
+  description: "Leap 15.6 web server tier"
+
+  # Base + child channels referenced directly (bypasses the CLM pipeline).
+  baseChannelRef:
+    name: opensuse-leap-15-6-x86-64
+  childChannelRefs:
+    - name: opensuse-leap-15-6-updates-x86-64
+
+  # System groups the activated system joins automatically.
+  systemGroupRefs:
+    - name: test-web-servers
+    - name: test-managed-linux
+
+  # Salt config channels subscribed at activation (priority = list order).
+  configChannelRefs:
+    - name: base-config
+    - name: nginx-config
+
+  # Uyuni entitlements granted to systems using this key.
+  entitlements:
+    - monitoring_entitled
+
+  # Packages installed at registration.
+  packages:
+    - salt-minion
+    - vim
+
+  # 0 = unlimited activations.
+  usageLimit: 100
+
+  # default | ssh-push | ssh-push-tunnel
+  contactMethod: default
+
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Variant 2 — channels sourced from a ContentProject environment.
+# The realized Uyuni channel is {project.label}-{environment}-{sourceChannelLabel},
+# e.g. test-leap-platform-prod-opensuse-leap-15-6-x86-64.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ActivationKey
+metadata:
+  name: leap-prod
+  namespace: linux-platform
+spec:
+  key: leap-prod
+  description: "Leap 15.6 — promoted prod content"
+
+  baseChannelFrom:
+    contentProjectRef:
+      name: test-leap-platform
+    environment: prod
+    sourceChannelLabel: opensuse-leap-15-6-x86-64
+
+  childChannelsFrom:
+    - contentProjectRef:
+        name: test-leap-platform
+      environment: prod
+      sourceChannelLabel: opensuse-leap-15-6-updates-x86-64
+
+  systemGroupRefs:
+    - name: test-managed-linux
+
+  contactMethod: default
+
+  organizationRef:
+    name: pantheon-of-goods

@@ -1,0 +1,114 @@
+# ConfigFile Sample
+# Apply with: kubectl apply -f config/samples/configfile-sample.yaml
+#
+# A ConfigFile is a single file, directory or symlink managed inside a
+# ConfigurationChannel (spec.channelRef). Demonstrates:
+#   - Inline file contents
+#   - File contents sourced from a Secret (contentsFrom)
+#   - A managed directory
+#   - A symlink (targetPath)
+#   - A Salt-templated file (templateMacro, state channels only)
+#
+# spec.path must be absolute (starts with /). spec.permissions is an octal
+# string like "0644". Exactly one of contents / contentsFrom / targetPath is
+# meaningful per file (targetPath only for type: symlink).
+
+---
+# Inline file in the apache-config channel.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigFile
+metadata:
+  name: apache-proxy-conf
+  namespace: linux-platform
+spec:
+  channelRef:
+    name: apache-config
+  path: /etc/apache2/conf.d/proxy.conf
+  type: file
+  owner: root
+  group: root
+  permissions: "0644"
+  contents: |
+    ProxyPreserveHost On
+    ProxyPass        "/app" "http://127.0.0.1:8080/app"
+    ProxyPassReverse "/app" "http://127.0.0.1:8080/app"
+
+---
+# File whose contents come from a Secret in the same namespace.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: motd-content
+  namespace: linux-platform
+type: Opaque
+stringData:
+  content: |
+    Authorized use only. Activity is monitored and logged.
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigFile
+metadata:
+  name: base-motd
+  namespace: linux-platform
+spec:
+  channelRef:
+    name: base-config
+  path: /etc/motd
+  type: file
+  owner: root
+  group: root
+  permissions: "0644"
+  contentsFrom:
+    name: motd-content
+
+---
+# A managed directory.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigFile
+metadata:
+  name: base-app-dir
+  namespace: linux-platform
+spec:
+  channelRef:
+    name: base-config
+  path: /etc/myapp
+  type: directory
+  owner: root
+  group: root
+  permissions: "0755"
+
+---
+# A symlink: /etc/myapp/current -> /etc/myapp/releases/v1
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigFile
+metadata:
+  name: base-app-current
+  namespace: linux-platform
+spec:
+  channelRef:
+    name: base-config
+  path: /etc/myapp/current
+  type: symlink
+  targetPath: /etc/myapp/releases/v1
+
+---
+# A Salt-templated file (renders at deploy time). Only valid in state channels
+# such as nginx-config.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigFile
+metadata:
+  name: nginx-upstream-conf
+  namespace: linux-platform
+spec:
+  channelRef:
+    name: nginx-config
+  path: /etc/nginx/conf.d/upstream.conf
+  type: file
+  owner: root
+  group: root
+  permissions: "0644"
+  templateMacro: true
+  contents: |
+    upstream app {
+        server {{ grains['fqdn'] }}:8080;
+    }

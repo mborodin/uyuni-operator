@@ -1,0 +1,51 @@
+# ContentProjectPromotion Sample
+# Apply with: kubectl apply -f config/samples/contentprojectpromotion-sample.yaml
+#
+# A promotion is a one-shot, Job-shaped action: it promotes built content from
+# one ContentProject environment to the next in the chain. The CR is the audit
+# record (committed to git) and is garbage-collected spec.ttlAfterFinished
+# after it reaches a terminal phase (default 168h).
+#
+# Environments referenced below belong to the test-leap-platform ContentProject
+# (see clmenvironment-sample.yaml): dev -> test -> prod.
+
+---
+# Promote dev -> test as soon as the operator reconciles.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProjectPromotion
+metadata:
+  name: leap-dev-to-test
+  namespace: linux-platform
+spec:
+  projectRef:
+    name: test-leap-platform
+  fromEnvironment: dev
+  toEnvironment: test
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+# Promote test -> prod inside a change window, with a safety check that the
+# source environment is at the expected built version before promoting.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProjectPromotion
+metadata:
+  name: leap-test-to-prod
+  namespace: linux-platform
+spec:
+  projectRef:
+    name: test-leap-platform
+  fromEnvironment: test
+  toEnvironment: prod
+
+  # Fail unless the 'test' environment's current built version equals this.
+  requireSourceVersion: 3
+
+  # Run no earlier than this (UTC). Useful for scheduled maintenance windows.
+  notBefore: "2026-07-01T02:00:00Z"
+
+  # Keep the finished promotion record for 72h before GC.
+  ttlAfterFinished: 72h
+
+  organizationRef:
+    name: pantheon-of-goods
