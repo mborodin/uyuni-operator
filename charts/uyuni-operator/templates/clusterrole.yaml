@@ -17,9 +17,14 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys
+  - clmenvironments
+  - configurationchannels
   - contentprojects
   - organizations
   - repositories
+  - softwarechannels
+  - systemgroups
+  - systems
   - uyuniproviders
   verbs:
   - create
@@ -33,9 +38,14 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/finalizers
+  - clmenvironments/finalizers
+  - configurationchannels/finalizers
   - contentprojects/finalizers
   - organizations/finalizers
   - repositories/finalizers
+  - softwarechannels/finalizers
+  - systemgroups/finalizers
+  - systems/finalizers
   - tasks/finalizers
   verbs:
   - update
@@ -43,10 +53,15 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/status
+  - clmenvironments/status
+  - configurationchannels/status
   - contentprojectpromotions/status
   - contentprojects/status
   - organizations/status
   - repositories/status
+  - softwarechannels/status
+  - systemgroups/status
+  - systems/status
   - tasks/status
   - uyuniproviders/status
   verbs:
@@ -56,10 +71,7 @@ rules:
 - apiGroups:
   - uyuni.uyuni-project.org
   resources:
-  - configurationchannels
-  - softwarechannels
-  - systemgroups
-  - systems
+  - autoinstallprofiles
   verbs:
   - get
   - list

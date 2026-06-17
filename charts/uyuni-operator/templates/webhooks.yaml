@@ -68,6 +68,46 @@ webhooks:
       service:
         name: {{ include "uyuni-operator.webhookServiceName" . }}
         namespace: {{ .Release.Namespace }}
+        path: /validate-uyuni-uyuni-project-org-v1alpha1-clmenvironment
+    failurePolicy: Fail
+    name: vclmenvironment.uyuni.uyuni-project.org
+    rules:
+      - apiGroups:
+          - uyuni.uyuni-project.org
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - clmenvironments
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "uyuni-operator.webhookServiceName" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate-uyuni-uyuni-project-org-v1alpha1-configurationchannel
+    failurePolicy: Fail
+    name: vconfigurationchannel.uyuni.uyuni-project.org
+    rules:
+      - apiGroups:
+          - uyuni.uyuni-project.org
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - configurationchannels
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "uyuni-operator.webhookServiceName" . }}
+        namespace: {{ .Release.Namespace }}
         path: /validate-uyuni-uyuni-project-org-v1alpha1-contentproject
     failurePolicy: Fail
     name: vcontentproject.uyuni.uyuni-project.org
@@ -141,6 +181,26 @@ webhooks:
           - UPDATE
         resources:
           - systems
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "uyuni-operator.webhookServiceName" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate-uyuni-uyuni-project-org-v1alpha1-systemgroup
+    failurePolicy: Fail
+    name: vsystemgroup.uyuni.uyuni-project.org
+    rules:
+      - apiGroups:
+          - uyuni.uyuni-project.org
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - systemgroups
     sideEffects: None
   - admissionReviewVersions:
       - v1
