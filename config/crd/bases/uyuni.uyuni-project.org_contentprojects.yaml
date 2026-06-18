@@ -170,6 +170,7 @@ spec:
             required:
             - label
             - name
+            - organizationRef
             type: object
           status:
             properties:

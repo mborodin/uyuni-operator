@@ -51,7 +51,8 @@ type SoftwareChannelSpec struct {
 
 	Sync SyncSchedule `json:"sync,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type SoftwareChannelStatus struct {
@@ -106,7 +107,8 @@ type RepositorySpec struct {
 	// (standard kubernetes.io/tls + ca.crt convention).
 	SSLCertRef *LocalObjectRef `json:"sslCertRef,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type RepositoryStatus struct {

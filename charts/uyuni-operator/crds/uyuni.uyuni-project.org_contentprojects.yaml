@@ -170,6 +170,7 @@ spec:
             - environments
             - label
             - name
+            - organizationRef
             type: object
           status:
             properties:

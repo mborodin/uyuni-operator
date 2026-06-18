@@ -139,6 +139,7 @@ spec:
                 default: 168h
                 type: string
             required:
+            - organizationRef
             - target
             type: object
           status:

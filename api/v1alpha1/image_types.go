@@ -112,7 +112,8 @@ type ImageProfileSpec struct {
 	// BuildHostRef references the System CR to use as the build host.
 	BuildHostRef *LocalObjectRef `json:"buildHostRef,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type ImageBuildRecord struct {

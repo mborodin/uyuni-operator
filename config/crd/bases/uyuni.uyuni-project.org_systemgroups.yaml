@@ -108,6 +108,7 @@ spec:
                 type: array
             required:
             - name
+            - organizationRef
             type: object
           status:
             properties:

@@ -136,6 +136,7 @@ spec:
             required:
             - label
             - name
+            - organizationRef
             - summary
             type: object
           status:

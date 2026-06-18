@@ -29,7 +29,8 @@ type AutoinstallDistributionSpec struct {
 	// PostKernelOptions are kernel arguments appended after installation completes.
 	PostKernelOptions string `json:"postKernelOptions,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type AutoinstallDistributionStatus struct {
@@ -149,7 +150,8 @@ type AutoinstallProfileSpec struct {
 	// Mutually exclusive with Scripts (webhook enforces).
 	KickstartContents string `json:"kickstartContents,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type AutoinstallProfileStatus struct {

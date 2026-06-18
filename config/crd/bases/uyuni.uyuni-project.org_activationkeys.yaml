@@ -206,6 +206,7 @@ spec:
                 type: integer
             required:
             - key
+            - organizationRef
             type: object
           status:
             properties:

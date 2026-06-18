@@ -314,6 +314,7 @@ spec:
                 type: string
             required:
             - minionId
+            - organizationRef
             type: object
           status:
             properties:

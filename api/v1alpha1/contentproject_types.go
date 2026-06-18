@@ -72,7 +72,8 @@ type ContentProjectSpec struct {
 
 	Build ProjectBuildPolicy `json:"build,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type EnvironmentState struct {
@@ -138,7 +139,8 @@ type ContentProjectPromotionSpec struct {
 	// +kubebuilder:default="168h"
 	TTLAfterFinished metav1.Duration `json:"ttlAfterFinished,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type ContentProjectPromotionStatus struct {

@@ -36,7 +36,8 @@ type ActivationKeySpec struct {
 	// +kubebuilder:default=default
 	ContactMethod string `json:"contactMethod,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
 type ActivationKeyStatus struct {

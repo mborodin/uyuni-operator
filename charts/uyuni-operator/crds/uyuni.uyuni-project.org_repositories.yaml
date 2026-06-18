@@ -95,6 +95,7 @@ spec:
                 type: string
             required:
             - label
+            - organizationRef
             - url
             type: object
           status:

@@ -89,7 +89,8 @@ type SystemSpec struct {
 	// Defaulted by webhook: 24h if PreCreate, 30m otherwise.
 	AdoptionTimeout metav1.Duration `json:"adoptionTimeout,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 
 	// ConfigChannelRefs lists config channels subscribed directly to this system,
 	// in priority order (index 0 = highest). These always outrank channels
@@ -182,7 +183,8 @@ type SystemGroupSpec struct {
 	StaticMinionIDs   []string         `json:"staticMinionIds,omitempty"`
 	ConfigChannelRefs []LocalObjectRef `json:"configChannelRefs,omitempty"`
 
-	OrganizationRef *LocalObjectRef `json:"organizationRef,omitempty"`
+	// +kubebuilder:validation:Required
+	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 
 	// +kubebuilder:validation:Optional
 	// Reference to UyuniProvider for multi-cluster support.

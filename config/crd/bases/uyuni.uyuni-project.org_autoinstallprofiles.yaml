@@ -181,6 +181,7 @@ spec:
             required:
             - distributionRef
             - label
+            - organizationRef
             - rootPasswordSecretRef
             type: object
           status:

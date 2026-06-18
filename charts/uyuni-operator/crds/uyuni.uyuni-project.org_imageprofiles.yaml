@@ -147,6 +147,7 @@ spec:
                 type: string
             required:
             - label
+            - organizationRef
             - storeRef
             - type
             type: object

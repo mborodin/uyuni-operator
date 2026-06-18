@@ -230,6 +230,7 @@ spec:
                 type: boolean
             required:
             - minionId
+            - organizationRef
             type: object
           status:
             properties:
