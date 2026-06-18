@@ -921,21 +921,28 @@ func wireGroupToDetails(w *wireSystemGroup) *SystemGroupDetails {
 // =============================================================================
 
 func (c *Client) CreateActivationKey(ctx context.Context, in ActivationKeyDetails) (string, error) {
-	type resp struct {
-		Key string `json:"key"`
+	// activationkey.create returns the new key as a bare string. It has two
+	// overloads (with/without usageLimit); omit usageLimit to hit the unlimited
+	// overload, which is what UsageLimit==0 means in this operator's model.
+	entitlements := in.Entitlements
+	if entitlements == nil {
+		entitlements = []string{}
 	}
-	r, err := apiPost[resp](c, "activationkey/create", map[string]any{
+	params := map[string]any{
 		"key":              in.Key,
 		"description":      in.Description,
 		"baseChannelLabel": in.BaseChannelLabel,
-		"usageLimit":       in.UsageLimit,
-		"entitlements":     in.Entitlements,
+		"entitlements":     entitlements,
 		"universalDefault": in.UniversalDefault,
-	})
+	}
+	if in.UsageLimit > 0 {
+		params["usageLimit"] = in.UsageLimit
+	}
+	key, err := apiPost[string](c, "activationkey/create", params)
 	if err != nil {
 		return "", err
 	}
-	return r.Key, nil
+	return key, nil
 }
 
 func (c *Client) GetActivationKey(ctx context.Context, key string) (*ActivationKeyDetails, error) {
@@ -954,13 +961,24 @@ func (c *Client) DeleteActivationKey(ctx context.Context, key string) error {
 }
 
 func (c *Client) SetActivationKeyDetails(ctx context.Context, key string, d ActivationKeyDetails) error {
+	// setDetails takes (key, struct details) with snake_case members — not the
+	// flat camelCase params that create uses.
+	details := map[string]any{
+		"description":        d.Description,
+		"base_channel_label": d.BaseChannelLabel,
+		"universal_default":  d.UniversalDefault,
+	}
+	if d.UsageLimit > 0 {
+		details["usage_limit"] = d.UsageLimit
+	} else {
+		details["unlimited_usage_limit"] = true
+	}
+	if d.ContactMethod != "" {
+		details["contact_method"] = d.ContactMethod
+	}
 	_, err := apiPost[any](c, "activationkey/setDetails", map[string]any{
-		"key":              key,
-		"description":      d.Description,
-		"baseChannelLabel": d.BaseChannelLabel,
-		"usageLimit":       d.UsageLimit,
-		"universalDefault": d.UniversalDefault,
-		"contactMethod":    d.ContactMethod,
+		"key":     key,
+		"details": details,
 	})
 	return err
 }
