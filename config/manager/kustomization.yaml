@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: uyuni-operator-system
 
 resources:
+- namespace.yaml
 - manager.yaml
 - uyuniprovider.yaml
 

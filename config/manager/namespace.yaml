@@ -1,0 +1,9 @@
+---
+# Namespace for uyuni-operator
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uyuni-operator-system
+  labels:
+    app.kubernetes.io/name: uyuni-operator
+    app.kubernetes.io/managed-by: kustomize
