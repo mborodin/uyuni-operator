@@ -65,6 +65,27 @@ spec:
                 required:
                 - name
                 type: object
+              auth:
+                description: |-
+                  Auth injects username/password Basic Auth into the source URL (URL or Git.Repository)
+                  at reconcile time. Credentials are read from the named Secret and never stored in status.
+                properties:
+                  name:
+                    description: Name is the Secret in the same namespace.
+                    type: string
+                  passwordKey:
+                    default: password
+                    description: PasswordKey is the key for the password value. Defaults
+                      to "password".
+                    type: string
+                  usernameKey:
+                    default: username
+                    description: UsernameKey is the key for the username value. Defaults
+                      to "username".
+                    type: string
+                required:
+                - name
+                type: object
               buildHostRef:
                 description: |-
                   LocalObjectRef is a name-only reference to a CR in the same namespace.
@@ -89,27 +110,25 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
-              dockerfile:
+              git:
+                description: |-
+                  Git is a structured git source. Mutually exclusive with URL.
+                  Exactly one of URL or Git must be set.
                 properties:
-                  branch:
-                    type: string
                   path:
+                    description: |-
+                      Path is the subdirectory within the repo containing the Dockerfile or KIWI config.
+                      Appended as ":path". Requires Reference to also be set (webhook enforces).
                     type: string
-                  url:
+                  reference:
+                    description: Reference is the branch, tag, or commit. Appended as
+                      "#reference".
+                    type: string
+                  repository:
+                    description: Repository is the base URL of the git repository.
                     type: string
                 required:
-                - url
-                type: object
-              kiwi:
-                properties:
-                  branch:
-                    type: string
-                  path:
-                    type: string
-                  url:
-                    type: string
-                required:
-                - url
+                - repository
                 type: object
               label:
                 description: Immutable after creation.
@@ -145,12 +164,19 @@ spec:
                 - kiwi
                 - dockerfile
                 type: string
+              url:
+                description: |-
+                  URL is the direct source URL for the image build. Mutually exclusive with Git.
+                  Exactly one of URL or Git must be set.
+                type: string
             required:
             - label
             - organizationRef
-            - storeRef
             - type
             type: object
+            x-kubernetes-validations:
+            - message: storeRef is required when type is dockerfile
+              rule: self.type != 'dockerfile' || has(self.storeRef)
           status:
             properties:
               conditions:

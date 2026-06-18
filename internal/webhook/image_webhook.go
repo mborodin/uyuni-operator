@@ -131,9 +131,12 @@ func (v *ImageProfileValidator) validateProfile(ctx context.Context, ip *uyuniv1
 	var warnings admission.Warnings
 
 	// Cross-resource: warn if storeRef not found or not yet realized.
-	if w := v.warnIfStoreMissing(ctx, ip.Namespace, ip.Spec.StoreRef.Name,
-		field.NewPath("spec", "storeRef")); w != "" {
-		warnings = append(warnings, w)
+	// storeRef is optional (omitted for kiwi auto-store), so only check when set.
+	if ip.Spec.StoreRef != nil {
+		if w := v.warnIfStoreMissing(ctx, ip.Namespace, ip.Spec.StoreRef.Name,
+			field.NewPath("spec", "storeRef")); w != "" {
+			warnings = append(warnings, w)
+		}
 	}
 
 	// Cross-resource: warn if activationKeyRef not found.

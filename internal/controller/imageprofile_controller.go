@@ -97,9 +97,9 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if profileNeedsUpdate(current, storeLabel, activationKey, sourceURL) {
 		updatePayload := map[string]any{
-			"image_store":    storeLabel,
-			"activation_key": activationKey,
-			"path":           sourceURL,
+			"storeLabel":    storeLabel,
+			"activationKey": activationKey,
+			"path":          sourceURL,
 		}
 		if updateErr := uc.UpdateImageProfile(ctx, ip.Spec.Label, updatePayload); updateErr != nil {
 			return r.fail(ctx, &ip, "UpdateFailed", updateErr)
@@ -141,16 +141,27 @@ func (r *ImageProfileReconciler) handleDeletion(ctx context.Context, uc uyuni.AP
 	if !containsFinalizer(ip, ipFinalizer) {
 		return ctrl.Result{}, nil
 	}
-	if ip.Status.UyuniID != 0 {
-		if err := uc.DeleteImageProfile(ctx, ip.Spec.Label); err != nil && !uyuni.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
+	// Delete by label, tolerating NotFound. image.profile.getDetails returns no
+	// numeric id, so status.UyuniID may be 0 — don't gate deletion on it, or we
+	// would orphan the Uyuni profile.
+	if err := uc.DeleteImageProfile(ctx, ip.Spec.Label); err != nil && !uyuni.IsNotFound(err) {
+		return ctrl.Result{}, err
 	}
 	removeFinalizer(ip, ipFinalizer)
 	return ctrl.Result{}, r.Update(ctx, ip)
 }
 
+// defaultOSImageStoreLabel is Uyuni's built-in OS image store. It is hidden
+// from the image store list, but kiwi (OS image) profiles must reference it by
+// this well-known label. Used when a kiwi ImageProfile sets no explicit storeRef.
+const defaultOSImageStoreLabel = "SUSE Manager OS Image Store"
+
 func (r *ImageProfileReconciler) resolveStoreLabel(ctx context.Context, ip *uyuniv1.ImageProfile) (label, wait string, err error) {
+	// storeRef is optional for kiwi: with no reference, use Uyuni's built-in OS
+	// image store, which must be passed by its well-known label.
+	if ip.Spec.StoreRef == nil {
+		return defaultOSImageStoreLabel, "", nil
+	}
 	var store uyuniv1.ImageStore
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ip.Namespace, Name: ip.Spec.StoreRef.Name}, &store); err != nil {
 		if client.IgnoreNotFound(err) == nil {
@@ -326,7 +337,7 @@ func (r *ImageProfileReconciler) profilesForStore(ctx context.Context, obj clien
 	}
 	var out []reconcile.Request
 	for _, ip := range list.Items {
-		if ip.Spec.StoreRef.Name == obj.GetName() {
+		if ip.Spec.StoreRef != nil && ip.Spec.StoreRef.Name == obj.GetName() {
 			out = append(out, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: ip.Namespace, Name: ip.Name},
 			})

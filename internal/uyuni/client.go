@@ -531,9 +531,9 @@ type wireImageStore struct {
 type wireImageProfile struct {
 	ID            int    `json:"id"`
 	Label         string `json:"label"`
-	Type          string `json:"image_type"`
-	StoreLabel    string `json:"store_label"`
-	ActivationKey string `json:"activation_key"`
+	Type          string `json:"imageType"`
+	StoreLabel    string `json:"imageStore"`
+	ActivationKey string `json:"activationKey"`
 	Path          string `json:"path"`
 }
 
@@ -1647,30 +1647,30 @@ func (c *Client) DeleteImageStore(ctx context.Context, label string) error {
 }
 
 func (c *Client) CreateImageProfile(ctx context.Context, p ImageProfileDetails, customInfo map[string]string) error {
-	payload := map[string]any{
-		"label":          p.Label,
-		"image_type":     p.Type,
-		"image_store":    p.StoreLabel,
-		"activation_key": p.ActivationKey,
-	}
-	if p.SourcePath != "" {
-		payload["path"] = p.SourcePath
-	}
-	if p.SourceURL != "" {
-		payload["source_url"] = p.SourceURL
-	}
-	if p.SourceBranch != "" {
-		payload["source_branch"] = p.SourceBranch
+	// image.profile.create(label, type, storeLabel, path, activationKey).
+	// It has no custom-info parameter; custom values are set separately below.
+	if _, err := apiPost[any](c, "image/profile/create", map[string]any{
+		"label":         p.Label,
+		"type":          p.Type,
+		"storeLabel":    p.StoreLabel,
+		"path":          p.SourcePath,
+		"activationKey": p.ActivationKey,
+	}); err != nil {
+		return err
 	}
 	if len(customInfo) > 0 {
-		payload["custom_data"] = customInfo
+		if _, err := apiPost[any](c, "image/profile/setCustomValues", map[string]any{
+			"label":  p.Label,
+			"values": customInfo,
+		}); err != nil {
+			return err
+		}
 	}
-	_, err := apiPost[any](c, "imageprofile/create", payload)
-	return err
+	return nil
 }
 
 func (c *Client) GetImageProfile(ctx context.Context, label string) (*ImageProfileDetails, error) {
-	r, err := apiGet[wireImageProfile](c, "imageprofile/getDetails?label="+url.QueryEscape(label))
+	r, err := apiGet[wireImageProfile](c, "image/profile/getDetails?label="+url.QueryEscape(label))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -1685,13 +1685,16 @@ func (c *Client) GetImageProfile(ctx context.Context, label string) (*ImageProfi
 }
 
 func (c *Client) UpdateImageProfile(ctx context.Context, label string, details map[string]any) error {
-	details["label"] = label
-	_, err := apiPost[any](c, "imageprofile/update", details)
+	// image.profile.setDetails(label, details{storeLabel, path, activationKey}).
+	_, err := apiPost[any](c, "image/profile/setDetails", map[string]any{
+		"label":   label,
+		"details": details,
+	})
 	return err
 }
 
 func (c *Client) DeleteImageProfile(ctx context.Context, label string) error {
-	_, err := apiPost[any](c, "imageprofile/delete", map[string]any{
+	_, err := apiPost[any](c, "image/profile/delete", map[string]any{
 		"label": label,
 	})
 	return asNotFound(err)

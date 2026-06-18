@@ -72,6 +72,7 @@ type GitSource struct {
 	Path string `json:"path,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="self.type != 'dockerfile' || has(self.storeRef)",message="storeRef is required when type is dockerfile"
 type ImageProfileSpec struct {
 	// Label is the Uyuni image profile label. Immutable after creation.
 	// +kubebuilder:validation:Required
@@ -83,8 +84,11 @@ type ImageProfileSpec struct {
 	Type string `json:"type"`
 
 	// StoreRef references the ImageStore CR that holds the built image.
-	// +kubebuilder:validation:Required
-	StoreRef LocalObjectRef `json:"storeRef"`
+	// Required for dockerfile (registry) images; optional for kiwi, where Uyuni
+	// auto-selects its OS-image store. The CEL rule on the spec enforces the
+	// dockerfile requirement.
+	// +optional
+	StoreRef *LocalObjectRef `json:"storeRef,omitempty"`
 
 	// ActivationKeyRef references the ActivationKey CR whose realized key is passed to Uyuni.
 	ActivationKeyRef *LocalObjectRef `json:"activationKeyRef,omitempty"`
