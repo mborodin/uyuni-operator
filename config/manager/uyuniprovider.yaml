@@ -6,7 +6,7 @@
 #
 # The credentials secret (uyuni-prod-creds) must be created separately:
 #   kubectl create secret generic uyuni-prod-creds \
-#     --from-literal=username=automation \
+#     --from-literal=username=uyuni \
 #     --from-literal=password=YOUR_PASSWORD \
 #     -n uyuni-operator-system
 #
