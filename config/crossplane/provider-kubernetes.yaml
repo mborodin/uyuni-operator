@@ -1,0 +1,31 @@
+---
+# Bootstrap for provider-kubernetes — required by the BrandRegion Composition
+# to create individual uyuni operator CRDs (Organization, Repository, etc.)
+# on behalf of the composite.
+#
+# Apply this once per cluster, before composition.yaml:
+#   kubectl apply -f config/crossplane/provider-kubernetes.yaml
+#
+# After install, grant it RBAC on the uyuni CRDs:
+#   kubectl apply -f config/rbac/provider-kubernetes-rbac.yaml
+#
+# Provider package version is pinned here — bump deliberately, not via :latest.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-kubernetes
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.14.0
+---
+# ProviderConfig used by every "kubernetes-provider" providerConfigRef in
+# composition.yaml. InjectedIdentity means it acts as the Crossplane pod's
+# own ServiceAccount — i.e. it manages resources in the SAME cluster
+# Crossplane runs in. Grant its ServiceAccount RBAC via
+# config/rbac/provider-kubernetes-rbac.yaml.
+apiVersion: kubernetes.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: kubernetes-provider
+spec:
+  credentials:
+    source: InjectedIdentity

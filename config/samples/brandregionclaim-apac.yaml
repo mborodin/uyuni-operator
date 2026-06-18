@@ -28,7 +28,7 @@ spec:
   region: apac
 
   provider:
-    url: https://rke-uyuni-new.nexa-dev.delhaize.test
+    url: https://aks-uyuni-new.nexa-dev.delhaize.test
     credentialsSecretRef:
       name: uyuni-apac-creds
       namespace: linux-platform
