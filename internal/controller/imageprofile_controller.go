@@ -49,6 +49,10 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ip)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &ip, orgRef(ip.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Resolve ImageStore label.
 	storeLabel, waitReason, err := r.resolveStoreLabel(ctx, &ip)
 	if err != nil {

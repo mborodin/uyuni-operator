@@ -48,6 +48,10 @@ func (r *AutoinstallProfileReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ap)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &ap, orgRef(ap.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Resolve distribution label from spec.distributionRef.
 	distLabel, waitReason, err := r.resolveDistributionLabel(ctx, &ap)
 	if err != nil {

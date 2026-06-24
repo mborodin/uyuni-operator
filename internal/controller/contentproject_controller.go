@@ -59,6 +59,10 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &cp)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &cp, orgRef(cp.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// 1. Resolve source channel refs. Partial readiness is OK — we still
 	// reconcile everything else and degrade gracefully.
 	desiredSources, missing, err := r.resolveSources(ctx, &cp)

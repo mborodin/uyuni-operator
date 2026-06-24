@@ -50,6 +50,10 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &cc)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &cc, cc.Spec.OrganizationRef); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	current, err := uc.GetConfigChannel(ctx, cc.Spec.ID)
 	if uyuni.IsNotFound(err) {
 		created, createErr := uc.CreateConfigChannel(ctx, cc.Spec.ID, cc.Spec.Name, cc.Spec.Description, cc.Spec.Type)
