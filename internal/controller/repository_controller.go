@@ -32,14 +32,15 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !repo.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &repo)
+	}
+
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(repo.Spec.OrganizationRef), repo.Namespace)
 	if err != nil {
 		return r.fail(ctx, &repo, "OrganizationError", err)
 	}
 
-	if !repo.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &repo)
-	}
 	if ensureFinalizer(&repo, repoFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &repo)
 	}
@@ -106,7 +107,7 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
 }
 
-func (r *RepositoryReconciler) handleDeletion(ctx context.Context, uc uyuni.API, repo *uyuniv1.Repository) (ctrl.Result, error) {
+func (r *RepositoryReconciler) handleDeletion(ctx context.Context, repo *uyuniv1.Repository) (ctrl.Result, error) {
 	if !containsFinalizer(repo, repoFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -127,6 +128,10 @@ func (r *RepositoryReconciler) handleDeletion(ctx context.Context, uc uyuni.API,
 	}
 
 	if repo.Status.Label != "" {
+		uc, err := r.Clients.ForOrganization(ctx, orgRef(repo.Spec.OrganizationRef), repo.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := uc.DeleteRepo(ctx, repo.Status.Label); err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}

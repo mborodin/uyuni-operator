@@ -28,24 +28,15 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	var uc uyuni.API
-	var err error
-	if cc.Spec.OrganizationRef != "" {
-		uc, err = r.Clients.ForOrganization(ctx, cc.Spec.OrganizationRef, cc.Namespace)
-	} else {
-		var clusterRef *uyuni.LocalObjectRef
-		if cc.Spec.Cluster != "" {
-			clusterRef = &uyuni.LocalObjectRef{Name: cc.Spec.Cluster}
-		}
-		uc, err = r.Clients.For(ctx, clusterRef, cc.Namespace)
+	if !cc.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &cc)
 	}
+
+	uc, err := r.resolveClient(ctx, &cc)
 	if err != nil {
 		return r.fail(ctx, &cc, "ProviderError", err)
 	}
 
-	if !cc.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &cc)
-	}
 	if ensureFinalizer(&cc, confChanFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &cc)
 	}
@@ -89,7 +80,7 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func (r *ConfigurationChannelReconciler) handleDeletion(ctx context.Context, uc uyuni.API, cc *uyuniv1.ConfigurationChannel) (ctrl.Result, error) {
+func (r *ConfigurationChannelReconciler) handleDeletion(ctx context.Context, cc *uyuniv1.ConfigurationChannel) (ctrl.Result, error) {
 	if !containsFinalizer(cc, confChanFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -97,11 +88,26 @@ func (r *ConfigurationChannelReconciler) handleDeletion(ctx context.Context, uc 
 		removeFinalizer(cc, confChanFinalizer)
 		return ctrl.Result{}, r.Update(ctx, cc)
 	}
+	uc, err := r.resolveClient(ctx, cc)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := uc.DeleteConfigChannel(ctx, cc.Spec.ID); err != nil && !uyuni.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
 	removeFinalizer(cc, confChanFinalizer)
 	return ctrl.Result{}, r.Update(ctx, cc)
+}
+
+func (r *ConfigurationChannelReconciler) resolveClient(ctx context.Context, cc *uyuniv1.ConfigurationChannel) (uyuni.API, error) {
+	if cc.Spec.OrganizationRef != "" {
+		return r.Clients.ForOrganization(ctx, cc.Spec.OrganizationRef, cc.Namespace)
+	}
+	var clusterRef *uyuni.LocalObjectRef
+	if cc.Spec.Cluster != "" {
+		clusterRef = &uyuni.LocalObjectRef{Name: cc.Spec.Cluster}
+	}
+	return r.Clients.For(ctx, clusterRef, cc.Namespace)
 }
 
 func (r *ConfigurationChannelReconciler) fail(ctx context.Context, cc *uyuniv1.ConfigurationChannel, reason string, err error) (ctrl.Result, error) {

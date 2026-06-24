@@ -32,14 +32,15 @@ func (r *AutoinstallDistributionReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !ad.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &ad)
+	}
+
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(ad.Spec.OrganizationRef), ad.Namespace)
 	if err != nil {
 		return r.fail(ctx, &ad, "OrganizationError", err)
 	}
 
-	if !ad.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &ad)
-	}
 	if ensureFinalizer(&ad, adFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ad)
 	}
@@ -103,11 +104,19 @@ func (r *AutoinstallDistributionReconciler) Reconcile(ctx context.Context, req c
 	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
 }
 
-func (r *AutoinstallDistributionReconciler) handleDeletion(ctx context.Context, uc uyuni.API, ad *uyuniv1.AutoinstallDistribution) (ctrl.Result, error) {
+func (r *AutoinstallDistributionReconciler) handleDeletion(ctx context.Context, ad *uyuniv1.AutoinstallDistribution) (ctrl.Result, error) {
 	if !containsFinalizer(ad, adFinalizer) {
 		return ctrl.Result{}, nil
 	}
+	if ad.Annotations[uyuniv1.AnnForceDelete] == "true" {
+		removeFinalizer(ad, adFinalizer)
+		return ctrl.Result{}, r.Update(ctx, ad)
+	}
 	if ad.Status.UyuniID != 0 {
+		uc, err := r.Clients.ForOrganization(ctx, orgRef(ad.Spec.OrganizationRef), ad.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := uc.DeleteDistribution(ctx, ad.Spec.Label); err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}

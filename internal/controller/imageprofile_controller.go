@@ -37,14 +37,15 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !ip.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &ip)
+	}
+
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(ip.Spec.OrganizationRef), ip.Namespace)
 	if err != nil {
 		return r.fail(ctx, &ip, "OrganizationError", err)
 	}
 
-	if !ip.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &ip)
-	}
 	if ensureFinalizer(&ip, ipFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ip)
 	}
@@ -141,9 +142,17 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
 }
 
-func (r *ImageProfileReconciler) handleDeletion(ctx context.Context, uc uyuni.API, ip *uyuniv1.ImageProfile) (ctrl.Result, error) {
+func (r *ImageProfileReconciler) handleDeletion(ctx context.Context, ip *uyuniv1.ImageProfile) (ctrl.Result, error) {
 	if !containsFinalizer(ip, ipFinalizer) {
 		return ctrl.Result{}, nil
+	}
+	if ip.Annotations[uyuniv1.AnnForceDelete] == "true" {
+		removeFinalizer(ip, ipFinalizer)
+		return ctrl.Result{}, r.Update(ctx, ip)
+	}
+	uc, err := r.Clients.ForOrganization(ctx, orgRef(ip.Spec.OrganizationRef), ip.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	// Delete by label, tolerating NotFound. image.profile.getDetails returns no
 	// numeric id, so status.UyuniID may be 0 — don't gate deletion on it, or we
