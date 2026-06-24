@@ -17,7 +17,8 @@ import (
 
 type OrganizationReconciler struct {
 	client.Client
-	Clients uyuni.ClientPool
+	Clients    uyuni.ClientPool
+	OperatorNS string
 }
 
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=organizations,verbs=get;list;watch;create;update;patch;delete
@@ -43,6 +44,15 @@ func (r *OrganizationReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Org lifecycle operations require satellite admin (the provider).
 	uc, err := r.Clients.For(ctx, toProviderRef(&org.Spec.ProviderRef), org.Namespace)
 	if err != nil {
+		return r.fail(ctx, &org, "ProviderError", err)
+	}
+
+	// Snapshot the provider's connection details onto our own status. Deletion
+	// uses this snapshot instead of re-reading the UyuniProvider CR, since
+	// Crossplane compositions may delete sibling managed resources (including
+	// the UyuniProvider) concurrently with the Organization, before the
+	// Organization's own Uyuni-side cleanup has run.
+	if err := r.snapshotProvider(ctx, &org); err != nil {
 		return r.fail(ctx, &org, "ProviderError", err)
 	}
 
@@ -76,6 +86,65 @@ func (r *OrganizationReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+}
+
+// snapshotProvider records the UyuniProvider's connection details onto
+// org.Status so deletion doesn't depend on the UyuniProvider CR still
+// existing (see clientFromSnapshot).
+func (r *OrganizationReconciler) snapshotProvider(ctx context.Context, org *uyuniv1.Organization) error {
+	var prov uyuniv1.UyuniProvider
+	if err := r.Get(ctx, types.NamespacedName{Name: org.Spec.ProviderRef.Name}, &prov); err != nil {
+		return fmt.Errorf("getting UyuniProvider %q: %w", org.Spec.ProviderRef.Name, err)
+	}
+
+	credRef := prov.Spec.CredentialsSecretRef
+	if credRef.Namespace == "" {
+		credRef.Namespace = r.OperatorNS
+	}
+	org.Status.ProviderURL = prov.Spec.URL
+	org.Status.ProviderInsecureSkipVerify = prov.Spec.InsecureSkipVerify
+	org.Status.ProviderCredentialsSecretRef = &credRef
+
+	org.Status.ProviderCACertSecretRef = nil
+	if prov.Spec.CACertSecretRef != nil {
+		caRef := *prov.Spec.CACertSecretRef
+		if caRef.Namespace == "" {
+			caRef.Namespace = r.OperatorNS
+		}
+		org.Status.ProviderCACertSecretRef = &caRef
+	}
+	return nil
+}
+
+// clientFromSnapshot builds a Uyuni API client directly from org.Status's
+// provider snapshot, bypassing the UyuniProvider CR. Falls back to a live
+// lookup if the org was never successfully reconciled (no snapshot yet).
+func (r *OrganizationReconciler) clientFromSnapshot(ctx context.Context, org *uyuniv1.Organization) (uyuni.API, error) {
+	if org.Status.ProviderURL == "" || org.Status.ProviderCredentialsSecretRef == nil {
+		return r.Clients.For(ctx, toProviderRef(&org.Spec.ProviderRef), org.Namespace)
+	}
+
+	ref := org.Status.ProviderCredentialsSecretRef
+	var secret corev1.Secret
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, &secret); err != nil {
+		return nil, fmt.Errorf("reading provider credentials secret: %w", err)
+	}
+	username := string(secret.Data["username"])
+	password := string(secret.Data["password"])
+	if username == "" || password == "" {
+		return nil, fmt.Errorf("provider credentials secret must contain non-empty 'username' and 'password' keys")
+	}
+
+	var caCert []byte
+	if caRef := org.Status.ProviderCACertSecretRef; caRef != nil {
+		var caSecret corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Namespace: caRef.Namespace, Name: caRef.Name}, &caSecret); err != nil {
+			return nil, fmt.Errorf("reading provider CA cert secret: %w", err)
+		}
+		caCert = caSecret.Data["ca.crt"]
+	}
+
+	return uyuni.NewClient(org.Status.ProviderURL, username, password, org.Status.ProviderInsecureSkipVerify, caCert)
 }
 
 func (r *OrganizationReconciler) createOrg(ctx context.Context, uc uyuni.API, org *uyuniv1.Organization) (int, error) {
@@ -139,7 +208,7 @@ func (r *OrganizationReconciler) handleDeletion(ctx context.Context, org *uyuniv
 
 	// Don't delete imported orgs — they pre-existed and may be shared.
 	if org.Spec.Import == nil && org.Status.UyuniOrgID > 0 {
-		uc, err := r.Clients.For(ctx, toProviderRef(&org.Spec.ProviderRef), org.Namespace)
+		uc, err := r.clientFromSnapshot(ctx, org)
 		if err != nil {
 			return ctrl.Result{}, err
 		}

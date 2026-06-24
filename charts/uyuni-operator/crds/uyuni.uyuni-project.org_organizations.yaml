@@ -156,6 +156,34 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              providerCaCertSecretRef:
+                description: |-
+                  SecretReference represents a Secret Reference. It has enough information to retrieve secret
+                  in any namespace
+                properties:
+                  name:
+                    description: name is unique within a namespace to reference a secret resource.
+                    type: string
+                  namespace:
+                    description: namespace defines the space within which the secret name must be unique.
+                    type: string
+                type: object
+              providerCredentialsSecretRef:
+                description: |-
+                  SecretReference represents a Secret Reference. It has enough information to retrieve secret
+                  in any namespace
+                properties:
+                  name:
+                    description: name is unique within a namespace to reference a secret resource.
+                    type: string
+                  namespace:
+                    description: namespace defines the space within which the secret name must be unique.
+                    type: string
+                type: object
+              providerInsecureSkipVerify:
+                type: boolean
+              providerUrl:
+                type: string
               uyuniOrgId:
                 type: integer
             type: object
