@@ -1262,7 +1262,7 @@ func (c *Client) UpdateConfigChannel(ctx context.Context, label, name, descripti
 
 func (c *Client) DeleteConfigChannel(ctx context.Context, label string) error {
 	_, err := apiPost[any](c, "configchannel/deleteChannels", map[string]any{
-		"channelLabels": []string{label},
+		"labels": []string{label},
 	})
 	return asNotFound(err)
 }
