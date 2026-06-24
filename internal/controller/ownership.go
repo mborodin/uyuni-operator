@@ -83,6 +83,66 @@ func reconcileProjectOwnership(ctx context.Context, c client.Client, dependent c
 	return c.Update(ctx, dependent)
 }
 
+// reconcileOrganizationOwnership ensures the dependent has an owner ref to
+// its Organization, with BlockOwnerDeletion=true. Idempotent; replaces any
+// stale Organization owner ref (e.g. after OrganizationRef changes).
+//
+// Owner refs are set with:
+//   - Controller=false (we don't manage the dependent's lifecycle)
+//   - BlockOwnerDeletion=true (Organization's deletion is blocked by the
+//     Kubernetes API server until every dependent with this owner ref is
+//     gone — preserves Uyuni-side ordering: org-scoped resources must
+//     finish their own finalizer-driven cleanup, which needs the
+//     Organization's credentials, before the Organization itself is
+//     removed)
+//
+// Note: BlockOwnerDeletion=true requires `update` on the Organization's
+// /finalizers subresource. Make sure RBAC grants this (mirrors the
+// ContentProject ownership pattern above).
+func reconcileOrganizationOwnership(ctx context.Context, c client.Client, dependent client.Object, orgName string) error {
+	owners := dependent.GetOwnerReferences()
+
+	for _, o := range owners {
+		if o.APIVersion == uyuniv1.GroupVersion.String() && o.Kind == "Organization" && o.Name == orgName {
+			return nil
+		}
+	}
+
+	pruned := owners[:0]
+	for _, o := range owners {
+		if o.APIVersion == uyuniv1.GroupVersion.String() && o.Kind == "Organization" {
+			continue
+		}
+		pruned = append(pruned, o)
+	}
+	owners = pruned
+
+	if orgName != "" {
+		var org uyuniv1.Organization
+		if err := c.Get(ctx, types.NamespacedName{
+			Namespace: dependent.GetNamespace(), Name: orgName,
+		}, &org); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return err
+			}
+			// Organization doesn't exist; resolver reports this as a hard
+			// error elsewhere. Don't fail ownership reconciliation.
+		} else {
+			blockOwner := true
+			owners = append(owners, metav1.OwnerReference{
+				APIVersion:         uyuniv1.GroupVersion.String(),
+				Kind:               "Organization",
+				Name:               org.Name,
+				UID:                org.UID,
+				BlockOwnerDeletion: &blockOwner,
+			})
+		}
+	}
+
+	dependent.SetOwnerReferences(owners)
+	return c.Update(ctx, dependent)
+}
+
 // isOwnedBy returns true if dependent has an owner reference with the
 // given UID. UID-based check avoids spurious matches if the owner CR is
 // recreated with the same name.

@@ -45,6 +45,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return r.failTask(ctx, &task, "OrganizationError", err)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &task, orgRef(task.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Spec-shape validation lives in the webhook. Reconciler relies on the
 	// dispatch in scheduleByKind to detect malformed spec at runtime
 	// (e.g. webhook bypass): an unhandled kind there produces ScheduleFailed,

@@ -45,6 +45,10 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &sc)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &sc, orgRef(sc.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Resolve parent channel label if a ref is given.
 	parentLabel, waitReason, err := r.resolveParentChannel(ctx, &sc)
 	if err != nil {

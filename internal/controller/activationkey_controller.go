@@ -46,6 +46,10 @@ func (r *ActivationKeyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ak)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &ak, orgRef(ak.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Resolve channel + group refs. Webhook validates mutual exclusion at
 	// admission; the resolver still flags it defensively if admission was bypassed.
 	res, err := resolveChannelRefs(ctx, r.Client, ak.Namespace, channelRefs{

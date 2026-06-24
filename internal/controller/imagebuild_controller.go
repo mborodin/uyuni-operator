@@ -57,6 +57,10 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ib)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &ib, orgRef(profile.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Wait for profile to be realized.
 	if profile.Status.UyuniID == 0 {
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "WaitingForProfile",

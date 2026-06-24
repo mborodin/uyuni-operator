@@ -44,6 +44,10 @@ func (r *AutoinstallDistributionReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ad)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &ad, orgRef(ad.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Resolve channel label from spec.channelRef.
 	channelLabel, waitReason, err := r.resolveChannelLabel(ctx, &ad)
 	if err != nil {

@@ -52,6 +52,10 @@ func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &sys)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &sys, orgRef(sys.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Find the system in Uyuni, adopting by minionID or MAC if needed.
 	details, found, err := r.findOrAdopt(ctx, uc, &sys)
 	if err != nil {

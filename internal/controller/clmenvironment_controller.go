@@ -46,6 +46,10 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &env)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &env, orgRef(env.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Verify parent ContentProject exists and is READY
 	var project uyuniv1.ContentProject
 	if err := r.Get(ctx, client.ObjectKey{Namespace: env.Namespace, Name: env.Spec.ProjectRef.Name}, &project); err != nil {

@@ -44,6 +44,10 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &repo)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &repo, orgRef(repo.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	sslCa, sslCert, sslKey, err := r.resolveSSL(ctx, &repo)
 	if err != nil {
 		return r.fail(ctx, &repo, "SSLRefError", err)

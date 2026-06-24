@@ -47,6 +47,10 @@ func (r *ContentProjectPromotionReconciler) Reconcile(ctx context.Context, req c
 		return r.fail(ctx, &p, err)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &p, orgRef(p.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	var cp uyuniv1.ContentProject
 	if err := r.Get(ctx, types.NamespacedName{Namespace: p.Namespace, Name: p.Spec.ProjectRef.Name}, &cp); err != nil {
 		return r.fail(ctx, &p, fmt.Errorf("project ref: %w", err))

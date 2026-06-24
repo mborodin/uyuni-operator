@@ -48,6 +48,10 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &sg)
 	}
 
+	if err := reconcileOrganizationOwnership(ctx, r.Client, &sg, orgRef(sg.Spec.OrganizationRef)); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Create or adopt the group in Uyuni.
 	current, err := uc.GetSystemGroup(ctx, sg.Spec.Name)
 	if uyuni.IsNotFound(err) || (err != nil && strings.Contains(strings.ToLower(err.Error()), "unable to locate")) {
