@@ -40,14 +40,15 @@ func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, r.Update(ctx, &sys)
 	}
 
+	if !sys.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &sys)
+	}
+
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(sys.Spec.OrganizationRef), sys.Namespace)
 	if err != nil {
 		return r.fail(ctx, &sys, "OrganizationError", err)
 	}
 
-	if !sys.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &sys)
-	}
 	if ensureFinalizer(&sys, sysFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &sys)
 	}
@@ -472,7 +473,7 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func (r *SystemReconciler) handleDeletion(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (ctrl.Result, error) {
+func (r *SystemReconciler) handleDeletion(ctx context.Context, sys *uyuniv1.System) (ctrl.Result, error) {
 	if !containsFinalizer(sys, sysFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -481,6 +482,10 @@ func (r *SystemReconciler) handleDeletion(ctx context.Context, uc uyuni.API, sys
 		return ctrl.Result{}, r.Update(ctx, sys)
 	}
 	if sys.Status.UyuniServerID != 0 {
+		uc, err := r.Clients.ForOrganization(ctx, orgRef(sys.Spec.OrganizationRef), sys.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		// Remove from all groups before deleting.
 		for _, name := range sys.Status.GroupNames {
 			_ = uc.RemoveSystemsFromGroup(ctx, name, []int{sys.Status.UyuniServerID})

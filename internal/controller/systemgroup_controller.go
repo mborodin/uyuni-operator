@@ -34,6 +34,10 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !sg.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &sg)
+	}
+
 	// Resolve Uyuni client using organization context (organization takes precedence for API scope)
 	// The cluster field specifies which provider manages this group (for future multi-cluster org support)
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(sg.Spec.OrganizationRef), sg.Namespace)
@@ -41,9 +45,6 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return r.fail(ctx, &sg, "OrganizationError", err)
 	}
 
-	if !sg.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &sg)
-	}
 	if ensureFinalizer(&sg, sgFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &sg)
 	}
@@ -145,7 +146,7 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func (r *SystemGroupReconciler) handleDeletion(ctx context.Context, uc uyuni.API, sg *uyuniv1.SystemGroup) (ctrl.Result, error) {
+func (r *SystemGroupReconciler) handleDeletion(ctx context.Context, sg *uyuniv1.SystemGroup) (ctrl.Result, error) {
 	if !containsFinalizer(sg, sgFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -154,6 +155,10 @@ func (r *SystemGroupReconciler) handleDeletion(ctx context.Context, uc uyuni.API
 		return ctrl.Result{}, r.Update(ctx, sg)
 	}
 	if sg.Status.UyuniID != 0 {
+		uc, err := r.Clients.ForOrganization(ctx, orgRef(sg.Spec.OrganizationRef), sg.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := uc.DeleteSystemGroup(ctx, sg.Spec.Name); err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}

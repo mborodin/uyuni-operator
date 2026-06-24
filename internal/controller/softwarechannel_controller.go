@@ -33,14 +33,15 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !sc.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &sc)
+	}
+
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(sc.Spec.OrganizationRef), sc.Namespace)
 	if err != nil {
 		return r.fail(ctx, &sc, "OrganizationError", err)
 	}
 
-	if !sc.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &sc)
-	}
 	if ensureFinalizer(&sc, scFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &sc)
 	}
@@ -192,7 +193,7 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
 }
 
-func (r *SoftwareChannelReconciler) handleDeletion(ctx context.Context, uc uyuni.API, sc *uyuniv1.SoftwareChannel) (ctrl.Result, error) {
+func (r *SoftwareChannelReconciler) handleDeletion(ctx context.Context, sc *uyuniv1.SoftwareChannel) (ctrl.Result, error) {
 	if !containsFinalizer(sc, scFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -201,6 +202,10 @@ func (r *SoftwareChannelReconciler) handleDeletion(ctx context.Context, uc uyuni
 		return ctrl.Result{}, r.Update(ctx, sc)
 	}
 	if sc.Status.UyuniID != 0 {
+		uc, err := r.Clients.ForOrganization(ctx, orgRef(sc.Spec.OrganizationRef), sc.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := uc.DeleteChannel(ctx, sc.Spec.Label); err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}

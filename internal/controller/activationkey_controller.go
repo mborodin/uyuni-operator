@@ -34,14 +34,15 @@ func (r *ActivationKeyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !ak.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &ak)
+	}
+
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(ak.Spec.OrganizationRef), ak.Namespace)
 	if err != nil {
 		return r.fail(ctx, &ak, "OrganizationError", err)
 	}
 
-	if !ak.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &ak)
-	}
 	if ensureFinalizer(&ak, akFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ak)
 	}
@@ -181,7 +182,7 @@ func (r *ActivationKeyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func (r *ActivationKeyReconciler) handleDeletion(ctx context.Context, uc uyuni.API, ak *uyuniv1.ActivationKey) (ctrl.Result, error) {
+func (r *ActivationKeyReconciler) handleDeletion(ctx context.Context, ak *uyuniv1.ActivationKey) (ctrl.Result, error) {
 	if !containsFinalizer(ak, akFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -190,6 +191,10 @@ func (r *ActivationKeyReconciler) handleDeletion(ctx context.Context, uc uyuni.A
 		return ctrl.Result{}, r.Update(ctx, ak)
 	}
 	if ak.Status.UyuniKey != "" {
+		uc, err := r.Clients.ForOrganization(ctx, orgRef(ak.Spec.OrganizationRef), ak.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := uc.DeleteActivationKey(ctx, ak.Status.UyuniKey); err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}

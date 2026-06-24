@@ -33,15 +33,16 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !env.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &env)
+	}
+
 	// Resolve Uyuni client using organization context
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(env.Spec.OrganizationRef), env.Namespace)
 	if err != nil {
 		return r.fail(ctx, &env, "OrganizationError", err)
 	}
 
-	if !env.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &env)
-	}
 	if ensureFinalizer(&env, clmEnvFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &env)
 	}
@@ -100,7 +101,7 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func (r *ClmEnvironmentReconciler) handleDeletion(ctx context.Context, uc uyuni.API, env *uyuniv1.ClmEnvironment) (ctrl.Result, error) {
+func (r *ClmEnvironmentReconciler) handleDeletion(ctx context.Context, env *uyuniv1.ClmEnvironment) (ctrl.Result, error) {
 	if !containsFinalizer(env, clmEnvFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -112,6 +113,10 @@ func (r *ClmEnvironmentReconciler) handleDeletion(ctx context.Context, uc uyuni.
 	// Get project to pass to RemoveEnvironment
 	var project uyuniv1.ContentProject
 	if err := r.Get(ctx, client.ObjectKey{Namespace: env.Namespace, Name: env.Spec.ProjectRef.Name}, &project); err == nil {
+		uc, err := r.Clients.ForOrganization(ctx, orgRef(env.Spec.OrganizationRef), env.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := uc.RemoveEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description); err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}

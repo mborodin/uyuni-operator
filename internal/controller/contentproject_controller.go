@@ -47,14 +47,15 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if !cp.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &cp)
+	}
+
 	uc, err := r.Clients.ForOrganization(ctx, orgRef(cp.Spec.OrganizationRef), cp.Namespace)
 	if err != nil {
 		return r.fail(ctx, &cp, "OrganizationError", err)
 	}
 
-	if !cp.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &cp)
-	}
 	if ensureFinalizer(&cp, cpFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &cp)
 	}
@@ -148,7 +149,7 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // ActivationKeys/Systems is Kubernetes' job; we wait for owned dependents
 // to finalize, then clean up Uyuni-side state. Active promotions block
 // unconditionally because cancelling them mid-flight is dangerous.
-func (r *ContentProjectReconciler) handleDeletion(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) (ctrl.Result, error) {
+func (r *ContentProjectReconciler) handleDeletion(ctx context.Context, cp *uyuniv1.ContentProject) (ctrl.Result, error) {
 	if !containsFinalizer(cp, cpFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -178,6 +179,11 @@ func (r *ContentProjectReconciler) handleDeletion(ctx context.Context, uc uyuni.
 			fmt.Sprintf("Kubernetes garbage collector is reclaiming %d owned resource(s)", pending))
 		_ = r.Status().Update(ctx, cp)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	uc, err := r.Clients.ForOrganization(ctx, orgRef(cp.Spec.OrganizationRef), cp.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Try to remove project from Uyuni, but don't block deletion if API fails
