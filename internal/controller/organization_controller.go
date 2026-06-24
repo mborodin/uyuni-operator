@@ -140,10 +140,11 @@ func (r *OrganizationReconciler) handleDeletion(ctx context.Context, org *uyuniv
 	// Don't delete imported orgs — they pre-existed and may be shared.
 	if org.Spec.Import == nil && org.Status.UyuniOrgID > 0 {
 		uc, err := r.Clients.For(ctx, toProviderRef(&org.Spec.ProviderRef), org.Namespace)
-		if err == nil {
-			if delErr := uc.DeleteOrganization(ctx, org.Status.UyuniOrgID); delErr != nil && !uyuni.IsNotFound(delErr) {
-				return ctrl.Result{}, delErr
-			}
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if delErr := uc.DeleteOrganization(ctx, org.Status.UyuniOrgID); delErr != nil && !uyuni.IsNotFound(delErr) {
+			return ctrl.Result{}, delErr
 		}
 	}
 
