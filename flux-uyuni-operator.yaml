@@ -1,0 +1,49 @@
+---
+# Flux CD Configuration for Uyuni-Operator
+# This deploys uyuni-operator from your git repository
+#
+# Prerequisites:
+# - Flux must be installed: flux bootstrap github ...
+#
+# Apply with:
+#   kubectl apply -f flux-uyuni-operator.yaml
+#
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: GitRepository
+metadata:
+  name: uyuni-operator
+  namespace: flux-system
+spec:
+  interval: 1m0s
+  url: https://github.com/mborodin/uyuni-operator
+  ref:
+    branch: feat/dply-e2e-aks
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: uyuni-operator
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: uyuni-operator
+  path: ./config/default
+  prune: true
+  wait: true
+  timeout: 5m0s
+  postBuild:
+    substituteFrom:
+    - kind: ConfigMap
+      name: uyuni-config
+---
+# ConfigMap for environment-specific values
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: uyuni-config
+  namespace: flux-system
+data:
+  UYUNI_URL: "https://aks-uyuni-new.nexa-dev.delhaize.test"
+  # Add other environment variables as needed

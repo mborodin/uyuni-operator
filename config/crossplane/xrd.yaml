@@ -43,13 +43,22 @@ spec:
                 - organization
               properties:
                 brand:
-                  description: Brand identifier (e.g. "delhaize"). Immutable after creation.
+                  description: Brand identifier (e.g. "DLL", "MegaImage"). Immutable after creation.
                   type: string
-                  pattern: ^[a-z0-9-]+$
+                  minLength: 1
                 region:
-                  description: Region identifier (e.g. "emea"). Immutable after creation.
+                  description: Region or country code (e.g. "RO", "emea"). Immutable after creation.
                   type: string
-                  pattern: ^[a-z0-9-]+$
+                  pattern: ^[A-Za-z0-9-]+$
+                deletionPolicy:
+                  description: |
+                    Whether deleting this BrandRegionClaim destroys the composed
+                    uyuni-operator resources (Organization, ActivationKeys, channels, ...)
+                    or orphans them (left in place, no longer managed). Propagated to every
+                    composed resource's deletionPolicy.
+                  type: string
+                  enum: [Delete, Orphan]
+                  default: Delete
                 provider:
                   description: Uyuni spoke connection — creates a cluster-scoped UyuniProvider CR.
                   type: object
@@ -99,26 +108,53 @@ spec:
                         organizationId:
                           type: integer
                           minimum: 1
-                stateRepository:
-                  description: Git repository from which Salt minions pull state.
+                stateRepositories:
+                  description: |
+                    Git repositories from which Salt minions pull state. "baseline" holds
+                    the common/shared states applied to every system in the brand region;
+                    "main" holds the brand-region-specific states layered on top. Stored as
+                    operator metadata; wire the URLs into ConfigurationChannels of type
+                    "state" manually.
                   type: object
-                  required: [url]
                   properties:
-                    url:
-                      type: string
-                      minLength: 1
-                    branch:
-                      type: string
-                      default: main
-                    subPath:
-                      type: string
-                    credentialsSecretRef:
+                    baseline:
                       type: object
+                      required: [url]
                       properties:
-                        name:
+                        url:
                           type: string
-                        namespace:
+                          minLength: 1
+                        branch:
                           type: string
+                          default: main
+                        subPath:
+                          type: string
+                        credentialsSecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                    main:
+                      type: object
+                      required: [url]
+                      properties:
+                        url:
+                          type: string
+                          minLength: 1
+                        branch:
+                          type: string
+                          default: main
+                        subPath:
+                          type: string
+                        credentialsSecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            namespace:
+                              type: string
                 repositories:
                   type: array
                   items:
@@ -301,7 +337,7 @@ spec:
                         type: string
                       systemType:
                         type: string
-                        enum: [pos, storehub, branchserver]
+                        enum: [pos, storehub, branchserver, buildserver]
                       configChannelRefs:
                         type: array
                         items:

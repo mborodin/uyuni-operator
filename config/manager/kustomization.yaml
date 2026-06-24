@@ -4,7 +4,9 @@ kind: Kustomization
 namespace: uyuni-operator-system
 
 resources:
+- namespace.yaml
 - manager.yaml
+- secrets.yaml
 
 images:
 - name: controller

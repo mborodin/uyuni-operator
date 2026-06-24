@@ -1,0 +1,36 @@
+---
+# UyuniProvider — connection configuration to your Uyuni server
+#
+# This resource tells the operator HOW to connect to your Uyuni instance.
+# Update the URL and credentials to match your environment.
+#
+# The credentials secret (uyuni-prod-creds) must be created separately:
+#   kubectl create secret generic uyuni-prod-creds \
+#     --from-literal=username=uyuni \
+#     --from-literal=password=YOUR_PASSWORD \
+#     -n uyuni-operator-system
+#
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: UyuniProvider
+metadata:
+  name: prod
+  namespace: uyuni-operator-system
+spec:
+  # Replace with your Uyuni server URL
+  url: https://aks-uyuni-new.nexa-dev.delhaize.test
+
+  # Reference to the credentials secret
+  # Must contain keys: username, password
+  credentialsSecretRef:
+    name: uyuni-prod-creds
+    namespace: uyuni-operator-system
+
+  # Mark as default provider (used by all resources in this namespace)
+  isDefault: true
+
+  # Timeout for API calls
+  timeout: 30s
+
+  # Skip TLS verification (for self-signed certificates)
+  # WARNING: Only use in development/testing!
+  insecureSkipVerify: true

@@ -1,17 +1,8 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  labels:
-    control-plane: controller-manager
-    app.kubernetes.io/name: uyuni-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: system
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: controller-manager
-  namespace: system
+  namespace: uyuni-operator-system
   labels:
     control-plane: controller-manager
     app.kubernetes.io/name: uyuni-operator
@@ -67,5 +58,14 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: cert
+          readOnly: true
       serviceAccountName: manager
       terminationGracePeriodSeconds: 10
+      volumes:
+      - name: cert
+        secret:
+          secretName: serving-cert
+          optional: true

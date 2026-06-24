@@ -9,7 +9,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /mutate-uyuni-uyuni-project-org-v1alpha1-system
   failurePolicy: Fail
   name: msystem.uyuni.uyuni-project.org
@@ -35,7 +35,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-activationkey
   failurePolicy: Fail
   name: vactivationkey.uyuni.uyuni-project.org
@@ -55,7 +55,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-clmenvironment
   failurePolicy: Fail
   name: vclmenvironment.uyuni.uyuni-project.org
@@ -75,7 +75,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-configurationchannel
   failurePolicy: Fail
   name: vconfigurationchannel.uyuni.uyuni-project.org
@@ -95,7 +95,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-contentproject
   failurePolicy: Fail
   name: vcontentproject.uyuni.uyuni-project.org
@@ -115,7 +115,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-organization
   failurePolicy: Fail
   name: vorganization.uyuni.uyuni-project.org
@@ -135,7 +135,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-contentprojectpromotion
   failurePolicy: Fail
   name: vpromotion.uyuni.uyuni-project.org
@@ -155,7 +155,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-system
   failurePolicy: Fail
   name: vsystem.uyuni.uyuni-project.org
@@ -175,7 +175,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-systemgroup
   failurePolicy: Fail
   name: vsystemgroup.uyuni.uyuni-project.org
@@ -195,7 +195,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-task
   failurePolicy: Fail
   name: vtask.uyuni.uyuni-project.org
@@ -215,7 +215,7 @@ webhooks:
   clientConfig:
     service:
       name: webhook-service
-      namespace: system
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-uyuniprovider
   failurePolicy: Fail
   name: vuyuniprovider.uyuni.uyuni-project.org
