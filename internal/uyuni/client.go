@@ -1900,7 +1900,7 @@ func (c *Client) GetOrganizationByName(ctx context.Context, name string) (*OrgDe
 
 func (c *Client) DeleteOrganization(ctx context.Context, id int) error {
 	_, err := apiPost[any](c, "org/delete", map[string]any{
-		"org_id": id,
+		"orgId": id,
 	})
 	return asNotFound(err)
 }
