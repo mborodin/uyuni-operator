@@ -63,8 +63,9 @@ func main() {
 	clientPool := pool.New(mgr.GetClient(), operatorNamespace)
 
 	if err := (&controller.OrganizationReconciler{
-		Client:  mgr.GetClient(),
-		Clients: clientPool,
+		Client:     mgr.GetClient(),
+		Clients:    clientPool,
+		OperatorNS: operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Organization")
 		os.Exit(1)

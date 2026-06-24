@@ -1,6 +1,9 @@
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // OrganizationImport links this CR to a pre-existing Uyuni organization
 // instead of creating a new one. When set, the operator adopts the org
@@ -40,6 +43,17 @@ type OrganizationStatus struct {
 	UyuniOrgID         int                `json:"uyuniOrgId,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+
+	// ProviderURL, ProviderInsecureSkipVerify, ProviderCredentialsSecretRef, and
+	// ProviderCACertSecretRef snapshot the UyuniProvider's connection details the
+	// last time it was successfully resolved. Deletion uses this snapshot instead
+	// of re-reading the UyuniProvider CR, since Crossplane compositions may delete
+	// sibling managed resources (including the UyuniProvider) concurrently with
+	// the Organization, before the Organization's own Uyuni-side cleanup runs.
+	ProviderURL                  string                  `json:"providerUrl,omitempty"`
+	ProviderInsecureSkipVerify   bool                    `json:"providerInsecureSkipVerify,omitempty"`
+	ProviderCredentialsSecretRef *corev1.SecretReference `json:"providerCredentialsSecretRef,omitempty"`
+	ProviderCACertSecretRef      *corev1.SecretReference `json:"providerCaCertSecretRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true
