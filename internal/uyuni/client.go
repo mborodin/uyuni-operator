@@ -96,9 +96,6 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 		}
 	}
 
-	c := &Client{conn: conn, http: httpClient, baseURL: strings.TrimSuffix(rawURL, "/")}
-	httpClient.Client.Transport = &cookieCaptureTransport{base: httpClient.Client.Transport, client: c}
-
 	if err := httpClient.Login(); err != nil {
 		return nil, fmt.Errorf("authenticating with %s: %w", rawURL, err)
 	}
@@ -245,7 +242,6 @@ func apiDelete(c *Client, path string) error {
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	// Important: Set Accept-Encoding to allow automatic decompression
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	c.applySessionCookie(req)
 
 	// Execute using rawHTTP (its cookiejar carries the session from rawLogin)
 	resp, err := c.rawHTTP.Do(req)
@@ -359,7 +355,6 @@ func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	c.applySessionCookie(req)
 
 	// Execute using rawHTTP (its cookiejar carries the session from rawLogin)
 	resp, err := c.rawHTTP.Do(req)
