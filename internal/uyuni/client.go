@@ -13,6 +13,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	uyuniapi "github.com/uyuni-project/uyuni-tools/shared/api"
@@ -22,7 +23,17 @@ import (
 // /rhn/manager/api/. It uses uyuni-tools/shared/api for HTTP transport,
 // TLS configuration, and pxt-session-cookie session management.
 // On 401 responses it re-authenticates transparently before retrying.
+//
+// The Pool caches one Client per org/provider and hands it out to every
+// org-scoped reconciler, so concurrent reconciles (e.g. a cascade delete
+// touching ContentProject, ClmEnvironment, SoftwareChannel, SystemGroup,
+// ActivationKey at once) share a single session cookie jar. Without mu,
+// concurrent 401-triggered re-logins race: one goroutine's fresh session
+// cookie gets clobbered by another's in-flight login, producing a storm of
+// spurious 401s that never self-resolves. mu serializes every request
+// through this client so re-auth can't interleave.
 type Client struct {
+	mu      sync.Mutex
 	conn    *uyuniapi.ConnectionDetails
 	http    *uyuniapi.APIClient
 	baseURL string // Full server URL for direct HTTP calls
@@ -85,6 +96,8 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 // sessions; we try re-auth on either so that a stale cookie is recovered
 // transparently. If the retry also fails with 403 the error is reported as-is.
 func apiGet[T any](c *Client, path string) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	resp, err := uyuniapi.Get[T](c.http, path)
 	if err != nil && needsReauth(err.Error()) {
 		if loginErr := c.http.Login(); loginErr != nil {
@@ -106,6 +119,8 @@ func apiGet[T any](c *Client, path string) (T, error) {
 
 // apiPost calls POST <path> with JSON body and re-authenticates once on 401 or 403.
 func apiPost[T any](c *Client, path string, data map[string]any) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	resp, err := uyuniapi.Post[T](c.http, path, data)
 	if err != nil && needsReauth(err.Error()) {
 		if loginErr := c.http.Login(); loginErr != nil {
@@ -127,6 +142,8 @@ func apiPost[T any](c *Client, path string, data map[string]any) (T, error) {
 
 // apiDelete calls HTTP DELETE <path> using the underlying http.Client from uyuniapi.
 func apiDelete(c *Client, path string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// Ensure we're authenticated
 	if err := c.http.Login(); err != nil {
 		return fmt.Errorf("login failed: %w", err)
@@ -241,6 +258,8 @@ func apiDelete(c *Client, path string) error {
 
 // apiDeleteWithBody calls HTTP DELETE with a JSON body (used for environment deletion)
 func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// Ensure we're authenticated
 	if err := c.http.Login(); err != nil {
 		return fmt.Errorf("login failed: %w", err)
