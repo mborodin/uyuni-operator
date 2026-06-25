@@ -172,21 +172,34 @@ func (p *Pool) buildForOrg(ctx context.Context, orgName, orgNamespace, key strin
 		return nil, fmt.Errorf("getting Organization %q/%q: %w", orgNamespace, orgName, err)
 	}
 
-	var prov uyuniv1.UyuniProvider
-	if err := p.client.Get(ctx, types.NamespacedName{Name: org.Spec.ProviderRef.Name}, &prov); err != nil {
-		return nil, fmt.Errorf("getting UyuniProvider %q for Organization %q: %w", org.Spec.ProviderRef.Name, orgName, err)
-	}
-
 	// If no org-specific credentials, reuse the provider client.
 	if org.Spec.CredentialsSecretRef == nil {
 		api, err := p.For(ctx, &uyuni.LocalObjectRef{Name: org.Spec.ProviderRef.Name}, orgNamespace)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			p.mu.Lock()
+			p.orgCache[key] = orgEntry{api: api, providerName: org.Spec.ProviderRef.Name}
+			p.mu.Unlock()
+			return api, nil
 		}
-		p.mu.Lock()
-		p.orgCache[key] = orgEntry{api: api, providerName: org.Spec.ProviderRef.Name}
-		p.mu.Unlock()
-		return api, nil
+		// UyuniProvider CR may already be gone (e.g. deleted concurrently by
+		// Crossplane while this org's dependents are still cleaning up).
+		// Fall back to building directly from the org's provider snapshot,
+		// using the provider's (satellite admin) credentials snapshot too.
+		return p.buildFromSnapshot(ctx, &org, org.Status.ProviderCredentialsSecretRef, orgName, key)
+	}
+
+	providerURL, insecureSkipVerify, caCertSecretRef, err := p.resolveProviderDetails(ctx, &org)
+	if err != nil {
+		return nil, err
+	}
+
+	var caCert []byte
+	if caCertSecretRef != nil {
+		var caSecret corev1.Secret
+		if err := p.client.Get(ctx, types.NamespacedName{Namespace: caCertSecretRef.Namespace, Name: caCertSecretRef.Name}, &caSecret); err != nil {
+			return nil, fmt.Errorf("reading CA cert secret for Organization %q: %w", orgName, err)
+		}
+		caCert = caSecret.Data["ca.crt"]
 	}
 
 	// Org-specific credentials: build a separate client.
@@ -203,21 +216,65 @@ func (p *Pool) buildForOrg(ctx context.Context, orgName, orgNamespace, key strin
 		return nil, fmt.Errorf("org credentials secret for Organization %q must contain non-empty 'username' and 'password' keys", orgName)
 	}
 
-	// Inherit TLS config from the provider.
+	c, err := uyuni.NewClient(providerURL, username, password, insecureSkipVerify, caCert)
+	if err != nil {
+		return nil, fmt.Errorf("connecting for Organization %q: %w", orgName, err)
+	}
+
+	p.mu.Lock()
+	p.orgCache[key] = orgEntry{api: c}
+	p.mu.Unlock()
+	return c, nil
+}
+
+// resolveProviderDetails returns the org's UyuniProvider connection details,
+// preferring the live UyuniProvider CR but falling back to org.Status's
+// provider snapshot when the CR is gone (see Organization controller's
+// snapshotProvider). Without this fallback, every org-scoped resource
+// controller gets stuck forever if Crossplane deletes the UyuniProvider
+// concurrently with the Organization, before dependents finish cleanup.
+func (p *Pool) resolveProviderDetails(ctx context.Context, org *uyuniv1.Organization) (url string, insecureSkipVerify bool, caCertSecretRef *corev1.SecretReference, err error) {
+	var prov uyuniv1.UyuniProvider
+	if err := p.client.Get(ctx, types.NamespacedName{Name: org.Spec.ProviderRef.Name}, &prov); err == nil {
+		return prov.Spec.URL, prov.Spec.InsecureSkipVerify, prov.Spec.CACertSecretRef, nil
+	}
+
+	if org.Status.ProviderURL != "" {
+		return org.Status.ProviderURL, org.Status.ProviderInsecureSkipVerify, org.Status.ProviderCACertSecretRef, nil
+	}
+
+	return "", false, nil, fmt.Errorf("getting UyuniProvider %q for Organization %q: not found, and Organization has no provider snapshot", org.Spec.ProviderRef.Name, org.Name)
+}
+
+// buildFromSnapshot builds a client for an org with no org-specific
+// credentials (shared provider client), using org.Status's provider
+// snapshot — including the provider's own (satellite admin) credentials
+// secret — since the live UyuniProvider CR is gone.
+func (p *Pool) buildFromSnapshot(ctx context.Context, org *uyuniv1.Organization, credRef *corev1.SecretReference, orgName, key string) (uyuni.API, error) {
+	if org.Status.ProviderURL == "" || credRef == nil {
+		return nil, fmt.Errorf("getting UyuniProvider %q for Organization %q: not found, and Organization has no provider snapshot", org.Spec.ProviderRef.Name, orgName)
+	}
+
+	var secret corev1.Secret
+	if err := p.client.Get(ctx, types.NamespacedName{Namespace: credRef.Namespace, Name: credRef.Name}, &secret); err != nil {
+		return nil, fmt.Errorf("reading provider credentials secret for Organization %q: %w", orgName, err)
+	}
+	username := string(secret.Data["username"])
+	password := string(secret.Data["password"])
+	if username == "" || password == "" {
+		return nil, fmt.Errorf("provider credentials secret for Organization %q must contain non-empty 'username' and 'password' keys", orgName)
+	}
+
 	var caCert []byte
-	if prov.Spec.CACertSecretRef != nil {
-		caNS := p.operatorNS
-		if prov.Spec.CACertSecretRef.Namespace != "" {
-			caNS = prov.Spec.CACertSecretRef.Namespace
-		}
+	if caRef := org.Status.ProviderCACertSecretRef; caRef != nil {
 		var caSecret corev1.Secret
-		if err := p.client.Get(ctx, types.NamespacedName{Namespace: caNS, Name: prov.Spec.CACertSecretRef.Name}, &caSecret); err != nil {
-			return nil, fmt.Errorf("reading CA cert secret for provider %q: %w", prov.Name, err)
+		if err := p.client.Get(ctx, types.NamespacedName{Namespace: caRef.Namespace, Name: caRef.Name}, &caSecret); err != nil {
+			return nil, fmt.Errorf("reading CA cert secret for Organization %q: %w", orgName, err)
 		}
 		caCert = caSecret.Data["ca.crt"]
 	}
 
-	c, err := uyuni.NewClient(prov.Spec.URL, username, password, prov.Spec.InsecureSkipVerify, caCert)
+	c, err := uyuni.NewClient(org.Status.ProviderURL, username, password, org.Status.ProviderInsecureSkipVerify, caCert)
 	if err != nil {
 		return nil, fmt.Errorf("connecting for Organization %q: %w", orgName, err)
 	}
