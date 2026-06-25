@@ -1385,6 +1385,13 @@ func (c *Client) UpdateProject(ctx context.Context, label, name, description str
 }
 
 func (c *Client) RemoveProject(ctx context.Context, label string) error {
+	// Probe first: Uyuni's DELETE on an already-removed project returns an
+	// opaque 401/500 with an empty body instead of 404, so apiDelete can't
+	// distinguish "already gone" from a real failure. LookupProject's GET
+	// does return a proper "does not exist" message we can classify.
+	if _, err := c.LookupProject(ctx, label); IsNotFound(err) {
+		return err
+	}
 	return apiDelete(c, "contentmanagement/projects/"+url.QueryEscape(label))
 }
 
@@ -1468,6 +1475,30 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 
 func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error {
 	fmt.Printf("DEBUG: RemoveEnvironment called for project=%s, env=%s\n", projectLabel, envLabel)
+
+	// Probe first: same opaque-error problem as RemoveProject. If the parent
+	// project is already gone, the environment is gone with it. If the
+	// project exists but no longer lists this environment, it was already
+	// removed (e.g. a prior reconcile succeeded but the status update lost
+	// the race). Either way, skip the DELETE call that Uyuni can't answer
+	// cleanly for a missing entity.
+	if _, err := c.LookupProject(ctx, projectLabel); IsNotFound(err) {
+		return err
+	} else if err == nil {
+		envs, listErr := c.ListProjectEnvironments(ctx, projectLabel)
+		if listErr == nil {
+			found := false
+			for _, e := range envs {
+				if e.Label == envLabel {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return &notFoundError{msg: fmt.Sprintf("environment %q not found in project %q", envLabel, projectLabel)}
+			}
+		}
+	}
 
 	// Build environment object for DELETE request using provided fields
 	// We use reasonable defaults for fields not available from the controller
