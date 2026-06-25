@@ -37,6 +37,56 @@ type Client struct {
 	conn    *uyuniapi.ConnectionDetails
 	http    *uyuniapi.APIClient
 	baseURL string // Full server URL for direct HTTP calls
+
+	// lastCookie holds the most recent session Cookie header observed on an
+	// outgoing request made through uyuniapi's own Get/Post helpers. apiDelete
+	// and apiDeleteWithBody bypass those helpers (Uyuni's contentmanagement
+	// project/environment removal needs a real HTTP DELETE, which the library
+	// doesn't expose) and build raw *http.Request values instead. Those raw
+	// requests never carry a Cookie header otherwise: the library manages the
+	// session token internally and attaches it itself on every call it makes,
+	// it does not rely on http.Client's cookie jar, so a request built outside
+	// the library has nothing to send and always gets 401 regardless of how
+	// many times Login() is called. cookieCaptureTransport mirrors whatever
+	// cookie the library last used into lastCookie so the raw DELETE path can
+	// reuse it explicitly.
+	//
+	// cookieMu guards lastCookie only. It is intentionally separate from mu:
+	// RoundTrip runs synchronously inside the Do() call that apiGet/apiPost/
+	// apiDelete/apiDeleteWithBody make while already holding mu, and mu is a
+	// plain (non-reentrant) Mutex, so reusing it here would deadlock.
+	cookieMu   sync.Mutex
+	lastCookie string
+}
+
+// cookieCaptureTransport wraps an http.RoundTripper and records the Cookie
+// header of every outgoing request into the owning Client. See the comment
+// on Client.lastCookie for why this exists.
+type cookieCaptureTransport struct {
+	base   http.RoundTripper
+	client *Client
+}
+
+func (t *cookieCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	resp, err := base.RoundTrip(req)
+	// Prefer a fresh Set-Cookie from the response (e.g. Login's own response)
+	// so a retry doesn't have to wait for a separate request to observe it.
+	if err == nil && resp != nil {
+		if cookies := resp.Cookies(); len(cookies) > 0 {
+			parts := make([]string, 0, len(cookies))
+			for _, ck := range cookies {
+				parts = append(parts, ck.Name+"="+ck.Value)
+			}
+			t.client.cookieMu.Lock()
+			t.client.lastCookie = strings.Join(parts, "; ")
+			t.client.cookieMu.Unlock()
+		}
+	}
+	return resp, err
 }
 
 // notFoundError wraps a "not found" response so callers can use IsNotFound.
@@ -83,10 +133,13 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 		}
 	}
 
+	c := &Client{conn: conn, http: httpClient, baseURL: strings.TrimSuffix(rawURL, "/")}
+	httpClient.Client.Transport = &cookieCaptureTransport{base: httpClient.Client.Transport, client: c}
+
 	if err := httpClient.Login(); err != nil {
 		return nil, fmt.Errorf("authenticating with %s: %w", rawURL, err)
 	}
-	return &Client{conn: conn, http: httpClient, baseURL: strings.TrimSuffix(rawURL, "/")}, nil
+	return c, nil
 }
 
 // --- generic re-auth helpers ---
@@ -140,6 +193,20 @@ func apiPost[T any](c *Client, path string, data map[string]any) (T, error) {
 	return resp.Result, nil
 }
 
+// applySessionCookie attaches the most recently observed library session
+// cookie (see Client.lastCookie) to a raw request built outside uyuniapi's
+// own Get/Post helpers. Without this, apiDelete/apiDeleteWithBody send no
+// Cookie header at all and Uyuni rejects them with 401 regardless of how
+// many times Login() succeeds.
+func (c *Client) applySessionCookie(req *http.Request) {
+	c.cookieMu.Lock()
+	cookie := c.lastCookie
+	c.cookieMu.Unlock()
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+}
+
 // apiDelete calls HTTP DELETE <path> using the underlying http.Client from uyuniapi.
 func apiDelete(c *Client, path string) error {
 	c.mu.Lock()
@@ -172,6 +239,7 @@ func apiDelete(c *Client, path string) error {
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	// Important: Set Accept-Encoding to allow automatic decompression
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	c.applySessionCookie(req)
 
 	// Execute using the underlying http.Client (which preserves auth cookies)
 	resp, err := c.http.Client.Do(req)
@@ -184,6 +252,7 @@ func apiDelete(c *Client, path string) error {
 			req2, _ := http.NewRequest("DELETE", fullURL, bytes.NewReader([]byte("{}")))
 			req2.Header.Set("Content-Type", "application/json; charset=utf-8")
 			req2.Header.Set("Accept", "application/json; charset=utf-8")
+			c.applySessionCookie(req2)
 			resp, err = c.http.Client.Do(req2)
 		}
 		if err != nil {
@@ -203,6 +272,7 @@ func apiDelete(c *Client, path string) error {
 		req3.Header.Set("Accept", "*/*")
 		req3.Header.Set("X-Requested-With", "XMLHttpRequest")
 		req3.Header.Set("Accept-Encoding", "gzip, deflate, br")
+		c.applySessionCookie(req3)
 		resp, err = c.http.Client.Do(req3)
 		if err != nil {
 			return sanitizeHTTPError(err, path)
@@ -285,6 +355,7 @@ func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	c.applySessionCookie(req)
 
 	// Execute using the underlying http.Client
 	resp, err := c.http.Client.Do(req)
@@ -298,6 +369,7 @@ func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
 			req2.Header.Set("Accept", "*/*")
 			req2.Header.Set("X-Requested-With", "XMLHttpRequest")
 			req2.Header.Set("Accept-Encoding", "gzip, deflate, br")
+			c.applySessionCookie(req2)
 			resp, err = c.http.Client.Do(req2)
 		}
 		if err != nil {
@@ -317,6 +389,7 @@ func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
 		req3.Header.Set("Accept", "*/*")
 		req3.Header.Set("X-Requested-With", "XMLHttpRequest")
 		req3.Header.Set("Accept-Encoding", "gzip, deflate, br")
+		c.applySessionCookie(req3)
 		resp, err = c.http.Client.Do(req3)
 		if err != nil {
 			return sanitizeHTTPError(err, path)
