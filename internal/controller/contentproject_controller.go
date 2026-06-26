@@ -82,6 +82,14 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return r.fail(ctx, &cp, "CreateProjectFailed", fmt.Errorf("project already exists but lookup failed: %w", lookupErr))
 		}
 		cp.Status.UyuniID = existing.ID
+
+		// Auto-heal name/description if changed directly in Uyuni. Label is
+		// the lookup key, so it can't drift without breaking discovery entirely.
+		if existing.Name != cp.Spec.Name || existing.Description != cp.Spec.Description {
+			if err := uc.UpdateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description); err != nil {
+				return r.fail(ctx, &cp, "UpdateFailed", err)
+			}
+		}
 	} else {
 		cp.Status.UyuniID = created.ID
 	}

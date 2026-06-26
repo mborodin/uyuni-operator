@@ -288,6 +288,25 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		}
 	}
 
+	// Detect immutable-field drift: hostname and minionID are the system's
+	// identity in Uyuni and can't be changed via setDetails. We don't relookup
+	// by these fields (the cached UyuniServerID is the source of truth), so a
+	// mismatch here means someone changed the record directly in Uyuni.
+	identityDrifted := false
+	var identityDriftMsg string
+	if current.Hostname != sys.Spec.Hostname {
+		identityDrifted = true
+		identityDriftMsg = fmt.Sprintf("hostname in Uyuni (%s) differs from spec (%s)", current.Hostname, sys.Spec.Hostname)
+	} else if current.MinionID != sys.Spec.MinionID {
+		identityDrifted = true
+		identityDriftMsg = fmt.Sprintf("minionId in Uyuni (%s) differs from spec (%s)", current.MinionID, sys.Spec.MinionID)
+	}
+	if identityDrifted {
+		setDrift(&sys.Status.Conditions, sys.Generation, true, "ImmutableFieldDrift", identityDriftMsg)
+	} else {
+		setDrift(&sys.Status.Conditions, sys.Generation, false, "InSync", "")
+	}
+
 	// 2. Software channels.
 	res, err := resolveChannelRefs(ctx, r.Client, sys.Namespace, channelRefs{
 		BaseChannelRef:    sys.Spec.BaseChannelRef,
