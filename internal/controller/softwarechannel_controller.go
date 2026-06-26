@@ -133,9 +133,14 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if desiredArch == "" {
 		desiredArch = "channel-x86_64"
 	}
+	// channel.software.getDetails normalizes arch_name by stripping the
+	// "channel-" prefix that create's archLabel param requires (e.g.
+	// "channel-x86_64" is created, but read back as "x86_64").
+	currentArch := strings.TrimPrefix(current.ArchName, "channel-")
+	wantArch := strings.TrimPrefix(desiredArch, "channel-")
 	drifted := false
 	var driftMsg string
-	if current.ArchName != desiredArch {
+	if currentArch != wantArch {
 		drifted = true
 		driftMsg = fmt.Sprintf("arch in Uyuni (%s) differs from spec (%s); recreate to reconcile",
 			current.ArchName, desiredArch)
