@@ -1072,6 +1072,22 @@ func (c *Client) SetActivationKeyDetails(ctx context.Context, key string, d Acti
 	return err
 }
 
+func (c *Client) AddActivationKeyEntitlements(ctx context.Context, key string, entitlements []string) error {
+	_, err := apiPost[any](c, "activationkey/addEntitlements", map[string]any{
+		"key":          key,
+		"entitlements": entitlements,
+	})
+	return err
+}
+
+func (c *Client) RemoveActivationKeyEntitlements(ctx context.Context, key string, entitlements []string) error {
+	_, err := apiPost[any](c, "activationkey/removeEntitlements", map[string]any{
+		"key":          key,
+		"entitlements": entitlements,
+	})
+	return err
+}
+
 func (c *Client) AddChildChannels(ctx context.Context, key string, labels []string) error {
 	_, err := apiPost[any](c, "activationkey/addChildChannels", map[string]any{
 		"key":               key,
@@ -2016,6 +2032,14 @@ func (c *Client) GetOrganizationByName(ctx context.Context, name string) (*OrgDe
 		return nil, asNotFound(err)
 	}
 	return &OrgDetails{ID: r.ID, Name: r.Name}, nil
+}
+
+func (c *Client) UpdateOrganizationName(ctx context.Context, id int, name string) error {
+	_, err := apiPost[any](c, "org/updateOrgName", map[string]any{
+		"orgId":   id,
+		"orgName": name,
+	})
+	return err
 }
 
 func (c *Client) DeleteOrganization(ctx context.Context, id int) error {

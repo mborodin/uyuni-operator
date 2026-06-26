@@ -162,6 +162,19 @@ func (r *ActivationKeyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	if addEnt, rmEnt := diffStringSets(current.Entitlements, ak.Spec.Entitlements); len(addEnt)+len(rmEnt) > 0 {
+		if len(addEnt) > 0 {
+			if err := uc.AddActivationKeyEntitlements(ctx, ak.Status.UyuniKey, addEnt); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		if len(rmEnt) > 0 {
+			if err := uc.RemoveActivationKeyEntitlements(ctx, ak.Status.UyuniKey, rmEnt); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	if !stringSlicesEqual(current.ConfigChannels, configChannelLabels) {
 		if err := uc.SetActivationKeyConfigChannels(ctx, ak.Status.UyuniKey, configChannelLabels); err != nil {
 			return ctrl.Result{}, err

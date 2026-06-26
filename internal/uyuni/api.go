@@ -87,6 +87,8 @@ type API interface {
 	GetActivationKey(ctx context.Context, key string) (*ActivationKeyDetails, error)
 	DeleteActivationKey(ctx context.Context, key string) error
 	SetActivationKeyDetails(ctx context.Context, key string, d ActivationKeyDetails) error
+	AddActivationKeyEntitlements(ctx context.Context, key string, entitlements []string) error
+	RemoveActivationKeyEntitlements(ctx context.Context, key string, entitlements []string) error
 	AddChildChannels(ctx context.Context, key string, labels []string) error
 	RemoveChildChannels(ctx context.Context, key string, labels []string) error
 	SetActivationKeyConfigChannels(ctx context.Context, key string, channelLabels []string) error
@@ -191,6 +193,7 @@ type API interface {
 	CreateOrganization(ctx context.Context, name, adminLogin, adminPass, adminFirstName, adminLastName, adminEmail string) (int, error)
 	GetOrganizationByID(ctx context.Context, id int) (*OrgDetails, error)
 	GetOrganizationByName(ctx context.Context, name string) (*OrgDetails, error)
+	UpdateOrganizationName(ctx context.Context, id int, name string) error
 	DeleteOrganization(ctx context.Context, id int) error
 
 	// Server-level

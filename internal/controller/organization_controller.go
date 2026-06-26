@@ -62,6 +62,20 @@ func (r *OrganizationReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return r.fail(ctx, &org, "LookupFailed", err)
 		}
 		org.Status.UyuniOrgID = details.ID
+	} else if org.Status.UyuniOrgID != 0 {
+		// Already realized: look up by ID rather than by name, so a Uyuni-side
+		// rename doesn't break discovery (a by-name lookup would 404 and we'd
+		// try to create a duplicate org). Auto-heal the name back to spec —
+		// this org is ours to manage, unlike an imported one.
+		details, err := uc.GetOrganizationByID(ctx, org.Status.UyuniOrgID)
+		if err != nil {
+			return r.fail(ctx, &org, "LookupFailed", err)
+		}
+		if details.Name != org.Spec.Name {
+			if err := uc.UpdateOrganizationName(ctx, details.ID, org.Spec.Name); err != nil {
+				return r.fail(ctx, &org, "UpdateFailed", err)
+			}
+		}
 	} else {
 		details, err := uc.GetOrganizationByName(ctx, org.Spec.Name)
 		if uyuni.IsNotFound(err) {

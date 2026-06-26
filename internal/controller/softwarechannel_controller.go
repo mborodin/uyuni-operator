@@ -126,6 +126,30 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	// Detect immutable-field drift (arch and parent channel can't be changed
+	// in Uyuni after creation; webhook prevents customer-side drift, this
+	// surfaces external drift from a WebUI/API edit instead).
+	desiredArch := sc.Spec.Arch
+	if desiredArch == "" {
+		desiredArch = "channel-x86_64"
+	}
+	drifted := false
+	var driftMsg string
+	if current.ArchName != desiredArch {
+		drifted = true
+		driftMsg = fmt.Sprintf("arch in Uyuni (%s) differs from spec (%s); recreate to reconcile",
+			current.ArchName, desiredArch)
+	} else if current.ParentChannelLabel != parentLabel {
+		drifted = true
+		driftMsg = fmt.Sprintf("parent channel in Uyuni (%q) differs from spec (%q); recreate to reconcile",
+			current.ParentChannelLabel, parentLabel)
+	}
+	if drifted {
+		setDrift(&sc.Status.Conditions, sc.Generation, true, "ImmutableFieldDrift", driftMsg)
+	} else {
+		setDrift(&sc.Status.Conditions, sc.Generation, false, "InSync", "")
+	}
+
 	// Resolve desired repository associations.
 	desiredRepos, repoWait, err := r.resolveRepos(ctx, &sc)
 	if err != nil {
