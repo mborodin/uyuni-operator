@@ -56,6 +56,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: uyuni-operator-system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-autoinstalldistribution
+  failurePolicy: Fail
+  name: vautoinstalldistribution.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - autoinstalldistributions
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-clmenvironment
   failurePolicy: Fail
   name: vclmenvironment.uyuni.uyuni-project.org

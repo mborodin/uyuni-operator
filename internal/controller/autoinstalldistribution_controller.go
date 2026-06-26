@@ -146,10 +146,13 @@ func (r *AutoinstallDistributionReconciler) fail(ctx context.Context, ad *uyuniv
 }
 
 func distributionNeedsUpdate(current *uyuni.DistributionDetails, ad *uyuniv1.AutoinstallDistribution, channelLabel string) bool {
+	// kickstart.tree.getDetails doesn't report the channel label or install
+	// type, so channel changes are detected via the last-applied value in
+	// status; install type is immutable.
 	return current.BasePath != ad.Spec.BasePath ||
-		current.ChannelLabel != channelLabel ||
 		current.KernelOptions != ad.Spec.KernelOptions ||
-		current.PostKernelOptions != ad.Spec.PostKernelOptions
+		current.PostKernelOptions != ad.Spec.PostKernelOptions ||
+		ad.Status.ChannelLabel != channelLabel
 }
 
 func (r *AutoinstallDistributionReconciler) SetupWithManager(mgr ctrl.Manager) error {

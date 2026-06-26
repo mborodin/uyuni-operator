@@ -164,6 +164,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.AutoinstallDistributionReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AutoinstallDistribution")
+		os.Exit(1)
+	}
+
 	if err := (&webhook.OrganizationValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "OrganizationValidator")
 		os.Exit(1)
@@ -216,6 +224,11 @@ func main() {
 
 	if err := (&webhook.ClmEnvironmentValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "ClmEnvironmentValidator")
+		os.Exit(1)
+	}
+
+	if err := (&webhook.AutoinstallDistributionValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "AutoinstallDistributionValidator")
 		os.Exit(1)
 	}
 

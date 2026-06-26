@@ -2067,20 +2067,20 @@ func (c *Client) DeleteOrganization(ctx context.Context, id int) error {
 type wireDistribution struct {
 	ID                int    `json:"id"`
 	Label             string `json:"label"`
-	BasePath          string `json:"base_path"`
-	ChannelLabel      string `json:"channel_label"`
-	InstallType       string `json:"install_type"`
+	BasePath          string `json:"abs_path"`
 	KernelOptions     string `json:"kernel_options"`
 	PostKernelOptions string `json:"post_kernel_options"`
 }
 
 func wireDistToDetails(w *wireDistribution) *DistributionDetails {
+	// kickstart.tree.getDetails returns abs_path, channel_id (an int, not a
+	// label) and a nested install-type struct. We only decode the fields we can
+	// compare for drift; the channel is tracked via status and the install type
+	// is immutable, so neither is read back here.
 	return &DistributionDetails{
 		ID:                w.ID,
 		Label:             w.Label,
 		BasePath:          w.BasePath,
-		ChannelLabel:      w.ChannelLabel,
-		InstallType:       w.InstallType,
 		KernelOptions:     w.KernelOptions,
 		PostKernelOptions: w.PostKernelOptions,
 	}
@@ -2088,12 +2088,12 @@ func wireDistToDetails(w *wireDistribution) *DistributionDetails {
 
 func (c *Client) CreateDistribution(ctx context.Context, d DistributionDetails) error {
 	_, err := apiPost[any](c, "kickstart/tree/create", map[string]any{
-		"treelabel":          d.Label,
-		"basepath":           d.BasePath,
-		"channel_label":      d.ChannelLabel,
-		"installtype_label":  d.InstallType,
-		"kernel_options":     d.KernelOptions,
-		"post_kernel_options": d.PostKernelOptions,
+		"treeLabel":         d.Label,
+		"basePath":          d.BasePath,
+		"channelLabel":      d.ChannelLabel,
+		"installType":       d.InstallType,
+		"kernelOptions":     d.KernelOptions,
+		"postKernelOptions": d.PostKernelOptions,
 	})
 	return err
 }
@@ -2108,19 +2108,19 @@ func (c *Client) GetDistribution(ctx context.Context, label string) (*Distributi
 
 func (c *Client) UpdateDistribution(ctx context.Context, label string, d DistributionDetails) error {
 	_, err := apiPost[any](c, "kickstart/tree/update", map[string]any{
-		"treelabel":          label,
-		"basepath":           d.BasePath,
-		"channel_label":      d.ChannelLabel,
-		"installtype_label":  d.InstallType,
-		"kernel_options":     d.KernelOptions,
-		"post_kernel_options": d.PostKernelOptions,
+		"treeLabel":         label,
+		"basePath":          d.BasePath,
+		"channelLabel":      d.ChannelLabel,
+		"installType":       d.InstallType,
+		"kernelOptions":     d.KernelOptions,
+		"postKernelOptions": d.PostKernelOptions,
 	})
 	return err
 }
 
 func (c *Client) DeleteDistribution(ctx context.Context, label string) error {
 	_, err := apiPost[any](c, "kickstart/tree/delete", map[string]any{
-		"treelabel": label,
+		"treeLabel": label,
 	})
 	return asNotFound(err)
 }
