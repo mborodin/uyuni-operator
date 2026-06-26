@@ -292,14 +292,21 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	// identity in Uyuni and can't be changed via setDetails. We don't relookup
 	// by these fields (the cached UyuniServerID is the source of truth), so a
 	// mismatch here means someone changed the record directly in Uyuni.
+	//
+	// Skip while still "bootstrap_entitled": Uyuni has no minion key on file
+	// for a preCreate-only profile that hasn't completed its first real
+	// registration yet, so current.MinionID is genuinely empty at that point
+	// — that's not drift, just an unregistered system.
 	identityDrifted := false
 	var identityDriftMsg string
-	if current.Hostname != sys.Spec.Hostname {
-		identityDrifted = true
-		identityDriftMsg = fmt.Sprintf("hostname in Uyuni (%s) differs from spec (%s)", current.Hostname, sys.Spec.Hostname)
-	} else if current.MinionID != sys.Spec.MinionID {
-		identityDrifted = true
-		identityDriftMsg = fmt.Sprintf("minionId in Uyuni (%s) differs from spec (%s)", current.MinionID, sys.Spec.MinionID)
+	if current.BaseEntitlement != "bootstrap_entitled" {
+		if current.Hostname != sys.Spec.Hostname {
+			identityDrifted = true
+			identityDriftMsg = fmt.Sprintf("hostname in Uyuni (%s) differs from spec (%s)", current.Hostname, sys.Spec.Hostname)
+		} else if current.MinionID != sys.Spec.MinionID {
+			identityDrifted = true
+			identityDriftMsg = fmt.Sprintf("minionId in Uyuni (%s) differs from spec (%s)", current.MinionID, sys.Spec.MinionID)
+		}
 	}
 	if identityDrifted {
 		setDrift(&sys.Status.Conditions, sys.Generation, true, "ImmutableFieldDrift", identityDriftMsg)

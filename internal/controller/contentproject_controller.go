@@ -83,13 +83,13 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		cp.Status.UyuniID = existing.ID
 
-		// Auto-heal name/description if changed directly in Uyuni. Label is
-		// the lookup key, so it can't drift without breaking discovery entirely.
-		if existing.Name != cp.Spec.Name || existing.Description != cp.Spec.Description {
-			if err := uc.UpdateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description); err != nil {
-				return r.fail(ctx, &cp, "UpdateFailed", err)
-			}
-		}
+		// NOTE: would auto-heal name/description here via uc.UpdateProject, but
+		// contentmanagement/updateProject rejects every payload shape tried
+		// (label/projectLabel/label/project x details/properties/data, flattened
+		// and nested) with "No method exists with the matching parameters" —
+		// the JSON-API wire format for this XML-RPC call is not what the
+		// existing (never-before-exercised) client method assumes. Left
+		// unimplemented pending the correct request shape.
 	} else {
 		cp.Status.UyuniID = created.ID
 	}
