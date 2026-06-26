@@ -2035,9 +2035,9 @@ func (c *Client) GetOrganizationByName(ctx context.Context, name string) (*OrgDe
 }
 
 func (c *Client) UpdateOrganizationName(ctx context.Context, id int, name string) error {
-	_, err := apiPost[any](c, "org/updateOrgName", map[string]any{
-		"orgId":   id,
-		"orgName": name,
+	_, err := apiPost[any](c, "org/updateName", map[string]any{
+		"orgId": id,
+		"name":  name,
 	})
 	return err
 }
