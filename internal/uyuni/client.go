@@ -1481,10 +1481,12 @@ func (c *Client) LookupProject(ctx context.Context, label string) (*ProjectDetai
 }
 
 func (c *Client) UpdateProject(ctx context.Context, label, name, description string) error {
-	_, err := apiPost[any](c, "contentmanagement/projects", map[string]any{
-		"label":       label,
-		"name":        name,
-		"description": description,
+	_, err := apiPost[any](c, "contentmanagement/updateProject", map[string]any{
+		"projectLabel": label,
+		"props": map[string]any{
+			"name":        name,
+			"description": description,
+		},
 	})
 	return err
 }
