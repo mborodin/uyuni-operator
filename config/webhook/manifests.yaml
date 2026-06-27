@@ -136,6 +136,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: uyuni-operator-system
+      path: /validate-uyuni-uyuni-project-org-v1alpha1-custominfokey
+  failurePolicy: Fail
+  name: vcustominfokey.uyuni.uyuni-project.org
+  rules:
+  - apiGroups:
+    - uyuni.uyuni-project.org
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - custominfokeys
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: uyuni-operator-system
       path: /validate-uyuni-uyuni-project-org-v1alpha1-organization
   failurePolicy: Fail
   name: vorganization.uyuni.uyuni-project.org

@@ -844,6 +844,86 @@ func (c *Client) DeleteCustomInfo(ctx context.Context, serverID int, keys []stri
 	return err
 }
 
+// --- Custom info keys (system.custominfo) ---
+
+func (c *Client) ListCustomInfoKeys(ctx context.Context) ([]CustomInfoKeyDetails, error) {
+	return apiGet[[]CustomInfoKeyDetails](c, "system/custominfo/listAllKeys")
+}
+
+func (c *Client) CreateCustomInfoKey(ctx context.Context, label, description string) error {
+	_, err := apiPost[any](c, "system/custominfo/createKey", map[string]any{
+		"keyLabel":       label,
+		"keyDescription": description,
+	})
+	return err
+}
+
+func (c *Client) UpdateCustomInfoKey(ctx context.Context, label, description string) error {
+	_, err := apiPost[any](c, "system/custominfo/updateKey", map[string]any{
+		"keyLabel":       label,
+		"keyDescription": description,
+	})
+	return err
+}
+
+func (c *Client) DeleteCustomInfoKey(ctx context.Context, label string) error {
+	_, err := apiPost[any](c, "system/custominfo/deleteKey", map[string]any{
+		"keyLabel": label,
+	})
+	return asNotFound(err)
+}
+
+// --- Formulas (formula) ---
+
+func (c *Client) ListFormulas(ctx context.Context) ([]string, error) {
+	return apiGet[[]string](c, "formula/listFormulas")
+}
+
+func (c *Client) GetServerFormulas(ctx context.Context, serverID int) ([]string, error) {
+	return apiGet[[]string](c, fmt.Sprintf("formula/getFormulasByServerId?sid=%d", serverID))
+}
+
+func (c *Client) SetServerFormulas(ctx context.Context, serverID int, formulas []string) error {
+	if formulas == nil {
+		formulas = []string{}
+	}
+	_, err := apiPost[any](c, "formula/setFormulasOfServer", map[string]any{
+		"sid":      serverID,
+		"formulas": formulas,
+	})
+	return err
+}
+
+func (c *Client) GetServerFormulaData(ctx context.Context, serverID int, formula string) (map[string]any, error) {
+	return apiGet[map[string]any](c, fmt.Sprintf(
+		"formula/getSystemFormulaData?sid=%d&formulaName=%s", serverID, url.QueryEscape(formula)))
+}
+
+func (c *Client) SetServerFormulaData(ctx context.Context, serverID int, formula string, data map[string]any) error {
+	if data == nil {
+		data = map[string]any{}
+	}
+	_, err := apiPost[any](c, "formula/setSystemFormulaData", map[string]any{
+		"systemId":    serverID,
+		"formulaName": formula,
+		"content":     data,
+	})
+	return err
+}
+
+// --- Proxy (system.changeProxy / system.getConnectionPath) ---
+
+func (c *Client) GetConnectionPath(ctx context.Context, serverID int) ([]ProxyHop, error) {
+	return apiGet[[]ProxyHop](c, fmt.Sprintf("system/getConnectionPath?sid=%d", serverID))
+}
+
+func (c *Client) ChangeProxy(ctx context.Context, serverIDs []int, proxyID int) ([]int, error) {
+	return apiPost[[]int](c, "system/changeProxy", map[string]any{
+		"sids":    serverIDs,
+		"proxyId": proxyID,
+	})
+}
+
 func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error) {
 	type resp struct {
 		ActionID int `json:"action_id"`

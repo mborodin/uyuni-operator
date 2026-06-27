@@ -106,10 +106,11 @@ charts/uyuni-operator/       # Helm chart (hand-maintained packaging, see below)
 | `SoftwareChannel` | Namespaced | Uyuni software channel + sync schedule |
 | `Repository` | Namespaced | yum/deb/uln repository, associated with channels |
 | `ActivationKey` | Namespaced | Activation key with channels, groups, config channels |
-| `System` | Namespaced | System lifecycle (pre-create, channels, add-ons) |
+| `System` | Namespaced | System lifecycle (pre-create, channels, add-ons, formulas, custom info, proxy) |
 | `SystemGroup` | Namespaced | System group with declarative membership |
 | `ConfigurationChannel` | Namespaced | Salt config/state/dictionary channel |
 | `ConfigFile` | Namespaced | File/directory/symlink inside a ConfigurationChannel |
+| `CustomInfoKey` | Namespaced | Organization-level custom system info key (`system.custominfo`) |
 | `ImageStore` | Namespaced | Container registry or OS image store |
 | `ImageProfile` | Namespaced | Kiwi or Dockerfile build profile |
 | `ImageBuild` | Namespaced | One image build action |
@@ -126,22 +127,21 @@ CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
 
 ### Implementation status (current repo state)
 
-- **API types**: all 18 Kinds above are declared in `api/v1alpha1/`.
-- **`cmd/main.go`**: present. Registers **12 reconcilers** (Organization,
+- **API types**: all 19 Kinds above are declared in `api/v1alpha1/`.
+- **`cmd/main.go`**: present. Registers **14 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
-  ConfigurationChannel, ClmEnvironment) and **11 webhooks**.
-- **Controllers defined but NOT registered in main.go**:
-  `AutoinstallDistribution`, `AutoinstallProfile`, `ImageBuild`,
-  `ImageProfile`. (`ConfigFile` has a type but no controller.)
-- **CRDs**: 16 base files generated under `config/crd/bases/`. The
-  `config/crd/kustomization.yaml` includes 14 of them and **excludes
-  `clmenvironments` and `configurationchannels`**. ⚠️ This mismatch matters:
-  `main.go` registers the `ConfigurationChannel` and `ClmEnvironment`
-  controllers/webhooks, so if those CRDs are not installed the manager
-  fails its cache sync and crash-loops (`no matches for kind ...` /
-  `timed out waiting for cache to be synced`). Keep registered controllers
-  and installed CRDs aligned.
+  ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
+  CustomInfoKey) and **13 webhooks**.
+- **Controllers defined but NOT registered in main.go**: `AutoinstallProfile`,
+  `ImageProfile`, `ImageBuild`. (`ConfigFile` and `ImageStore` have types but
+  no controller.)
+- **CRDs**: 18 base files under `config/crd/bases/`, all included in
+  `config/crd/kustomization.yaml`. ⚠️ Keep this aligned: `main.go` registering
+  a controller for a Kind whose CRD is not installed makes the manager
+  crash-loop (`no matches for kind ...` / `timed out waiting for cache to be
+  synced`), so a newly registered controller must have its CRD in the
+  kustomization (and the chart's `crds/`).
 - **API client (`*Client`)**: implemented in `internal/uyuni/client.go`,
   backed by `github.com/uyuni-project/uyuni-tools/shared/api` (JSON over
   `/rhn/manager/api/`, `pxt-session-cookie` session, transparent re-auth

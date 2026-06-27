@@ -2,12 +2,15 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,7 +30,7 @@ type SystemReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/finalizers,verbs=update
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups;configurationchannels;softwarechannels;contentprojects,verbs=get;list;watch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups;configurationchannels;softwarechannels;contentprojects;custominfokeys,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=organizations,verbs=get;list;watch
 
 func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -444,12 +447,21 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	}
 	sys.Status.ActiveAddOns = sys.Spec.AddOns
 
-	// 6. Custom info.
+	// 6. Custom info (values resolved from CustomInfoKey references).
+	desiredInfo, infoWait, err := r.resolveCustomInfoValues(ctx, sys)
+	if err != nil {
+		return r.fail(ctx, sys, "ResolveRefs", err)
+	}
+	if infoWait != "" {
+		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+			"WaitingForCustomInfoKey", infoWait)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
+	}
 	currentInfo, err := uc.GetCustomInfo(ctx, sys.Status.UyuniServerID)
 	if err != nil && !uyuni.IsNotFound(err) {
 		return r.fail(ctx, sys, "ProviderError", err)
 	}
-	setKV, delKeys := diffCustomInfo(currentInfo, sys.Spec.CustomInfo)
+	setKV, delKeys := diffCustomInfo(currentInfo, desiredInfo)
 	if len(setKV) > 0 {
 		if err := uc.SetCustomInfo(ctx, sys.Status.UyuniServerID, setKV); err != nil {
 			return r.fail(ctx, sys, "UpdateFailed", err)
@@ -459,6 +471,28 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		if err := uc.DeleteCustomInfo(ctx, sys.Status.UyuniServerID, delKeys); err != nil {
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
+	}
+
+	// 7. Salt formulas + form data.
+	formulaWait, err := r.reconcileFormulas(ctx, uc, sys)
+	if err != nil {
+		return r.fail(ctx, sys, "UpdateFailed", err)
+	}
+	if formulaWait != "" {
+		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+			"WaitingForFormula", formulaWait)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
+	}
+
+	// 8. Proxy connection.
+	proxyWait, err := r.reconcileProxy(ctx, uc, sys)
+	if err != nil {
+		return r.fail(ctx, sys, "UpdateFailed", err)
+	}
+	if proxyWait != "" {
+		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+			"WaitingForProxy", proxyWait)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
 	}
 
 	// Update autoinstall status if an action is in flight.
@@ -628,6 +662,154 @@ func (r *SystemReconciler) fail(ctx context.Context, sys *uyuniv1.System, reason
 	return ctrl.Result{}, err
 }
 
+// resolveCustomInfoValues resolves spec.customInfoValues into a label→value map
+// by looking up each CustomInfoKey CR. Returns a wait reason if a referenced key
+// is missing or not yet realized in Uyuni.
+func (r *SystemReconciler) resolveCustomInfoValues(ctx context.Context, sys *uyuniv1.System) (map[string]string, string, error) {
+	out := map[string]string{}
+	for _, v := range sys.Spec.CustomInfoValues {
+		var key uyuniv1.CustomInfoKey
+		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: v.KeyRef.Name}, &key); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return nil, fmt.Sprintf("CustomInfoKey %q not found", v.KeyRef.Name), nil
+			}
+			return nil, "", err
+		}
+		if key.Status.UyuniID == 0 {
+			return nil, fmt.Sprintf("CustomInfoKey %q not yet realized in Uyuni", v.KeyRef.Name), nil
+		}
+		out[key.Spec.Label] = v.Value
+	}
+	return out, "", nil
+}
+
+// reconcileFormulas enables the spec'd Salt formulas on the system and pushes
+// their form data. Returns a wait reason if a requested formula isn't installed
+// on the server.
+func (r *SystemReconciler) reconcileFormulas(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (string, error) {
+	desired := make([]string, 0, len(sys.Spec.Formulas))
+	for _, f := range sys.Spec.Formulas {
+		desired = append(desired, f.Name)
+	}
+
+	if len(desired) > 0 {
+		avail, err := uc.ListFormulas(ctx)
+		if err != nil {
+			return "", err
+		}
+		availSet := map[string]bool{}
+		for _, a := range avail {
+			availSet[a] = true
+		}
+		for _, n := range desired {
+			if !availSet[n] {
+				return fmt.Sprintf("formula %q is not installed on the Uyuni server", n), nil
+			}
+		}
+	}
+
+	current, err := uc.GetServerFormulas(ctx, sys.Status.UyuniServerID)
+	if err != nil && !uyuni.IsNotFound(err) {
+		return "", err
+	}
+	if add, rm := diffStringSets(current, desired); len(add)+len(rm) > 0 {
+		if err := uc.SetServerFormulas(ctx, sys.Status.UyuniServerID, desired); err != nil {
+			return "", err
+		}
+	}
+
+	for _, f := range sys.Spec.Formulas {
+		want, err := rawExtensionToMap(f.Values)
+		if err != nil {
+			return "", fmt.Errorf("formula %q values: %w", f.Name, err)
+		}
+		if len(want) == 0 {
+			continue
+		}
+		got, err := uc.GetServerFormulaData(ctx, sys.Status.UyuniServerID, f.Name)
+		if err != nil && !uyuni.IsNotFound(err) {
+			return "", err
+		}
+		if !mapSubset(want, got) {
+			if err := uc.SetServerFormulaData(ctx, sys.Status.UyuniServerID, f.Name, want); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	sys.Status.ActiveFormulas = desired
+	return "", nil
+}
+
+// reconcileProxy connects the system to its spec.proxyRef proxy (or directly to
+// the server when unset). changeProxy is asynchronous, so we act only when the
+// desired proxy differs from the last one we requested (status.ProxyServerID),
+// to avoid re-scheduling the action on every reconcile.
+func (r *SystemReconciler) reconcileProxy(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (string, error) {
+	desiredProxyID := 0
+	if sys.Spec.ProxyRef != nil {
+		var proxy uyuniv1.System
+		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.ProxyRef.Name}, &proxy); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return fmt.Sprintf("proxy System %q not found", sys.Spec.ProxyRef.Name), nil
+			}
+			return "", err
+		}
+		if proxy.Status.UyuniServerID == 0 {
+			return fmt.Sprintf("proxy System %q not yet registered in Uyuni", sys.Spec.ProxyRef.Name), nil
+		}
+		desiredProxyID = proxy.Status.UyuniServerID
+	}
+
+	if desiredProxyID == sys.Status.ProxyServerID {
+		return "", nil
+	}
+	actionIDs, err := uc.ChangeProxy(ctx, []int{sys.Status.UyuniServerID}, desiredProxyID)
+	if err != nil {
+		return "", err
+	}
+	if len(actionIDs) > 0 {
+		sys.Status.ProxyActionID = actionIDs[0]
+	}
+	sys.Status.ProxyServerID = desiredProxyID
+	return "", nil
+}
+
+// rawExtensionToMap unmarshals formula form data into a generic map.
+func rawExtensionToMap(raw runtime.RawExtension) (map[string]any, error) {
+	if len(raw.Raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw.Raw, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// mapSubset reports whether every key in want is present in got with a deep-equal
+// value (recursing into nested maps). Used so Uyuni-injected formula defaults
+// don't read as drift.
+func mapSubset(want, got map[string]any) bool {
+	for k, wv := range want {
+		gv, ok := got[k]
+		if !ok {
+			return false
+		}
+		if wm, isMap := wv.(map[string]any); isMap {
+			gm, ok := gv.(map[string]any)
+			if !ok || !mapSubset(wm, gm) {
+				return false
+			}
+			continue
+		}
+		if !reflect.DeepEqual(wv, gv) {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *SystemReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&uyuniv1.System{}).
@@ -639,7 +821,28 @@ func (r *SystemReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.systemsForSoftwareChannel)).
 		Watches(&uyuniv1.AutoinstallProfile{},
 			handler.EnqueueRequestsFromMapFunc(r.systemsForAutoinstallProfile)).
+		Watches(&uyuniv1.CustomInfoKey{},
+			handler.EnqueueRequestsFromMapFunc(r.systemsForCustomInfoKey)).
 		Complete(r)
+}
+
+func (r *SystemReconciler) systemsForCustomInfoKey(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list uyuniv1.SystemList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var out []reconcile.Request
+	for _, sys := range list.Items {
+		for _, v := range sys.Spec.CustomInfoValues {
+			if v.KeyRef.Name == obj.GetName() {
+				out = append(out, reconcile.Request{
+					NamespacedName: types.NamespacedName{Namespace: sys.Namespace, Name: sys.Name},
+				})
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (r *SystemReconciler) systemsForGroup(ctx context.Context, obj client.Object) []reconcile.Request {

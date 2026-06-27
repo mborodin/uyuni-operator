@@ -21,6 +21,7 @@ rules:
   - clmenvironments
   - configurationchannels
   - contentprojects
+  - custominfokeys
   - imageprofiles
   - organizations
   - repositories
@@ -44,6 +45,7 @@ rules:
   - clmenvironments/finalizers
   - configurationchannels/finalizers
   - contentprojects/finalizers
+  - custominfokeys/finalizers
   - imageprofiles/finalizers
   - organizations/finalizers
   - repositories/finalizers
@@ -62,6 +64,7 @@ rules:
   - configurationchannels/status
   - contentprojectpromotions/status
   - contentprojects/status
+  - custominfokeys/status
   - imageprofiles/status
   - organizations/status
   - repositories/status

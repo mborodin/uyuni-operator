@@ -1,0 +1,35 @@
+# CustomInfoKey Sample
+# Apply with: kubectl apply -f config/samples/custominfokey-sample.yaml
+#
+# A CustomInfoKey defines an organization-level custom system info key in Uyuni
+# (system.custominfo). Systems then reference it from spec.customInfoValues and
+# supply a per-system value — the operator guarantees the key exists before any
+# value is set.
+#
+# spec.label is immutable (it is the key's identity in Uyuni). Deleting a
+# CustomInfoKey is blocked (Ready=False/InUse) while any System still references
+# it; use the uyuni.uyuni-project.org/force-delete annotation to override.
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata:
+  name: ci-cost-center
+  namespace: linux-platform
+spec:
+  label: cost_center
+  description: Billing cost center
+  organizationRef:
+    name: pantheon-of-goods
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata:
+  name: ci-tier
+  namespace: linux-platform
+spec:
+  label: tier
+  description: Workload tier (frontend/data/retail)
+  organizationRef:
+    name: pantheon-of-goods

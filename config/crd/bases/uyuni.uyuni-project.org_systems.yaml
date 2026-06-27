@@ -234,10 +234,32 @@ spec:
                 - ssh-push
                 - ssh-push-tunnel
                 type: string
-              customInfo:
-                additionalProperties:
-                  type: string
-                type: object
+              customInfoValues:
+                description: |-
+                  CustomInfoValues sets organization-defined custom info key/value pairs on
+                  the system. Each entry references a CustomInfoKey CR (which guarantees the
+                  key exists in Uyuni before a value is set) and supplies the value.
+                items:
+                  description: CustomInfoValue assigns a value to an organization custom
+                    info key.
+                  properties:
+                    keyRef:
+                      description: KeyRef references a CustomInfoKey CR in the same
+                        namespace.
+                      properties:
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    value:
+                      description: Value is the custom info value for the referenced
+                        key.
+                      type: string
+                  required:
+                  - keyRef
+                  type: object
+                type: array
               deletionPolicy:
                 default: Orphan
                 enum:
@@ -246,6 +268,28 @@ spec:
                 type: string
               description:
                 type: string
+              formulas:
+                description: Formulas enables Salt formulas on the system and supplies
+                  their form data.
+                items:
+                  description: FormulaAssignment enables a Salt formula on a system
+                    and supplies its form data.
+                  properties:
+                    name:
+                      description: |-
+                        Name is the Salt formula name. The formula must be installed on the
+                        Uyuni server (formula.listFormulas).
+                      type: string
+                    values:
+                      description: |-
+                        Values is the formula form data: arbitrary nested key/value configuration
+                        matching the formula's form definition.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                  required:
+                  - name
+                  type: object
+                type: array
               groupRefs:
                 description: |-
                   GroupRefs declares which SystemGroups this system should belong to.
@@ -305,6 +349,16 @@ spec:
                   boots, so configuration applies on first registration. Requires at
                   least one of: network[].macAddress, hostname.
                 type: boolean
+              proxyRef:
+                description: |-
+                  ProxyRef connects this system through another registered System that is a
+                  Uyuni proxy. Clearing it reconnects the system directly to the server.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
               type:
                 description: SystemType classifies the system role. Optional; omit for generic managed systems.
                 enum:
@@ -322,6 +376,21 @@ spec:
                 items:
                   type: string
                 type: array
+              activeFormulas:
+                description: ActiveFormulas is the set of Salt formulas last enabled
+                  on the system.
+                items:
+                  type: string
+                type: array
+              proxyActionId:
+                description: ProxyActionID is the Uyuni action ID of the last changeProxy
+                  action.
+                type: integer
+              proxyServerId:
+                description: |-
+                  ProxyServerID is the Uyuni server ID of the proxy the system was last
+                  connected through (0 = direct to server).
+                type: integer
               baseChannelLabel:
                 type: string
               childChannelLabels:

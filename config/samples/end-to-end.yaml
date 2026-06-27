@@ -181,6 +181,28 @@ spec:
       systemGroupRefs:
         - name: delhaize-emea-pos
 ---
+# ── CustomInfoKey definitions ────────────────────────────────────────────────
+# Organization-level custom info keys referenced by the systems below.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata: {name: ci-brand, namespace: linux-platform}
+spec: {label: brand, description: Brand, organizationRef: {name: delhaize-emea}}
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata: {name: ci-region, namespace: linux-platform}
+spec: {label: region, description: Region, organizationRef: {name: delhaize-emea}}
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata: {name: ci-store, namespace: linux-platform}
+spec: {label: store, description: Store code, organizationRef: {name: delhaize-emea}}
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata: {name: ci-terminal, namespace: linux-platform}
+spec: {label: terminal, description: POS terminal, organizationRef: {name: delhaize-emea}}
+---
 # ── System CRs ───────────────────────────────────────────────────────────────
 # Applied independently (one per physical device). Reference the groups and
 # channels created above by the BrandRegion.
@@ -208,10 +230,13 @@ spec:
     - monitoring_entitled
   organizationRef:
     name: delhaize-emea
-  customInfo:
-    brand: delhaize
-    region: emea
-    store: BE01
+  customInfoValues:
+    - keyRef: { name: ci-brand }
+      value: delhaize
+    - keyRef: { name: ci-region }
+      value: emea
+    - keyRef: { name: ci-store }
+      value: BE01
   deletionPolicy: Orphan
   adoptionTimeout: 24h0m0s
 ---
@@ -239,10 +264,13 @@ spec:
     - monitoring_entitled
   organizationRef:
     name: delhaize-emea
-  customInfo:
-    brand: delhaize
-    region: emea
-    store: BE01
+  customInfoValues:
+    - keyRef: { name: ci-brand }
+      value: delhaize
+    - keyRef: { name: ci-region }
+      value: emea
+    - keyRef: { name: ci-store }
+      value: BE01
   deletionPolicy: Orphan
   adoptionTimeout: 24h0m0s
 ---
@@ -270,10 +298,14 @@ spec:
     - monitoring_entitled
   organizationRef:
     name: delhaize-emea
-  customInfo:
-    brand: delhaize
-    region: emea
-    store: BE01
-    terminal: "1"
+  customInfoValues:
+    - keyRef: { name: ci-brand }
+      value: delhaize
+    - keyRef: { name: ci-region }
+      value: emea
+    - keyRef: { name: ci-store }
+      value: BE01
+    - keyRef: { name: ci-terminal }
+      value: "1"
   deletionPolicy: Orphan
   adoptionTimeout: 24h0m0s

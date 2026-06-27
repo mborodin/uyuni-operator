@@ -130,6 +130,15 @@ func (v *SystemValidator) validate(ctx context.Context, sys *uyuniv1.System) (ad
 	errs = append(errs, validation.StrictBooleanAnnotations(
 		sys.Annotations, validation.DangerousAnnotations,
 		field.NewPath("metadata", "annotations"))...)
+	errs = append(errs, validation.SystemFormulas(
+		sys.Spec.Formulas, field.NewPath("spec", "formulas"))...)
+	errs = append(errs, validation.SystemCustomInfoValues(
+		sys.Spec.CustomInfoValues, field.NewPath("spec", "customInfoValues"))...)
+	if sys.Spec.ProxyRef != nil && sys.Spec.ProxyRef.Name == sys.Name {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec", "proxyRef", "name"), sys.Spec.ProxyRef.Name,
+			"a system cannot be its own proxy"))
+	}
 
 	// reinstall-now requires spec.autoinstall to be set.
 	if sys.Annotations[uyuniv1.AnnReinstallNow] == "true" && sys.Spec.Autoinstall == nil {

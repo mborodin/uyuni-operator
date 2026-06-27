@@ -203,6 +203,22 @@ type DistributionDetails struct {
 	PostKernelOptions string
 }
 
+// CustomInfoKeyDetails is an organization-level custom system info key
+// (system.custominfo.listAllKeys).
+type CustomInfoKeyDetails struct {
+	ID          int    `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+// ProxyHop is one entry in a system's proxy connection path
+// (system.getConnectionPath).
+type ProxyHop struct {
+	Position int    `json:"position"`
+	ID       int    `json:"id"`
+	Hostname string `json:"hostname"`
+}
+
 type ProfileCreateArgs struct {
 	Label              string
 	VirtualizationType string

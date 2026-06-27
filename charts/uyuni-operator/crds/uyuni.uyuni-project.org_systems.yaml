@@ -18,6 +18,9 @@ spec:
     - jsonPath: .spec.minionId
       name: MinionID
       type: string
+    - jsonPath: .spec.type
+      name: Type
+      type: string
     - jsonPath: .status.uyuniServerId
       name: UyuniID
       type: integer
@@ -79,6 +82,36 @@ spec:
                   formulas, etc.) immediately rather than waiting for the next scheduled
                   highstate.
                 type: boolean
+              autoinstall:
+                description: |-
+                  Autoinstall configures Cobbler/Kickstart-based OS provisioning. When set,
+                  the reconciler calls system.provisionSystem after the system profile is
+                  pre-created (preCreate must also be true for initial provisioning).
+                properties:
+                  earliest:
+                    description: |-
+                      Earliest is the earliest time at which to schedule the autoinstall action.
+                      Defaults to immediate execution.
+                    format: date-time
+                    type: string
+                  profile:
+                    description: |-
+                      Profile is the bare Cobbler/Kickstart profile label registered in Uyuni.
+                      Immutable once the first provisioning action has been scheduled.
+                      Mutually exclusive with ProfileRef.
+                    type: string
+                  profileRef:
+                    description: |-
+                      ProfileRef references an AutoinstallProfile CR in the same namespace.
+                      The reconciler resolves spec.label from the CR at runtime.
+                      Mutually exclusive with Profile.
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
               baseChannelFrom:
                 description: |-
                   ChannelFromProject references a channel produced by a ContentProject
@@ -175,10 +208,58 @@ spec:
                   - sourceChannelLabel
                   type: object
                 type: array
-              customInfo:
-                additionalProperties:
-                  type: string
-                type: object
+              configChannelRefs:
+                description: |-
+                  ConfigChannelRefs lists config channels subscribed directly to this system,
+                  in priority order (index 0 = highest). These always outrank channels
+                  inherited from spec.groupRefs.
+                items:
+                  description: |-
+                    LocalObjectRef is a name-only reference to a CR in the same namespace.
+                    We deliberately don't include namespace or kind: cross-namespace refs
+                    complicate RBAC and aren't needed in our model, and each ref's kind is
+                    implied by the field where it appears.
+                  properties:
+                    name:
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              contactMethod:
+                default: default
+                description: ContactMethod controls how the Uyuni server communicates with this system.
+                enum:
+                - default
+                - ssh-push
+                - ssh-push-tunnel
+                type: string
+              customInfoValues:
+                description: |-
+                  CustomInfoValues sets organization-defined custom info key/value pairs on
+                  the system. Each entry references a CustomInfoKey CR (which guarantees the
+                  key exists in Uyuni before a value is set) and supplies the value.
+                items:
+                  description: CustomInfoValue assigns a value to an organization custom
+                    info key.
+                  properties:
+                    keyRef:
+                      description: KeyRef references a CustomInfoKey CR in the same
+                        namespace.
+                      properties:
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    value:
+                      description: Value is the custom info value for the referenced
+                        key.
+                      type: string
+                  required:
+                  - keyRef
+                  type: object
+                type: array
               deletionPolicy:
                 default: Orphan
                 enum:
@@ -187,6 +268,46 @@ spec:
                 type: string
               description:
                 type: string
+              formulas:
+                description: Formulas enables Salt formulas on the system and supplies
+                  their form data.
+                items:
+                  description: FormulaAssignment enables a Salt formula on a system
+                    and supplies its form data.
+                  properties:
+                    name:
+                      description: |-
+                        Name is the Salt formula name. The formula must be installed on the
+                        Uyuni server (formula.listFormulas).
+                      type: string
+                    values:
+                      description: |-
+                        Values is the formula form data: arbitrary nested key/value configuration
+                        matching the formula's form definition.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                  required:
+                  - name
+                  type: object
+                type: array
+              groupRefs:
+                description: |-
+                  GroupRefs declares which SystemGroups this system should belong to.
+                  The reconciler adds/removes group membership to match this list.
+                  Preferred over SystemGroup.spec.memberRefs (system-side declaration).
+                items:
+                  description: |-
+                    LocalObjectRef is a name-only reference to a CR in the same namespace.
+                    We deliberately don't include namespace or kind: cross-namespace refs
+                    complicate RBAC and aren't needed in our model, and each ref's kind is
+                    implied by the field where it appears.
+                  properties:
+                    name:
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
               hostname:
                 description: |-
                   Hostname used in the pre-created profile. Defaults to minionId via
@@ -228,6 +349,23 @@ spec:
                   boots, so configuration applies on first registration. Requires at
                   least one of: network[].macAddress, hostname.
                 type: boolean
+              proxyRef:
+                description: |-
+                  ProxyRef connects this system through another registered System that is a
+                  Uyuni proxy. Clearing it reconnects the system directly to the server.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              type:
+                description: SystemType classifies the system role. Optional; omit for generic managed systems.
+                enum:
+                - pos
+                - storehub
+                - branchserver
+                type: string
             required:
             - minionId
             - organizationRef
@@ -238,6 +376,21 @@ spec:
                 items:
                   type: string
                 type: array
+              activeFormulas:
+                description: ActiveFormulas is the set of Salt formulas last enabled
+                  on the system.
+                items:
+                  type: string
+                type: array
+              proxyActionId:
+                description: ProxyActionID is the Uyuni action ID of the last changeProxy
+                  action.
+                type: integer
+              proxyServerId:
+                description: |-
+                  ProxyServerID is the Uyuni server ID of the proxy the system was last
+                  connected through (0 = direct to server).
+                type: integer
               baseChannelLabel:
                 type: string
               childChannelLabels:

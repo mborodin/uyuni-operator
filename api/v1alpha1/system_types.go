@@ -1,6 +1,9 @@
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+)
 
 // +kubebuilder:validation:Enum=pos;storehub;branchserver
 type SystemType string
@@ -40,6 +43,29 @@ type NetworkInterface struct {
 	IPAddress string `json:"ipAddress,omitempty"`
 }
 
+// CustomInfoValue assigns a value to an organization custom info key.
+type CustomInfoValue struct {
+	// KeyRef references a CustomInfoKey CR in the same namespace.
+	// +kubebuilder:validation:Required
+	KeyRef LocalObjectRef `json:"keyRef"`
+
+	// Value is the custom info value for the referenced key.
+	Value string `json:"value"`
+}
+
+// FormulaAssignment enables a Salt formula on a system and supplies its form data.
+type FormulaAssignment struct {
+	// Name is the Salt formula name. The formula must be installed on the
+	// Uyuni server (formula.listFormulas).
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Values is the formula form data: arbitrary nested key/value configuration
+	// matching the formula's form definition.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Values runtime.RawExtension `json:"values,omitempty"`
+}
+
 type SystemSpec struct {
 	// +kubebuilder:validation:Required
 	// Immutable after creation.
@@ -75,7 +101,17 @@ type SystemSpec struct {
 	ChildChannelRefs  []LocalObjectRef     `json:"childChannelRefs,omitempty"`
 	ChildChannelsFrom []ChannelFromProject `json:"childChannelsFrom,omitempty"`
 
-	CustomInfo map[string]string `json:"customInfo,omitempty"`
+	// CustomInfoValues sets organization-defined custom info key/value pairs on
+	// the system. Each entry references a CustomInfoKey CR (which guarantees the
+	// key exists in Uyuni before a value is set) and supplies the value.
+	CustomInfoValues []CustomInfoValue `json:"customInfoValues,omitempty"`
+
+	// Formulas enables Salt formulas on the system and supplies their form data.
+	Formulas []FormulaAssignment `json:"formulas,omitempty"`
+
+	// ProxyRef connects this system through another registered System that is a
+	// Uyuni proxy. Clearing it reconnects the system directly to the server.
+	ProxyRef *LocalObjectRef `json:"proxyRef,omitempty"`
 
 	// AddOns are additional entitlements granted to the system, e.g.
 	// "virtualization_host", "container_build_host", "osimage_build_host",
@@ -126,6 +162,16 @@ type SystemStatus struct {
 	ChildChannelLabels []string     `json:"childChannelLabels,omitempty"`
 	ActiveAddOns       []string     `json:"activeAddOns,omitempty"`
 	LastCheckinTime    *metav1.Time `json:"lastCheckinTime,omitempty"`
+
+	// ActiveFormulas is the set of Salt formulas last enabled on the system.
+	ActiveFormulas []string `json:"activeFormulas,omitempty"`
+
+	// ProxyServerID is the Uyuni server ID of the proxy the system was last
+	// connected through (0 = direct to server).
+	ProxyServerID int `json:"proxyServerId,omitempty"`
+
+	// ProxyActionID is the Uyuni action ID of the last changeProxy action.
+	ProxyActionID int `json:"proxyActionId,omitempty"`
 
 	// ConfigChannelLabels is the realized ordered config channel subscription
 	// (direct refs first, then group-sourced). Used to detect and apply drift.

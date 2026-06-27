@@ -14,6 +14,24 @@
 # Minimal viable variant (registration-only, no pre-create) is at the bottom.
 
 ---
+# CustomInfoKey definitions — organization custom info keys referenced by the
+# systems below via spec.customInfoValues. The operator creates these in Uyuni
+# before any system sets a value for them.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata: {name: ci-tier, namespace: linux-platform}
+spec: {label: tier, description: Workload tier, organizationRef: {name: pantheon-of-goods}}
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata: {name: ci-owner, namespace: linux-platform}
+spec: {label: owner, description: Owning team, organizationRef: {name: pantheon-of-goods}}
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CustomInfoKey
+metadata: {name: ci-cost-center, namespace: linux-platform}
+spec: {label: cost_center, description: Billing cost center, organizationRef: {name: pantheon-of-goods}}
+---
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: System
 metadata:
@@ -71,11 +89,33 @@ spec:
   addOns:
     - monitoring_entitled
 
-  # Custom info key-values stored on the system in Uyuni.
-  customInfo:
-    tier: frontend
-    owner: platform-team
-    cost-center: "CC-4412"
+  # Custom info values — each references a CustomInfoKey CR (defined above) and
+  # supplies this system's value. The key is guaranteed to exist before the
+  # value is set.
+  customInfoValues:
+    - keyRef: { name: ci-tier }
+      value: frontend
+    - keyRef: { name: ci-owner }
+      value: platform-team
+    - keyRef: { name: ci-cost-center }
+      value: "CC-4412"
+
+  # Salt formulas enabled on this system, with their form data (arbitrary nested
+  # config matching each formula's form). The formula must be installed on the
+  # Uyuni server (formula.listFormulas).
+  formulas:
+    - name: branch-network
+      values:
+        branch_network:
+          dedicated_NIC: true
+          nic: eth1
+          firewall:
+            enabled: true
+
+  # Connect this system through a Uyuni proxy (another registered System CR).
+  # Clearing proxyRef reconnects the system directly to the server.
+  # proxyRef:
+  #   name: branch-proxy-01
 
   # How the CR behaves when deleted.
   # "Orphan" (default): leave the Uyuni system intact.
@@ -131,9 +171,11 @@ spec:
   addOns:
     - monitoring_entitled
 
-  customInfo:
-    tier: data
-    owner: dba-team
+  customInfoValues:
+    - keyRef: { name: ci-tier }
+      value: data
+    - keyRef: { name: ci-owner }
+      value: dba-team
 
   deletionPolicy: Orphan
   adoptionTimeout: 24h0m0s
@@ -174,9 +216,11 @@ spec:
   addOns:
     - monitoring_entitled
 
-  customInfo:
-    tier: retail
-    owner: platform-team
+  customInfoValues:
+    - keyRef: { name: ci-tier }
+      value: retail
+    - keyRef: { name: ci-owner }
+      value: platform-team
 
   deletionPolicy: Orphan
   adoptionTimeout: 24h0m0s

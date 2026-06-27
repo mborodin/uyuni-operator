@@ -46,6 +46,23 @@ type API interface {
 	SetCustomInfo(ctx context.Context, serverID int, kv map[string]string) error
 	DeleteCustomInfo(ctx context.Context, serverID int, keys []string) error
 
+	// Custom info keys (system.custominfo) — organization-level key definitions.
+	ListCustomInfoKeys(ctx context.Context) ([]CustomInfoKeyDetails, error)
+	CreateCustomInfoKey(ctx context.Context, label, description string) error
+	UpdateCustomInfoKey(ctx context.Context, label, description string) error
+	DeleteCustomInfoKey(ctx context.Context, label string) error
+
+	// Formulas (formula) — Salt formula assignment and per-system form data.
+	ListFormulas(ctx context.Context) ([]string, error)
+	GetServerFormulas(ctx context.Context, serverID int) ([]string, error)
+	SetServerFormulas(ctx context.Context, serverID int, formulas []string) error
+	GetServerFormulaData(ctx context.Context, serverID int, formula string) (map[string]any, error)
+	SetServerFormulaData(ctx context.Context, serverID int, formula string, data map[string]any) error
+
+	// Proxy (system.changeProxy / system.getConnectionPath).
+	GetConnectionPath(ctx context.Context, serverID int) ([]ProxyHop, error)
+	ChangeProxy(ctx context.Context, serverIDs []int, proxyID int) ([]int, error)
+
 	ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error)
 
 	// SetBaseChannel and SetChildChannels perform an immediate (unscheduled)

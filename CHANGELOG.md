@@ -2,7 +2,27 @@
 
 ## Unreleased
 
+### Added
+
+- **System: Salt formulas.** `System.spec.formulas` enables Salt formulas on a
+  system and supplies their form data — arbitrary nested config matching the
+  formula's form (`formula.setFormulasOfServer` / `formula.setSystemFormulaData`).
+- **System: proxy connection.** `System.spec.proxyRef` connects a system through
+  another registered System acting as a Uyuni proxy (`system.changeProxy`).
+  Clearing it reconnects the system directly to the server.
+- **`CustomInfoKey` CR** manages organization-level custom system info key
+  definitions (`system.custominfo`). Deletion is blocked while any System still
+  references it (`Ready=False/InUse`).
+- **`AutoinstallDistribution`** reconciler + validating webhook are now
+  registered and its CRD is shipped (`kickstart.tree`).
+
 ### Breaking changes
+
+**`System.spec.customInfo` (map[string]string) replaced by
+`System.spec.customInfoValues`.** Each entry is `{ keyRef, value }`, where
+`keyRef` references a `CustomInfoKey` CR — guaranteeing the key exists in Uyuni
+before a value is set. Migrate every `customInfo: {k: v}` into a `CustomInfoKey`
+CR plus `customInfoValues: [{ keyRef: {name: ...}, value: v }]`.
 
 **`providerRef` replaced by `organizationRef` on all namespace-scoped resources.**
 All CRs that previously referenced a `UyuniProvider` directly now reference an
