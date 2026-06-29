@@ -132,8 +132,16 @@ func (g *gitClient) Clone(repoURL, ref, subPath string) (map[string]string, stri
 			return walkErr
 		}
 
-		// Skip directories and hidden files
-		if d.IsDir() || (len(d.Name()) > 0 && d.Name()[0] == '.') {
+		// Skip hidden files and directories
+		if len(d.Name()) > 0 && d.Name()[0] == '.' {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip directories
+		if d.IsDir() {
 			return nil
 		}
 
