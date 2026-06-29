@@ -1397,24 +1397,29 @@ func (c *Client) GetConfigFile(ctx context.Context, channelLabel, path string) (
 }
 
 func (c *Client) CreateOrUpdateConfigFile(ctx context.Context, channelLabel string, f ConfigFileUpsert) (*ConfigFileDetails, error) {
-	payload := map[string]any{
-		"label":       channelLabel,
-		"filename":    f.Path,
-		"type":        f.Type,
+	pathInfo := map[string]any{
 		"contents":    f.Contents,
 		"owner":       f.Owner,
 		"group":       f.Group,
 		"permissions": f.Permissions,
 	}
 	if f.SELinuxCtx != "" {
-		payload["selinux_ctx"] = f.SELinuxCtx
+		pathInfo["selinux_ctx"] = f.SELinuxCtx
 	}
 	if f.Macro {
-		payload["macro"] = f.Macro
+		pathInfo["macro"] = f.Macro
 	}
 	if f.TargetPath != "" {
-		payload["target_path"] = f.TargetPath
+		pathInfo["target_path"] = f.TargetPath
 	}
+
+	payload := map[string]any{
+		"label":    channelLabel,
+		"path":     f.Path,
+		"isDir":    false,
+		"pathInfo": pathInfo,
+	}
+
 	r, err := apiPost[wireConfigFile](c, "configchannel/createOrUpdatePath", payload)
 	if err != nil {
 		return nil, err
