@@ -50,6 +50,11 @@ spec:
             type: object
           spec:
             properties:
+              autoSync:
+                default: true
+                description: Whether to automatically sync files from the repository
+                  URL into this channel.
+                type: boolean
               cluster:
                 description: Name of the UyuniProvider to use. Empty → default provider.
                 type: string
@@ -62,9 +67,34 @@ spec:
               name:
                 type: string
               organizationRef:
-                description: Name of the Organization CR whose credentials to use
-                  when creating this channel. When set, the channel is created in
-                  that organization's context (org-scoped).
+                description: |-
+                  Name of the Organization CR whose credentials to use when creating this channel.
+                  When set, the channel is created in that organization's context (org-scoped).
+                type: string
+              repositoryPath:
+                description: |-
+                  Sub-path within repository to sync from (if not root).
+                  Examples: "salt/baseline", "configs", "files"
+                type: string
+              repositoryRef:
+                description: |-
+                  Branch, tag, or ref to sync from (for git repositories).
+                  Examples: "main", "develop", "v1.0.0"
+                type: string
+              repositoryType:
+                default: git
+                description: Type of repository for syncing files. Only used if autoSync
+                  is enabled.
+                enum:
+                - git
+                - http
+                - local
+                type: string
+              syncSchedule:
+                description: |-
+                  Cron schedule for repository syncs. If empty, syncs only on reconciliation.
+                  Examples: "0 */6 * * *" (every 6 hours), "@daily" (daily), "every 2h" (every 2 hours)
+                pattern: ^(@(hourly|daily|weekly)|every \d+[mh]|0 .* .* .* .*)?$
                 type: string
               type:
                 default: normal
@@ -75,8 +105,8 @@ spec:
                 - dictionary
                 type: string
               url:
-                description: Repository URL. Not forwarded to Uyuni; stored as operator
-                  metadata only.
+                description: Repository URL for automatic file sync. Used with repositoryType
+                  for syncing files from external repositories.
                 pattern: ^https?://.+
                 type: string
             required:
@@ -142,8 +172,27 @@ spec:
                   - type
                   type: object
                 type: array
+              lastSyncTime:
+                description: Last time repository was synced
+                format: date-time
+                type: string
               observedGeneration:
                 format: int64
+                type: integer
+              repositoryHash:
+                description: Hash of repository content (to detect changes between
+                  syncs)
+                type: string
+              syncStatus:
+                description: Current synchronization status of repository files
+                enum:
+                - Synced
+                - Syncing
+                - Failed
+                - NotConfigured
+                type: string
+              syncedFileCount:
+                description: Number of configuration files currently synced from repository
                 type: integer
               uyuniId:
                 type: integer
