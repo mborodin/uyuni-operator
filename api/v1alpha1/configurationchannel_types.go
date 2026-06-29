@@ -26,14 +26,49 @@ type ConfigurationChannelSpec struct {
 	OrganizationRef string `json:"organizationRef,omitempty"`
 
 	// +kubebuilder:validation:Pattern=`^https?://.+`
-	// Repository URL. Not forwarded to Uyuni; stored as operator metadata only.
+	// Repository URL for automatic file sync. Used with repositoryType for syncing files from external repositories.
 	URL string `json:"url,omitempty"`
+
+	// +kubebuilder:validation:Enum=git;http;local
+	// +kubebuilder:default=git
+	// Type of repository for syncing files. Only used if autoSync is enabled.
+	RepositoryType string `json:"repositoryType,omitempty"`
+
+	// +kubebuilder:default=true
+	// Whether to automatically sync files from the repository URL into this channel.
+	AutoSync *bool `json:"autoSync,omitempty"`
+
+	// Branch, tag, or ref to sync from (for git repositories).
+	// Examples: "main", "develop", "v1.0.0"
+	RepositoryRef string `json:"repositoryRef,omitempty"`
+
+	// Sub-path within repository to sync from (if not root).
+	// Examples: "salt/baseline", "configs", "files"
+	RepositoryPath string `json:"repositoryPath,omitempty"`
+
+	// +kubebuilder:validation:Pattern=`^(@(hourly|daily|weekly)|every \d+[mh]|0 .* .* .* .*)?$`
+	// Cron schedule for repository syncs. If empty, syncs only on reconciliation.
+	// Examples: "0 */6 * * *" (every 6 hours), "@daily" (daily), "every 2h" (every 2 hours)
+	SyncSchedule string `json:"syncSchedule,omitempty"`
 }
 
 type ConfigurationChannelStatus struct {
 	UyuniID            int                `json:"uyuniId,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+
+	// Last time repository was synced
+	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+
+	// Number of configuration files currently synced from repository
+	SyncedFileCount int `json:"syncedFileCount,omitempty"`
+
+	// +kubebuilder:validation:Enum=Synced;Syncing;Failed;NotConfigured
+	// Current synchronization status of repository files
+	SyncStatus string `json:"syncStatus,omitempty"`
+
+	// Hash of repository content (to detect changes between syncs)
+	RepositoryHash string `json:"repositoryHash,omitempty"`
 }
 
 // +kubebuilder:object:root=true

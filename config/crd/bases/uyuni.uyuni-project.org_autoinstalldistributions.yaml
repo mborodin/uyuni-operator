@@ -4,29 +4,23 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.5
-  name: imageprofiles.uyuni.uyuni-project.org
+  name: autoinstalldistributions.uyuni.uyuni-project.org
 spec:
   group: uyuni.uyuni-project.org
   names:
-    kind: ImageProfile
-    listKind: ImageProfileList
-    plural: imageprofiles
-    singular: imageprofile
+    kind: AutoinstallDistribution
+    listKind: AutoinstallDistributionList
+    plural: autoinstalldistributions
+    singular: autoinstalldistribution
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.label
       name: Label
       type: string
-    - jsonPath: .spec.type
-      name: Type
-      type: string
-    - jsonPath: .status.lastBuild.status
-      name: LastBuild
-      type: string
-    - jsonPath: .status.lastBuild.completedAt
-      name: BuildTime
-      type: date
+    - jsonPath: .status.uyuniId
+      name: UyuniID
+      type: integer
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Ready
       type: string
@@ -53,79 +47,31 @@ spec:
             type: object
           spec:
             properties:
-              activationKeyRef:
-                description: ActivationKeyRef references the ActivationKey CR whose
-                  realized key is passed to Uyuni.
-                properties:
-                  name:
-                    type: string
-                required:
-                - name
-                type: object
-              auth:
-                description: |-
-                  Auth injects username/password Basic Auth into the source URL (URL or Git.Repository)
-                  at reconcile time. Credentials are read from the named Secret and never stored in status.
-                properties:
-                  name:
-                    description: Name is the Secret in the same namespace.
-                    type: string
-                  passwordKey:
-                    default: password
-                    description: PasswordKey is the key for the password value. Defaults
-                      to "password".
-                    type: string
-                  usernameKey:
-                    default: username
-                    description: UsernameKey is the key for the username value. Defaults
-                      to "username".
-                    type: string
-                required:
-                - name
-                type: object
-              buildHostRef:
-                description: BuildHostRef references the System CR to use as the build
-                  host.
-                properties:
-                  name:
-                    type: string
-                required:
-                - name
-                type: object
-              buildPolicy:
-                default: manual
-                description: |-
-                  BuildPolicy controls automatic builds:
-                    - "manual":   only AnnBuildNow annotation triggers a build
-                    - "onChange": rebuild when spec generation changes
+              basePath:
+                description: BasePath is the absolute path to the distribution tree
+                  on the Uyuni server.
                 type: string
-              customInfo:
-                additionalProperties:
-                  type: string
-                type: object
-              git:
-                description: |-
-                  Git is a structured git source. Mutually exclusive with URL.
-                  Exactly one of URL or Git must be set.
+              channelRef:
+                description: ChannelRef references the SoftwareChannel that provides
+                  packages for this distribution.
                 properties:
-                  path:
-                    description: |-
-                      Path is the subdirectory within the repo containing the Dockerfile or KIWI config.
-                      Appended as ":path". Requires Reference to also be set (webhook enforces).
-                    type: string
-                  reference:
-                    description: Reference is the branch, tag, or commit. Appended
-                      as "#reference".
-                    type: string
-                  repository:
-                    description: Repository is the base URL of the git repository.
+                  name:
                     type: string
                 required:
-                - repository
+                - name
                 type: object
+              installType:
+                description: |-
+                  InstallType is the OS family identifier (e.g. "suse_leap15generic", "rhel_9").
+                  Immutable after creation.
+                type: string
+              kernelOptions:
+                description: KernelOptions are extra kernel command-line arguments
+                  appended at boot.
+                type: string
               label:
-                description: Label is the Uyuni image profile label. Immutable after
-                  creation.
+                description: Label is the Cobbler tree label. Immutable after creation.
+                pattern: ^[a-z0-9][a-z0-9._-]*$
                 type: string
               organizationRef:
                 description: |-
@@ -139,40 +85,23 @@ spec:
                 required:
                 - name
                 type: object
-              storeRef:
-                description: |-
-                  StoreRef references the ImageStore CR that holds the built image.
-                  Required for dockerfile (registry) images; optional for kiwi, where Uyuni
-                  auto-selects its OS-image store. The CEL rule on the spec enforces the
-                  dockerfile requirement.
-                properties:
-                  name:
-                    type: string
-                required:
-                - name
-                type: object
-              type:
-                default: kiwi
-                description: Type is the image build type. Immutable after creation.
-                enum:
-                - kiwi
-                - dockerfile
-                type: string
-              url:
-                description: |-
-                  URL is the direct source URL for the image build. Mutually exclusive with Git.
-                  Exactly one of URL or Git must be set.
+              postKernelOptions:
+                description: PostKernelOptions are kernel arguments appended after
+                  installation completes.
                 type: string
             required:
+            - basePath
+            - channelRef
+            - installType
             - label
             - organizationRef
-            - type
             type: object
-            x-kubernetes-validations:
-            - message: storeRef is required when type is dockerfile
-              rule: self.type != 'dockerfile' || has(self.storeRef)
           status:
             properties:
+              channelLabel:
+                description: ChannelLabel is the realized software channel label used
+                  by this tree.
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -229,36 +158,11 @@ spec:
                   - type
                   type: object
                 type: array
-              lastBuild:
-                properties:
-                  buildId:
-                    type: integer
-                  completedAt:
-                    format: date-time
-                    type: string
-                  failureReason:
-                    type: string
-                  startedAt:
-                    format: date-time
-                    type: string
-                  status:
-                    enum:
-                    - Queued
-                    - Running
-                    - Succeeded
-                    - Failed
-                    type: string
-                  trigger:
-                    description: 'What initiated this build: "annotation", "onChange",
-                      "initial".'
-                    type: string
-                  version:
-                    type: string
-                type: object
               observedGeneration:
                 format: int64
                 type: integer
               uyuniId:
+                description: UyuniID is the Cobbler tree ID assigned by Uyuni.
                 type: integer
             type: object
         type: object

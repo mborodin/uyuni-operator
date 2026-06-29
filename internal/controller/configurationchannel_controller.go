@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
+	"github.com/mborodin/uyuni-operator/internal/git"
 	"github.com/mborodin/uyuni-operator/internal/uyuni"
 )
 
@@ -72,12 +74,57 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}
 
+	// Sync repository files if configured
+	if cc.Spec.AutoSync != nil && *cc.Spec.AutoSync && cc.Spec.URL != "" {
+		if r.shouldSync(&cc) {
+			files, repoHash, syncErr := r.syncRepositoryFiles(ctx, &cc)
+			if syncErr != nil {
+				setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionFalse, "RepoSyncFailed", syncErr.Error())
+				cc.Status.SyncStatus = "Failed"
+				_ = r.Status().Update(ctx, &cc)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
+
+			// Upload files to Uyuni
+			if len(files) > 0 {
+				uploadErr := r.uploadFilesToUyuni(ctx, uc, &cc, files)
+				if uploadErr != nil {
+					setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionFalse, "FileUploadFailed", uploadErr.Error())
+					cc.Status.SyncStatus = "Failed"
+					_ = r.Status().Update(ctx, &cc)
+					return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+				}
+			}
+
+			// Update sync status
+			cc.Status.SyncStatus = "Synced"
+			cc.Status.LastSyncTime = &metav1.Time{Time: time.Now()}
+			cc.Status.SyncedFileCount = len(files)
+			cc.Status.RepositoryHash = repoHash
+			setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionTrue, "RepoSynced",
+				fmt.Sprintf("Synced %d files from repository", len(files)))
+		}
+	} else if cc.Spec.AutoSync != nil && *cc.Spec.AutoSync && cc.Spec.URL == "" {
+		cc.Status.SyncStatus = "NotConfigured"
+		setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionFalse, "RepoNotConfigured",
+			"autoSync enabled but URL is not set")
+		_ = r.Status().Update(ctx, &cc)
+		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+
 	cc.Status.ObservedGeneration = cc.Generation
 	setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionTrue, "Reconciled", "")
 	if err := r.Status().Update(ctx, &cc); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+
+	// Determine requeue time based on sync schedule
+	requeueAfter := 5 * time.Minute
+	if cc.Spec.SyncSchedule != "" {
+		// TODO: Parse cron and calculate next sync time
+		requeueAfter = 1 * time.Hour
+	}
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 func (r *ConfigurationChannelReconciler) handleDeletion(ctx context.Context, cc *uyuniv1.ConfigurationChannel) (ctrl.Result, error) {
@@ -114,6 +161,94 @@ func (r *ConfigurationChannelReconciler) fail(ctx context.Context, cc *uyuniv1.C
 	setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionFalse, reason, err.Error())
 	_ = r.Status().Update(ctx, cc)
 	return ctrl.Result{}, err
+}
+
+func (r *ConfigurationChannelReconciler) shouldSync(cc *uyuniv1.ConfigurationChannel) bool {
+	if cc.Spec.AutoSync == nil || !*cc.Spec.AutoSync || cc.Spec.URL == "" {
+		return false
+	}
+
+	// If never synced, should sync
+	if cc.Status.LastSyncTime == nil {
+		return true
+	}
+
+	// If no schedule set, don't sync periodically
+	if cc.Spec.SyncSchedule == "" {
+		return false
+	}
+
+	// For now, sync every 6 hours (simplified - full cron parsing can be added later)
+	// TODO: Parse cron expression from SyncSchedule
+	syncInterval := 6 * time.Hour
+	return time.Since(cc.Status.LastSyncTime.Time) >= syncInterval
+}
+
+func (r *ConfigurationChannelReconciler) syncRepositoryFiles(ctx context.Context, cc *uyuniv1.ConfigurationChannel) (map[string]string, string, error) {
+	if cc.Spec.URL == "" {
+		return nil, "", fmt.Errorf("repository URL is required for sync")
+	}
+
+	gitClient := git.New()
+
+	subPath := cc.Spec.RepositoryPath
+	if subPath == "" {
+		subPath = "."
+	}
+
+	ref := cc.Spec.RepositoryRef
+	if ref == "" {
+		ref = "main" // default to main branch
+	}
+
+	files, hash, err := gitClient.Clone(cc.Spec.URL, ref, subPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to sync repository: %w", err)
+	}
+
+	return files, hash, nil
+}
+
+func (r *ConfigurationChannelReconciler) uploadFilesToUyuni(ctx context.Context, uc uyuni.API, cc *uyuniv1.ConfigurationChannel, files map[string]string) error {
+	for filePath, content := range files {
+		fileUpsert := uyuni.ConfigFileUpsert{
+			Path:        filePath,
+			Contents:    content,
+			Type:        "file",
+			Owner:       "root",
+			Group:       "root",
+			Permissions: "0644",
+		}
+		_, err := uc.CreateOrUpdateConfigFile(ctx, cc.Spec.ID, fileUpsert)
+		if err != nil {
+			return fmt.Errorf("failed to upload file %s: %w", filePath, err)
+		}
+	}
+	return nil
+}
+
+func (r *ConfigurationChannelReconciler) calculateFilesHash(files map[string]string) string {
+	h := md5.New()
+	for _, path := range sortedMapKeys(files) {
+		h.Write([]byte(path + ":" + files[path]))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// Simple sort - full implementation would use sort package
+	for i := 0; i < len(keys)-1; i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[i] > keys[j] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	return keys
 }
 
 func (r *ConfigurationChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {

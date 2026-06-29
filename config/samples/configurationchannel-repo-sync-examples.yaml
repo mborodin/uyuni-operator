@@ -1,0 +1,262 @@
+---
+# Example 1: Basic Git Repository Sync
+# Syncs all files from the 'salt/baseline' directory in the GitHub repo
+# Automatically syncs every 6 hours
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: baseline
+  namespace: linux-platform
+spec:
+  id: baseline
+  name: "GMRC Baseline Configuration"
+  type: state
+  description: "Salt state channel for baseline configuration"
+  url: https://github.com/RoyalAholdDelhaize/becse-ngp-lom-nexa-platform
+  repositoryType: git
+  autoSync: true
+  repositoryRef: region              # Branch to checkout
+  repositoryPath: salt/baseline      # Sub-path to sync
+  syncSchedule: "0 */6 * * *"        # Every 6 hours
+
+---
+# Example 2: Daily Sync from Staging Branch
+# Syncs Apache configuration files daily
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: apache-config
+  namespace: linux-platform
+spec:
+  id: apache-config-state
+  name: "Apache Configuration (staging)"
+  type: state
+  description: "Apache web server configuration from staging"
+  url: https://github.com/company/apache-configs.git
+  repositoryType: git
+  autoSync: true
+  repositoryRef: develop             # Staging branch
+  repositoryPath: apache             # Apache config directory
+  syncSchedule: "0 2 * * *"          # Daily at 2 AM
+
+---
+# Example 3: Frequent Sync for CI/CD
+# Syncs Nginx configs every 30 minutes for rapid deployment
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: nginx-production
+  namespace: linux-platform
+spec:
+  id: nginx-prod
+  name: "Nginx Production Configuration"
+  type: state
+  description: "Production Nginx configuration with frequent updates"
+  url: https://github.com/company/nginx-configs.git
+  repositoryType: git
+  autoSync: true
+  repositoryRef: main                # Main production branch
+  repositoryPath: nginx              # Nginx configuration
+  syncSchedule: "*/30 * * * *"       # Every 30 minutes
+
+---
+# Example 4: Manual Sync Only
+# No automatic sync - only syncs when explicitly triggered
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: release-config
+  namespace: linux-platform
+spec:
+  id: release-config
+  name: "Release Configuration"
+  type: normal
+  description: "Configuration for release versions (manual sync)"
+  url: https://github.com/company/release-configs.git
+  repositoryType: git
+  autoSync: false                    # Manual sync only
+  repositoryRef: v1.0.0              # Specific tag
+  repositoryPath: configs
+
+---
+# Example 5: Monitoring and Observability Config
+# Syncs Prometheus and Grafana configs twice daily
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: monitoring-config
+  namespace: monitoring
+spec:
+  id: monitoring
+  name: "Monitoring Configuration"
+  type: normal
+  description: "Prometheus and Grafana configuration"
+  url: https://github.com/company/monitoring-configs.git
+  repositoryType: git
+  autoSync: true
+  repositoryRef: main
+  repositoryPath: prometheus          # Contains Prometheus configs
+  syncSchedule: "0 6,18 * * *"        # 6 AM and 6 PM daily
+
+---
+# Example 6: Cluster-Specific Configuration
+# Different configuration per cluster using OrganizationRef
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: cluster-eu-config
+  namespace: linux-platform
+spec:
+  id: cluster-eu-baseline
+  name: "EU Cluster Baseline"
+  type: state
+  description: "Configuration specific to EU data center"
+  url: https://github.com/company/cluster-configs.git
+  repositoryType: git
+  autoSync: true
+  repositoryRef: eu-region
+  repositoryPath: clusters/eu
+  organizationRef: eu-organization    # Organization-scoped channel
+  syncSchedule: "0 0 * * *"           # Daily at midnight
+
+---
+# Example 7: Dictionary Type (Simple Variables)
+# Syncs application configuration variables
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: app-vars
+  namespace: applications
+spec:
+  id: app-variables
+  name: "Application Variables"
+  type: dictionary
+  description: "Application configuration variables and secrets"
+  url: https://github.com/company/app-configs.git
+  repositoryType: git
+  autoSync: true
+  repositoryRef: main
+  repositoryPath: variables
+  syncSchedule: "*/15 * * * *"        # Every 15 minutes for rapid updates
+
+---
+# Status Examples
+---
+# Example: Successful Sync
+# This is what the status looks like after successful sync
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: baseline
+  namespace: linux-platform
+spec:
+  id: baseline
+  name: "GMRC Baseline Configuration"
+  type: state
+  url: https://github.com/RoyalAholdDelhaize/becse-ngp-lom-nexa-platform
+  repositoryType: git
+  autoSync: true
+  repositoryRef: region
+  repositoryPath: salt/baseline
+  syncSchedule: "0 */6 * * *"
+status:
+  uyuniId: 12345
+  observedGeneration: 1
+  lastSyncTime: "2024-01-15T10:30:00Z"
+  syncedFileCount: 15
+  syncStatus: Synced
+  repositoryHash: "abc123def456789..."
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Reconciled
+      message: ""
+      lastTransitionTime: "2024-01-15T10:30:15Z"
+      observedGeneration: 1
+    - type: RepoSynced
+      status: "True"
+      reason: RepoSynced
+      message: "Synced 15 files from repository"
+      lastTransitionTime: "2024-01-15T10:30:15Z"
+      observedGeneration: 1
+
+---
+# Example: Sync Failed
+# This is what happens when sync fails (e.g., bad URL)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: bad-repo-channel
+  namespace: linux-platform
+spec:
+  id: bad-repo
+  name: "Channel with Bad Repo"
+  type: state
+  url: https://github.com/nonexistent/repo.git  # ❌ Repository doesn't exist
+  repositoryType: git
+  autoSync: true
+  repositoryRef: main
+  repositoryPath: salt
+status:
+  uyuniId: 12346
+  observedGeneration: 2
+  syncStatus: Failed
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: RepoSyncFailed
+      message: "failed to clone repository: repository not found"
+      lastTransitionTime: "2024-01-15T10:35:00Z"
+      observedGeneration: 2
+
+---
+# Example: Sync Not Configured
+# AutoSync disabled but URL provided - no error, just no sync
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: manual-sync-channel
+  namespace: linux-platform
+spec:
+  id: manual-sync
+  name: "Manual Sync Channel"
+  type: normal
+  url: https://github.com/company/configs.git
+  repositoryType: git
+  autoSync: false                    # ✓ Manual only
+  repositoryRef: release-1.0
+status:
+  uyuniId: 12347
+  observedGeneration: 1
+  syncStatus: NotConfigured          # Not configured for auto-sync
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Reconciled
+      message: ""
+
+---
+# Usage Instructions
+# To create these channels, run:
+#
+# kubectl apply -f config/samples/configurationchannel-repo-sync-examples.yaml
+#
+# To watch sync progress:
+#
+# kubectl get configurationchannels -w
+# kubectl describe configurationchannel baseline
+#
+# To trigger manual sync (if autoSync: false):
+#
+# kubectl annotate configurationchannel manual-sync-channel \
+#   uyuni.uyuni-project.org/sync-now=true --overwrite
+#
+# To check sync status:
+#
+# kubectl get configurationchannels -o wide
+# # Shows: ID, Type, Ready, Drift, SyncStatus, SyncedFiles
+#
+# To check recent events:
+#
+# kubectl describe configurationchannel baseline | grep -A 20 Events
+

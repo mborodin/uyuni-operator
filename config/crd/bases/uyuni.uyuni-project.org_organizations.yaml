@@ -156,6 +156,47 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              providerCaCertSecretRef:
+                description: |-
+                  SecretReference represents a Secret Reference. It has enough information to retrieve secret
+                  in any namespace
+                properties:
+                  name:
+                    description: name is unique within a namespace to reference a
+                      secret resource.
+                    type: string
+                  namespace:
+                    description: namespace defines the space within which the secret
+                      name must be unique.
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              providerCredentialsSecretRef:
+                description: |-
+                  SecretReference represents a Secret Reference. It has enough information to retrieve secret
+                  in any namespace
+                properties:
+                  name:
+                    description: name is unique within a namespace to reference a
+                      secret resource.
+                    type: string
+                  namespace:
+                    description: namespace defines the space within which the secret
+                      name must be unique.
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              providerInsecureSkipVerify:
+                type: boolean
+              providerUrl:
+                description: |-
+                  ProviderURL, ProviderInsecureSkipVerify, ProviderCredentialsSecretRef, and
+                  ProviderCACertSecretRef snapshot the UyuniProvider's connection details the
+                  last time it was successfully resolved. Deletion uses this snapshot instead
+                  of re-reading the UyuniProvider CR, since Crossplane compositions may delete
+                  sibling managed resources (including the UyuniProvider) concurrently with
+                  the Organization, before the Organization's own Uyuni-side cleanup runs.
+                type: string
               uyuniOrgId:
                 type: integer
             type: object

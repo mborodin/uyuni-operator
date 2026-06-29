@@ -57,10 +57,9 @@ spec:
                 properties:
                   contentProjectRef:
                     description: |-
-                      LocalObjectRef is a name-only reference to a CR in the same namespace.
-                      We deliberately don't include namespace or kind: cross-namespace refs
-                      complicate RBAC and aren't needed in our model, and each ref's kind is
-                      implied by the field where it appears.
+                      ContentProjectRef is optional. When its name is empty, no content
+                      project channel is attached and resolution is skipped (the resource
+                      reconciles without a project-derived channel) rather than erroring.
                     properties:
                       name:
                         type: string
@@ -68,6 +67,8 @@ spec:
                     - name
                     type: object
                   environment:
+                    description: Environment is optional; required only when ContentProjectRef
+                      is set.
                     pattern: ^[a-z0-9-]+$
                     type: string
                   sourceChannelLabel:
@@ -115,10 +116,9 @@ spec:
                   properties:
                     contentProjectRef:
                       description: |-
-                        LocalObjectRef is a name-only reference to a CR in the same namespace.
-                        We deliberately don't include namespace or kind: cross-namespace refs
-                        complicate RBAC and aren't needed in our model, and each ref's kind is
-                        implied by the field where it appears.
+                        ContentProjectRef is optional. When its name is empty, no content
+                        project channel is attached and resolution is skipped (the resource
+                        reconciles without a project-derived channel) rather than erroring.
                       properties:
                         name:
                           type: string
@@ -126,6 +126,8 @@ spec:
                       - name
                       type: object
                     environment:
+                      description: Environment is optional; required only when ContentProjectRef
+                        is set.
                       pattern: ^[a-z0-9-]+$
                       type: string
                     sourceChannelLabel:
