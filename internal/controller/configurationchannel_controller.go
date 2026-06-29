@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"regexp"
+	"strconv"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -178,10 +180,28 @@ func (r *ConfigurationChannelReconciler) shouldSync(cc *uyuniv1.ConfigurationCha
 		return false
 	}
 
-	// For now, sync every 6 hours (simplified - full cron parsing can be added later)
-	// TODO: Parse cron expression from SyncSchedule
-	syncInterval := 6 * time.Hour
+	// Parse sync interval from schedule (e.g., "every 2m", "every 1h")
+	syncInterval := parseSyncInterval(cc.Spec.SyncSchedule)
 	return time.Since(cc.Status.LastSyncTime.Time) >= syncInterval
+}
+
+func parseSyncInterval(schedule string) time.Duration {
+	// Match "every Nm" or "every Nh" format
+	re := regexp.MustCompile(`every\s+(\d+)([mh])`)
+	matches := re.FindStringSubmatch(schedule)
+	if len(matches) != 3 {
+		return 6 * time.Hour // default fallback
+	}
+
+	num, _ := strconv.Atoi(matches[1])
+	unit := matches[2]
+
+	if unit == "m" {
+		return time.Duration(num) * time.Minute
+	} else if unit == "h" {
+		return time.Duration(num) * time.Hour
+	}
+	return 6 * time.Hour
 }
 
 func (r *ConfigurationChannelReconciler) syncRepositoryFiles(ctx context.Context, cc *uyuniv1.ConfigurationChannel) (map[string]string, string, error) {
