@@ -567,7 +567,7 @@ type wireConfigFile struct {
 	TargetPath  string `json:"target_path"`
 	Owner       string `json:"owner"`
 	Group       string `json:"group"`
-	Permissions string `json:"permissions"`
+	Permissions int    `json:"permissions"`
 	SELinuxCtx  string `json:"selinux_ctx"`
 	Macro       bool   `json:"macro"`
 	Binary      bool   `json:"binary"`
@@ -1454,7 +1454,7 @@ func wireConfigFileToDetails(w *wireConfigFile) *ConfigFileDetails {
 		TargetPath:  w.TargetPath,
 		Owner:       w.Owner,
 		Group:       w.Group,
-		Permissions: w.Permissions,
+		Permissions: fmt.Sprintf("0%o", w.Permissions),
 		SELinuxCtx:  w.SELinuxCtx,
 		Macro:       w.Macro,
 		Binary:      w.Binary,
