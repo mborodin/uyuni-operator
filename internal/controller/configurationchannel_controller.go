@@ -128,9 +128,9 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Determine requeue time based on sync schedule
 	requeueAfter := 5 * time.Minute
-	if cc.Spec.SyncSchedule != "" {
-		// TODO: Parse cron and calculate next sync time
-		requeueAfter = 1 * time.Hour
+	if cc.Spec.AutoSync != nil && *cc.Spec.AutoSync && cc.Spec.SyncSchedule != "" {
+		// Use sync schedule interval for requeue
+		requeueAfter = parseSyncInterval(cc.Spec.SyncSchedule)
 	}
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
