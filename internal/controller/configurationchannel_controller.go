@@ -105,6 +105,12 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 			cc.Status.RepositoryHash = repoHash
 			setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionTrue, "RepoSynced",
 				fmt.Sprintf("Synced %d files from repository", len(files)))
+
+			// Clear sync-now annotation if present
+			if cc.Annotations != nil && cc.Annotations["sync-now"] == "true" {
+				delete(cc.Annotations, "sync-now")
+				_ = r.Update(ctx, &cc)
+			}
 		}
 	} else if cc.Spec.AutoSync != nil && *cc.Spec.AutoSync && cc.Spec.URL == "" {
 		cc.Status.SyncStatus = "NotConfigured"
@@ -168,6 +174,11 @@ func (r *ConfigurationChannelReconciler) fail(ctx context.Context, cc *uyuniv1.C
 func (r *ConfigurationChannelReconciler) shouldSync(cc *uyuniv1.ConfigurationChannel) bool {
 	if cc.Spec.AutoSync == nil || !*cc.Spec.AutoSync || cc.Spec.URL == "" {
 		return false
+	}
+
+	// Check for manual sync trigger annotation
+	if cc.Annotations != nil && cc.Annotations["sync-now"] == "true" {
+		return true
 	}
 
 	// If never synced, should sync
