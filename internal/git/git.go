@@ -2,11 +2,13 @@ package git
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
 // Client handles git repository operations
@@ -23,7 +25,7 @@ func New() Client {
 
 // Clone clones a git repository and returns all files from subPath
 // Returns: map[filePath]fileContents, repoHash, error
-func (g *gitClient) Clone(url, ref, subPath string) (map[string]string, string, error) {
+func (g *gitClient) Clone(repoURL, ref, subPath string) (map[string]string, string, error) {
 	// Create temporary directory
 	dir, err := os.MkdirTemp("", "uyuni-repo-*")
 	if err != nil {
@@ -31,10 +33,37 @@ func (g *gitClient) Clone(url, ref, subPath string) (map[string]string, string, 
 	}
 	defer os.RemoveAll(dir)
 
-	// Clone repository
-	repo, err := git.PlainClone(dir, false, &git.CloneOptions{
-		URL: url,
-	})
+	// Extract credentials from URL if present (e.g., https://token@github.com/...)
+	cloneURL := repoURL
+	var auth *http.BasicAuth
+	if parsedURL, err := url.Parse(repoURL); err == nil && parsedURL.User != nil {
+		username := parsedURL.User.Username()
+		password, hasPassword := parsedURL.User.Password()
+
+		// If URL is in format https://TOKEN@github.com (no colon), treat token as password
+		if !hasPassword && username != "" {
+			password = username
+			username = "git" // GitHub expects "git" as username for PAT auth
+		}
+
+		// Remove credentials from URL for cloning
+		parsedURL.User = nil
+		cloneURL = parsedURL.String()
+
+		// Use credentials for authentication
+		auth = &http.BasicAuth{
+			Username: username,
+			Password: password,
+		}
+	}
+
+	// Clone repository with authentication if available
+	cloneOpts := &git.CloneOptions{
+		URL:  cloneURL,
+		Auth: auth,
+	}
+
+	repo, err := git.PlainClone(dir, false, cloneOpts)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to clone repository: %w", err)
 	}
