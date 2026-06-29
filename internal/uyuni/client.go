@@ -1399,7 +1399,7 @@ func (c *Client) GetConfigFile(ctx context.Context, channelLabel, path string) (
 func (c *Client) CreateOrUpdateConfigFile(ctx context.Context, channelLabel string, f ConfigFileUpsert) (*ConfigFileDetails, error) {
 	payload := map[string]any{
 		"label":       channelLabel,
-		"path":        f.Path,
+		"filename":    f.Path,
 		"type":        f.Type,
 		"contents":    f.Contents,
 		"owner":       f.Owner,
