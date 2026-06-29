@@ -68,6 +68,13 @@ func (g *gitClient) Clone(repoURL, ref, subPath string) (map[string]string, stri
 		return nil, "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
+	// Fetch remote refs to ensure branches are available
+	if auth != nil {
+		_ = repo.Fetch(&git.FetchOptions{
+			Auth: auth,
+		})
+	}
+
 	// Get working tree
 	w, err := repo.Worktree()
 	if err != nil {
@@ -76,18 +83,29 @@ func (g *gitClient) Clone(repoURL, ref, subPath string) (map[string]string, stri
 
 	// Checkout the specified ref (branch/tag)
 	if ref != "" {
+		// Try to checkout as branch
 		refName := plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", ref))
 		err = w.Checkout(&git.CheckoutOptions{
 			Branch: refName,
+			Create: false,
 		})
 		if err != nil {
-			// Try as tag if branch doesn't exist
-			refName = plumbing.ReferenceName(fmt.Sprintf("refs/tags/%s", ref))
+			// Try as remote tracking branch
+			refName = plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", ref))
 			err = w.Checkout(&git.CheckoutOptions{
 				Branch: refName,
+				Create: false,
 			})
 			if err != nil {
-				return nil, "", fmt.Errorf("failed to checkout ref %s: %w", ref, err)
+				// Try as tag if branch doesn't exist
+				refName = plumbing.ReferenceName(fmt.Sprintf("refs/tags/%s", ref))
+				err = w.Checkout(&git.CheckoutOptions{
+					Branch: refName,
+					Create: false,
+				})
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to checkout ref %s: %w", ref, err)
+				}
 			}
 		}
 	}
