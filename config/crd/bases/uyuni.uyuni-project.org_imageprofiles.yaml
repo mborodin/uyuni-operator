@@ -54,8 +54,11 @@ spec:
           spec:
             properties:
               activationKeyRef:
-                description: ActivationKeyRef references the ActivationKey CR whose
-                  realized key is passed to Uyuni.
+                description: |-
+                  LocalObjectRef is a name-only reference to a CR in the same namespace.
+                  We deliberately don't include namespace or kind: cross-namespace refs
+                  complicate RBAC and aren't needed in our model, and each ref's kind is
+                  implied by the field where it appears.
                 properties:
                   name:
                     type: string
@@ -84,8 +87,11 @@ spec:
                 - name
                 type: object
               buildHostRef:
-                description: BuildHostRef references the System CR to use as the build
-                  host.
+                description: |-
+                  LocalObjectRef is a name-only reference to a CR in the same namespace.
+                  We deliberately don't include namespace or kind: cross-namespace refs
+                  complicate RBAC and aren't needed in our model, and each ref's kind is
+                  implied by the field where it appears.
                 properties:
                   name:
                     type: string
@@ -98,6 +104,7 @@ spec:
                   BuildPolicy controls automatic builds:
                     - "manual":   only AnnBuildNow annotation triggers a build
                     - "onChange": rebuild when spec generation changes
+                    - cron expr:  rebuild on schedule
                 type: string
               customInfo:
                 additionalProperties:
@@ -114,8 +121,8 @@ spec:
                       Appended as ":path". Requires Reference to also be set (webhook enforces).
                     type: string
                   reference:
-                    description: Reference is the branch, tag, or commit. Appended
-                      as "#reference".
+                    description: Reference is the branch, tag, or commit. Appended as
+                      "#reference".
                     type: string
                   repository:
                     description: Repository is the base URL of the git repository.
@@ -124,8 +131,7 @@ spec:
                 - repository
                 type: object
               label:
-                description: Label is the Uyuni image profile label. Immutable after
-                  creation.
+                description: Immutable after creation.
                 type: string
               organizationRef:
                 description: |-
@@ -141,10 +147,10 @@ spec:
                 type: object
               storeRef:
                 description: |-
-                  StoreRef references the ImageStore CR that holds the built image.
-                  Required for dockerfile (registry) images; optional for kiwi, where Uyuni
-                  auto-selects its OS-image store. The CEL rule on the spec enforces the
-                  dockerfile requirement.
+                  LocalObjectRef is a name-only reference to a CR in the same namespace.
+                  We deliberately don't include namespace or kind: cross-namespace refs
+                  complicate RBAC and aren't needed in our model, and each ref's kind is
+                  implied by the field where it appears.
                 properties:
                   name:
                     type: string
@@ -153,7 +159,7 @@ spec:
                 type: object
               type:
                 default: kiwi
-                description: Type is the image build type. Immutable after creation.
+                description: Immutable after creation.
                 enum:
                 - kiwi
                 - dockerfile
@@ -250,7 +256,7 @@ spec:
                     type: string
                   trigger:
                     description: 'What initiated this build: "annotation", "onChange",
-                      "initial".'
+                      "cron", "initial".'
                     type: string
                   version:
                     type: string

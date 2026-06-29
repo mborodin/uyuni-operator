@@ -16,13 +16,9 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys
-  - autoinstalldistributions
-  - autoinstallprofiles
   - clmenvironments
   - configurationchannels
   - contentprojects
-  - imagebuilds
-  - imageprofiles
   - organizations
   - repositories
   - softwarechannels
@@ -41,13 +37,9 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/finalizers
-  - autoinstalldistributions/finalizers
-  - autoinstallprofiles/finalizers
   - clmenvironments/finalizers
   - configurationchannels/finalizers
   - contentprojects/finalizers
-  - imagebuilds/finalizers
-  - imageprofiles/finalizers
   - organizations/finalizers
   - repositories/finalizers
   - softwarechannels/finalizers
@@ -60,14 +52,10 @@ rules:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys/status
-  - autoinstalldistributions/status
-  - autoinstallprofiles/status
   - clmenvironments/status
   - configurationchannels/status
   - contentprojectpromotions/status
   - contentprojects/status
-  - imagebuilds/status
-  - imageprofiles/status
   - organizations/status
   - repositories/status
   - softwarechannels/status
@@ -82,6 +70,14 @@ rules:
 - apiGroups:
   - uyuni.uyuni-project.org
   resources:
+  - autoinstallprofiles
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - uyuni.uyuni-project.org
+  resources:
   - contentprojectpromotions
   - tasks
   verbs:
@@ -90,12 +86,4 @@ rules:
   - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - uyuni.uyuni-project.org
-  resources:
-  - imagestores
-  verbs:
-  - get
-  - list
   - watch
