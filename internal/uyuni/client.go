@@ -1399,14 +1399,18 @@ func (c *Client) GetConfigFile(ctx context.Context, channelLabel, path string) (
 func (c *Client) CreateOrUpdateConfigFile(ctx context.Context, channelLabel string, f ConfigFileUpsert) (*ConfigFileDetails, error) {
 	payload := map[string]any{
 		"label":       channelLabel,
-		"filename":    f.Path,
+		"path":        f.Path,
 		"type":        f.Type,
 		"contents":    f.Contents,
 		"owner":       f.Owner,
 		"group":       f.Group,
 		"permissions": f.Permissions,
-		"selinux_ctx": f.SELinuxCtx,
-		"macro":       f.Macro,
+	}
+	if f.SELinuxCtx != "" {
+		payload["selinux_ctx"] = f.SELinuxCtx
+	}
+	if f.Macro {
+		payload["macro"] = f.Macro
 	}
 	if f.TargetPath != "" {
 		payload["target_path"] = f.TargetPath
