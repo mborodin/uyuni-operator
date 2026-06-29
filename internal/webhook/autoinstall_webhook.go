@@ -111,7 +111,17 @@ func (v *AutoinstallProfileValidator) ValidateUpdate(ctx context.Context, oldObj
 	if old.Spec.Label != ap.Spec.Label {
 		return nil, apierrors.NewForbidden(gr, ap.Name, fmt.Errorf("spec.label is immutable"))
 	}
-	if old.Spec.DistributionRef.Name != ap.Spec.DistributionRef.Name {
+	if old.Spec.Mode != ap.Spec.Mode {
+		return nil, apierrors.NewForbidden(gr, ap.Name, fmt.Errorf("spec.mode is immutable"))
+	}
+	oldDist, newDist := "", ""
+	if old.Spec.DistributionRef != nil {
+		oldDist = old.Spec.DistributionRef.Name
+	}
+	if ap.Spec.DistributionRef != nil {
+		newDist = ap.Spec.DistributionRef.Name
+	}
+	if oldDist != newDist {
 		return nil, apierrors.NewForbidden(gr, ap.Name, fmt.Errorf("spec.distributionRef is immutable"))
 	}
 	return v.validateProfile(ctx, ap)
@@ -139,10 +149,13 @@ func (v *AutoinstallProfileValidator) validateProfile(ctx context.Context, ap *u
 
 	var warnings admission.Warnings
 
-	// Cross-resource: warn if referenced AutoinstallDistribution not found.
-	if w := v.warnIfDistributionMissing(ctx, ap.Namespace, ap.Spec.DistributionRef.Name,
-		field.NewPath("spec", "distributionRef")); w != "" {
-		warnings = append(warnings, w)
+	// Cross-resource: warn if referenced AutoinstallDistribution not found
+	// (Managed mode only; External profiles reference a Cobbler-only tree).
+	if ap.Spec.DistributionRef != nil {
+		if w := v.warnIfDistributionMissing(ctx, ap.Namespace, ap.Spec.DistributionRef.Name,
+			field.NewPath("spec", "distributionRef")); w != "" {
+			warnings = append(warnings, w)
+		}
 	}
 
 	// Cross-resource: warn if any child channel not found.

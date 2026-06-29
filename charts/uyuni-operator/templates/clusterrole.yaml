@@ -18,6 +18,7 @@ rules:
   resources:
   - activationkeys
   - autoinstalldistributions
+  - autoinstallprofiles
   - clmenvironments
   - configurationchannels
   - contentprojects
@@ -42,6 +43,7 @@ rules:
   resources:
   - activationkeys/finalizers
   - autoinstalldistributions/finalizers
+  - autoinstallprofiles/finalizers
   - clmenvironments/finalizers
   - configurationchannels/finalizers
   - contentprojects/finalizers
@@ -60,6 +62,7 @@ rules:
   resources:
   - activationkeys/status
   - autoinstalldistributions/status
+  - autoinstallprofiles/status
   - clmenvironments/status
   - configurationchannels/status
   - contentprojectpromotions/status

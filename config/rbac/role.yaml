@@ -17,10 +17,12 @@ rules:
   resources:
   - activationkeys
   - autoinstalldistributions
+  - autoinstallprofiles
   - clmenvironments
   - configurationchannels
   - contentprojects
   - custominfokeys
+  - imageprofiles
   - organizations
   - repositories
   - softwarechannels
@@ -40,10 +42,12 @@ rules:
   resources:
   - activationkeys/finalizers
   - autoinstalldistributions/finalizers
+  - autoinstallprofiles/finalizers
   - clmenvironments/finalizers
   - configurationchannels/finalizers
   - contentprojects/finalizers
   - custominfokeys/finalizers
+  - imageprofiles/finalizers
   - organizations/finalizers
   - repositories/finalizers
   - softwarechannels/finalizers
@@ -57,11 +61,13 @@ rules:
   resources:
   - activationkeys/status
   - autoinstalldistributions/status
+  - autoinstallprofiles/status
   - clmenvironments/status
   - configurationchannels/status
   - contentprojectpromotions/status
   - contentprojects/status
   - custominfokeys/status
+  - imageprofiles/status
   - organizations/status
   - repositories/status
   - softwarechannels/status
@@ -76,7 +82,7 @@ rules:
 - apiGroups:
   - uyuni.uyuni-project.org
   resources:
-  - autoinstallprofiles
+  - imagestores
   verbs:
   - get
   - list

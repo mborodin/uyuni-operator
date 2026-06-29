@@ -172,6 +172,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.AutoinstallProfileReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AutoinstallProfile")
+		os.Exit(1)
+	}
+
+	if err := (&controller.ImageProfileReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ImageProfile")
+		os.Exit(1)
+	}
+
 	if err := (&controller.CustomInfoKeyReconciler{
 		Client:  mgr.GetClient(),
 		Clients: clientPool,
@@ -237,6 +253,11 @@ func main() {
 
 	if err := (&webhook.AutoinstallDistributionValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "AutoinstallDistributionValidator")
+		os.Exit(1)
+	}
+
+	if err := (&webhook.AutoinstallProfileValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "AutoinstallProfileValidator")
 		os.Exit(1)
 	}
 

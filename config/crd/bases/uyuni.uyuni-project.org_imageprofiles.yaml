@@ -24,6 +24,9 @@ spec:
     - jsonPath: .status.lastBuild.status
       name: LastBuild
       type: string
+    - jsonPath: .status.bootImage
+      name: BootImage
+      type: string
     - jsonPath: .status.lastBuild.completedAt
       name: BuildTime
       type: date
@@ -179,6 +182,14 @@ spec:
               rule: self.type != 'dockerfile' || has(self.storeRef)
           status:
             properties:
+              bootImage:
+                description: |-
+                  BootImage is the saltboot boot image identifier of the last successful
+                  PXE/OS image build (read from the image pillar), e.g.
+                  "BranchServer_MicroOS-0.6.10-4". Reference it from a saltboot formula to
+                  PXE-boot systems with this image. Empty for non-bootable images (e.g.
+                  container images).
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current

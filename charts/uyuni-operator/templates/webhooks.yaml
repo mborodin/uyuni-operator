@@ -88,6 +88,26 @@ webhooks:
       service:
         name: {{ include "uyuni-operator.webhookServiceName" . }}
         namespace: {{ .Release.Namespace }}
+        path: /validate-uyuni-uyuni-project-org-v1alpha1-autoinstallprofile
+    failurePolicy: Fail
+    name: vautoinstallprofile.uyuni.uyuni-project.org
+    rules:
+      - apiGroups:
+          - uyuni.uyuni-project.org
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - autoinstallprofiles
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "uyuni-operator.webhookServiceName" . }}
+        namespace: {{ .Release.Namespace }}
         path: /validate-uyuni-uyuni-project-org-v1alpha1-clmenvironment
     failurePolicy: Fail
     name: vclmenvironment.uyuni.uyuni-project.org

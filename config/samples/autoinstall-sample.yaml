@@ -147,6 +147,30 @@ spec:
     name: pantheon-of-goods
 
 ---
+# 2c. AutoinstallProfile (External / observe-only)
+#     Adopts a Cobbler-managed profile that Uyuni auto-creates for a built
+#     PXE/OS image. The operator NEVER creates, mutates, or deletes it — it only
+#     verifies the profile exists and publishes its tree (distribution) label
+#     (status.distributionLabel) so Systems can boot from it via profileRef.
+#     Only label + organizationRef apply in this mode; distributionRef,
+#     rootPasswordSecretRef, scripts, variables and childChannelRefs are forbidden.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: AutoinstallProfile
+metadata:
+  name: microos-pxe-image
+  namespace: linux-platform
+spec:
+  mode: External
+  # The exact Cobbler profile label Uyuni created for the image, as shown in the
+  # Uyuni autoinstallation profile list.
+  label: microos-16-pxe-image
+  organizationRef:
+    name: pantheon-of-goods
+# A System boots from it exactly like any other profileRef:
+#   spec.autoinstall:
+#     profileRef: { name: microos-pxe-image }
+
+---
 # 3. System using profileRef (links to the AutoinstallProfile CR above)
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: System

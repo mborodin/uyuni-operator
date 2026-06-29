@@ -306,12 +306,15 @@ func (r *ImageProfileReconciler) pollBuild(ctx context.Context, uc uyuni.API, ip
 		ip.Status.LastBuild.Status = "Succeeded"
 		now := metav1.Now()
 		ip.Status.LastBuild.CompletedAt = &now
-		// Try to find the image ID in Uyuni.
+		// Find the built image, record its ID, and capture the saltboot boot
+		// image (for PXE booting via a saltboot formula). The boot data is
+		// exposed only through the image pillar, not the kickstart API.
 		imgs, listErr := uc.ListImagesForProfile(ctx, ip.Spec.Label)
 		if listErr == nil {
 			for _, img := range imgs {
 				if img.Version == ip.Status.LastBuild.Version {
 					ip.Status.LastBuild.BuildID = img.ID
+					ip.Status.BootImage = r.bootImageFromPillar(ctx, uc, img)
 					break
 				}
 			}
@@ -325,6 +328,28 @@ func (r *ImageProfileReconciler) pollBuild(ctx context.Context, uc uyuni.API, ip
 		ip.Status.LastBuild.Status = "Running"
 	}
 	return nil
+}
+
+// bootImageFromPillar reads the image pillar and returns the saltboot boot image
+// identifier (e.g. "BranchServer_MicroOS-0.6.10-4") for a PXE/OS image, or "" if
+// the image has no saltboot boot data (e.g. container images) or the pillar is
+// unavailable.
+func (r *ImageProfileReconciler) bootImageFromPillar(ctx context.Context, uc uyuni.API, img uyuni.ImageInfo) string {
+	pillar, err := uc.GetImagePillar(ctx, img.ID)
+	if err != nil {
+		return ""
+	}
+	bootImages, ok := pillar["boot_images"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	// boot_images is keyed by boot image name; this build's entry is
+	// "<name>-<version>-<revision>".
+	expected := fmt.Sprintf("%s-%s-%d", img.Name, img.Version, img.Revision)
+	if _, ok := bootImages[expected]; ok {
+		return expected
+	}
+	return ""
 }
 
 func (r *ImageProfileReconciler) fail(ctx context.Context, ip *uyuniv1.ImageProfile, reason string, err error) (ctrl.Result, error) {

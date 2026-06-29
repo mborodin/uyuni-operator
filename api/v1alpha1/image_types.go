@@ -133,8 +133,14 @@ type ImageBuildRecord struct {
 }
 
 type ImageProfileStatus struct {
-	UyuniID            int                `json:"uyuniId,omitempty"`
-	LastBuild          *ImageBuildRecord  `json:"lastBuild,omitempty"`
+	UyuniID   int               `json:"uyuniId,omitempty"`
+	LastBuild *ImageBuildRecord `json:"lastBuild,omitempty"`
+	// BootImage is the saltboot boot image identifier of the last successful
+	// PXE/OS image build (read from the image pillar), e.g.
+	// "BranchServer_MicroOS-0.6.10-4". Reference it from a saltboot formula to
+	// PXE-boot systems with this image. Empty for non-bootable images (e.g.
+	// container images).
+	BootImage          string             `json:"bootImage,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
@@ -144,6 +150,7 @@ type ImageProfileStatus struct {
 // +kubebuilder:printcolumn:name="Label",type=string,JSONPath=`.spec.label`
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="LastBuild",type=string,JSONPath=`.status.lastBuild.status`
+// +kubebuilder:printcolumn:name="BootImage",type=string,JSONPath=`.status.bootImage`
 // +kubebuilder:printcolumn:name="BuildTime",type=date,JSONPath=`.status.lastBuild.completedAt`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
 type ImageProfile struct {

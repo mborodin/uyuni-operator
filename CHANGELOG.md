@@ -4,6 +4,21 @@
 
 ### Added
 
+- **External autoinstallation profiles.** `AutoinstallProfile.spec.mode:
+  Managed|External` (default `Managed`). In `External` mode the operator
+  observes an existing Cobbler-managed profile (e.g. one Uyuni auto-creates for
+  a PXE/OS image) — it never creates, mutates, or deletes it — and publishes the
+  observed tree label to `status.distributionLabel` so `System.spec.autoinstall.
+  profileRef` can boot from it. `distributionRef`/`rootPasswordSecretRef` become
+  optional (forbidden in External mode, required in Managed, enforced by CEL).
+  The `AutoinstallProfile` reconciler + validating webhook are now **registered**.
+- **ImageProfile: saltboot boot image.** After a successful PXE/OS-image build,
+  `ImageProfile.status.bootImage` is populated from the image pillar with the
+  saltboot boot image identifier (e.g. `BranchServer_MicroOS-0.6.10-4`) — wire it
+  into a saltboot formula (`System.spec.formulas`) to PXE-boot systems with that
+  image. The `ImageProfile` reconciler is now **registered**. (Uyuni's PXE/OS
+  images boot via saltboot, not classic Cobbler autoinstall profiles, which are
+  not exposed through the kickstart API.)
 - **System: Salt formulas.** `System.spec.formulas` enables Salt formulas on a
   system and supplies their form data — arbitrary nested config matching the
   formula's form (`formula.setFormulasOfServer` / `formula.setSystemFormulaData`).

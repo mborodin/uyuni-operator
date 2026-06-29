@@ -132,15 +132,14 @@ Implementation status (current repo state):
 
 - **API types**: all 19 Kinds above are declared in `api/v1alpha1/`.
 
-- **`cmd/main.go`**: present. Registers **14 reconcilers** (Organization,
+- **`cmd/main.go`**: present. Registers **16 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
-  CustomInfoKey) and **13 webhooks**.
+  AutoinstallProfile, ImageProfile, CustomInfoKey) and **14 webhooks**.
 
-- **Controllers defined but NOT registered in `main.go`**: `AutoinstallProfile`,
-  `ImageProfile`, `ImageBuild`. (`ConfigFile` and `ImageStore` have types but
-  no controller.)
+- **Controllers defined but NOT registered in `main.go`**: `ImageBuild`.
+  (`ConfigFile` and `ImageStore` have types but no controller.)
 
 - **CRDs**: 18 base files under `config/crd/bases/`, all included in
   `config/crd/kustomization.yaml`. ⚠️ Keep this aligned: `main.go` registering

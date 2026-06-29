@@ -1942,6 +1942,10 @@ func (c *Client) ScheduleImageBuild(ctx context.Context, profileLabel, version s
 	return r.ActionID, nil
 }
 
+func (c *Client) GetImagePillar(ctx context.Context, imageID int) (map[string]any, error) {
+	return apiGet[map[string]any](c, fmt.Sprintf("image/getPillar?imageId=%d", imageID))
+}
+
 func (c *Client) ListImagesForProfile(ctx context.Context, profileLabel string) ([]ImageInfo, error) {
 	list, err := apiGet[[]wireImageInfo](c, "image/listImages?profile_label="+url.QueryEscape(profileLabel))
 	if err != nil {

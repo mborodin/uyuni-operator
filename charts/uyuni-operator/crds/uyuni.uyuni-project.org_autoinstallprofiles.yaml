@@ -87,6 +87,19 @@ spec:
                 description: Label is the Cobbler profile label. Immutable after creation.
                 pattern: ^[a-z0-9][a-z0-9._-]*$
                 type: string
+              mode:
+                default: Managed
+                description: |-
+                  Mode selects how the operator manages the Cobbler profile.
+                    Managed:  the operator creates/updates/deletes the profile.
+                    External: the operator only observes an existing Uyuni-created (Cobbler)
+                              profile — it never creates, mutates, or deletes it. Used for
+                              profiles Uyuni auto-creates during PXE/OS-image builds.
+                  Immutable after creation.
+                enum:
+                - Managed
+                - External
+                type: string
               organizationRef:
                 description: |-
                   LocalObjectRef is a name-only reference to a CR in the same namespace.
@@ -179,11 +192,20 @@ spec:
                 - xenfv
                 type: string
             required:
-            - distributionRef
             - label
             - organizationRef
-            - rootPasswordSecretRef
             type: object
+            x-kubernetes-validations:
+            - message: distributionRef is required when mode is Managed
+              rule: "self.mode != 'Managed' || has(self.distributionRef)"
+            - message: rootPasswordSecretRef is required when mode is Managed
+              rule: "self.mode != 'Managed' || has(self.rootPasswordSecretRef)"
+            - message: distributionRef must not be set when mode is External (the tree is Cobbler-only)
+              rule: "self.mode != 'External' || !has(self.distributionRef)"
+            - message: rootPasswordSecretRef must not be set when mode is External
+              rule: "self.mode != 'External' || !has(self.rootPasswordSecretRef)"
+            - message: kickstartContents, scripts, childChannelRefs and variables must not be set when mode is External
+              rule: "self.mode != 'External' || (!has(self.kickstartContents) && (!has(self.scripts) || size(self.scripts) == 0) && (!has(self.childChannelRefs) || size(self.childChannelRefs) == 0) && (!has(self.variables) || size(self.variables) == 0))"
           status:
             properties:
               childChannelLabels:
@@ -255,6 +277,11 @@ spec:
               distributionLabel:
                 description: DistributionLabel is the resolved Cobbler tree label from spec.distributionRef.
                 type: string
+              external:
+                description: |-
+                  External is true when the realized profile is observed (External mode),
+                  not managed by the operator.
+                type: boolean
               observedGeneration:
                 format: int64
                 type: integer

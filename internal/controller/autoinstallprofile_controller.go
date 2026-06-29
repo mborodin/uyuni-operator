@@ -53,6 +53,12 @@ func (r *AutoinstallProfileReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	// External mode: observe an existing Cobbler-managed profile; never create,
+	// mutate, or delete it. Returns before any managed-path Uyuni write.
+	if ap.Spec.Mode == "External" {
+		return r.reconcileExternal(ctx, uc, &ap)
+	}
+
 	// Resolve distribution label from spec.distributionRef.
 	distLabel, waitReason, err := r.resolveDistributionLabel(ctx, &ap)
 	if err != nil {
@@ -76,6 +82,10 @@ func (r *AutoinstallProfileReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Read root password from Secret.
+	if ap.Spec.RootPasswordSecretRef == nil {
+		return r.fail(ctx, &ap, "CreateFailed",
+			fmt.Errorf("rootPasswordSecretRef is required in Managed mode; admission should have rejected"))
+	}
 	rootPass, err := r.readSecret(ctx, ap.Namespace, ap.Spec.RootPasswordSecretRef.Name, ap.Spec.RootPasswordSecretRef.Key)
 	if err != nil {
 		return r.fail(ctx, &ap, "SecretReadFailed", err)
@@ -229,6 +239,37 @@ func (r *AutoinstallProfileReconciler) reconcileScripts(ctx context.Context, uc 
 	return nil
 }
 
+// reconcileExternal observes an existing Cobbler-managed profile (created by
+// Uyuni, e.g. during a PXE/OS-image build). It never creates, mutates, or
+// deletes the profile — it only verifies existence and publishes the observed
+// tree label so Systems can provision against it via profileRef.
+func (r *AutoinstallProfileReconciler) reconcileExternal(ctx context.Context, uc uyuni.API, ap *uyuniv1.AutoinstallProfile) (ctrl.Result, error) {
+	prof, err := uc.GetProfile(ctx, ap.Spec.Label)
+	if uyuni.IsNotFound(err) {
+		setReady(&ap.Status.Conditions, ap.Generation, metav1.ConditionFalse,
+			"WaitingForProfile", fmt.Sprintf("external Cobbler profile %q not present in Uyuni yet", ap.Spec.Label))
+		_ = r.Status().Update(ctx, ap)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	if err != nil {
+		return r.fail(ctx, ap, "GetProfileFailed", err)
+	}
+	if prof.TreeLabel == "" {
+		setReady(&ap.Status.Conditions, ap.Generation, metav1.ConditionFalse,
+			"WaitingForProfile", fmt.Sprintf("external profile %q has no distribution (tree) yet", ap.Spec.Label))
+		_ = r.Status().Update(ctx, ap)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	ap.Status.External = true
+	ap.Status.DistributionLabel = prof.TreeLabel
+	ap.Status.ObservedGeneration = ap.Generation
+	setReady(&ap.Status.Conditions, ap.Generation, metav1.ConditionTrue, "Observed", "")
+	if err := r.Status().Update(ctx, ap); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+}
+
 func (r *AutoinstallProfileReconciler) handleDeletion(ctx context.Context, ap *uyuniv1.AutoinstallProfile) (ctrl.Result, error) {
 	if !containsFinalizer(ap, apFinalizer) {
 		return ctrl.Result{}, nil
@@ -237,7 +278,8 @@ func (r *AutoinstallProfileReconciler) handleDeletion(ctx context.Context, ap *u
 		removeFinalizer(ap, apFinalizer)
 		return ctrl.Result{}, r.Update(ctx, ap)
 	}
-	if ap.Status.DistributionLabel != "" || ap.Status.ContentsHash != "" {
+	// Never delete an externally-managed (Cobbler) profile — observe-only.
+	if ap.Spec.Mode != "External" && (ap.Status.DistributionLabel != "" || ap.Status.ContentsHash != "") {
 		uc, err := r.Clients.ForOrganization(ctx, orgRef(ap.Spec.OrganizationRef), ap.Namespace)
 		if err != nil {
 			return ctrl.Result{}, err
@@ -251,6 +293,9 @@ func (r *AutoinstallProfileReconciler) handleDeletion(ctx context.Context, ap *u
 }
 
 func (r *AutoinstallProfileReconciler) resolveDistributionLabel(ctx context.Context, ap *uyuniv1.AutoinstallProfile) (label, wait string, err error) {
+	if ap.Spec.DistributionRef == nil {
+		return "", "", fmt.Errorf("distributionRef is required in Managed mode; admission should have rejected")
+	}
 	var ad uyuniv1.AutoinstallDistribution
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ap.Namespace, Name: ap.Spec.DistributionRef.Name}, &ad); err != nil {
 		if client.IgnoreNotFound(err) == nil {
@@ -321,7 +366,7 @@ func (r *AutoinstallProfileReconciler) profilesForDistribution(ctx context.Conte
 	}
 	var out []reconcile.Request
 	for _, ap := range list.Items {
-		if ap.Spec.DistributionRef.Name == obj.GetName() {
+		if ap.Spec.DistributionRef != nil && ap.Spec.DistributionRef.Name == obj.GetName() {
 			out = append(out, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: ap.Namespace, Name: ap.Name},
 			})
