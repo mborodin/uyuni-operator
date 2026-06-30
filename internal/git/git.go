@@ -68,18 +68,18 @@ func (g *gitClient) Clone(repoURL, ref, subPath string) (map[string]string, stri
 		return nil, "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	// Fetch remote refs to ensure branches are available
-	if auth != nil {
-		_ = repo.Fetch(&git.FetchOptions{
-			Auth: auth,
-		})
-	}
-
 	// Get working tree
 	w, err := repo.Worktree()
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get worktree: %w", err)
 	}
+
+	// Fetch remote refs to ensure branches are available
+	fetchOpts := &git.FetchOptions{}
+	if auth != nil {
+		fetchOpts.Auth = auth
+	}
+	_ = repo.Fetch(fetchOpts)
 
 	// Checkout the specified ref (branch/tag)
 	if ref != "" {
@@ -109,6 +109,13 @@ func (g *gitClient) Clone(repoURL, ref, subPath string) (map[string]string, stri
 			}
 		}
 	}
+
+	// Pull latest changes to ensure worktree reflects remote state
+	pullOpts := &git.PullOptions{RecurseSubmodules: git.NoRecurseSubmodules}
+	if auth != nil {
+		pullOpts.Auth = auth
+	}
+	_ = w.Pull(pullOpts)
 
 	// Get current commit hash
 	head, err := repo.Head()
