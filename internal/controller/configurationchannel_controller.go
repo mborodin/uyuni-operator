@@ -125,6 +125,11 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 			setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionTrue, "RepoSynced",
 				fmt.Sprintf("Synced %d files, deleted %d files", len(files), deletedCount))
 
+			// Persist status to cluster
+			if err := r.Status().Update(ctx, &cc); err != nil {
+				return ctrl.Result{}, err
+			}
+
 			// Clear sync-now annotation if present
 			if cc.Annotations != nil && cc.Annotations["sync-now"] == "true" {
 				delete(cc.Annotations, "sync-now")
