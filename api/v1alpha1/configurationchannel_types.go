@@ -69,6 +69,9 @@ type ConfigurationChannelStatus struct {
 
 	// Hash of repository content (to detect changes between syncs)
 	RepositoryHash string `json:"repositoryHash,omitempty"`
+
+	// List of file paths synced in the last successful sync
+	SyncedFiles []string `json:"syncedFiles,omitempty"`
 }
 
 // +kubebuilder:object:root=true

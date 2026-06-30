@@ -87,6 +87,19 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}
 
+			// Delete files that were synced before but don't exist now
+			deletedCount := 0
+			for _, oldFile := range cc.Status.SyncedFiles {
+				if _, exists := files[oldFile]; !exists {
+					if delErr := uc.DeleteConfigFile(ctx, cc.Spec.ID, oldFile); delErr != nil {
+						// Log but don't fail - continue with other deletions
+						fmt.Printf("Warning: failed to delete file %s: %v\n", oldFile, delErr)
+					} else {
+						deletedCount++
+					}
+				}
+			}
+
 			// Upload files to Uyuni
 			if len(files) > 0 {
 				uploadErr := r.uploadFilesToUyuni(ctx, uc, &cc, files)
@@ -98,13 +111,19 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 				}
 			}
 
-			// Update sync status
+			// Update sync status with new synced files list
+			newSyncedFiles := make([]string, 0, len(files))
+			for filePath := range files {
+				newSyncedFiles = append(newSyncedFiles, filePath)
+			}
+			cc.Status.SyncedFiles = newSyncedFiles
+
 			cc.Status.SyncStatus = "Synced"
 			cc.Status.LastSyncTime = &metav1.Time{Time: time.Now()}
 			cc.Status.SyncedFileCount = len(files)
 			cc.Status.RepositoryHash = repoHash
 			setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionTrue, "RepoSynced",
-				fmt.Sprintf("Synced %d files from repository", len(files)))
+				fmt.Sprintf("Synced %d files, deleted %d files", len(files), deletedCount))
 
 			// Clear sync-now annotation if present
 			if cc.Annotations != nil && cc.Annotations["sync-now"] == "true" {
