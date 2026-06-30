@@ -1509,8 +1509,8 @@ func (c *Client) CreateOrUpdateConfigFile(ctx context.Context, channelLabel stri
 
 func (c *Client) DeleteConfigFile(ctx context.Context, channelLabel, path string) error {
 	_, err := apiPost[any](c, "configchannel/deleteFiles", map[string]any{
-		"label":     channelLabel,
-		"filenames": []string{path},
+		"label": channelLabel,
+		"paths": []string{path},
 	})
 	return asNotFound(err)
 }
