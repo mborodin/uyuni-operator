@@ -2,3 +2,4 @@ bin
 .claude
 test*.yaml
 pantheon*.yaml
+.idea
