@@ -86,8 +86,12 @@ spec:
                   Defaults to the Uyuni server's configured hostname when empty.
                 type: string
               label:
-                description: Label is the Cobbler profile label. Immutable after creation.
-                pattern: ^[a-z0-9][a-z0-9._-]*$
+                description: |-
+                  Label is the Cobbler profile label. Immutable after creation. In Managed
+                  mode it must be a clean Cobbler label (lowercase alnum and ._-, enforced by
+                  the CEL rule). In External mode it is whatever Uyuni assigned to the
+                  auto-created profile (may contain uppercase, ':' etc.), so no pattern is
+                  imposed.
                 type: string
               mode:
                 default: Managed

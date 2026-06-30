@@ -105,10 +105,14 @@ type ProfileScriptStatus struct {
 // +kubebuilder:validation:XValidation:rule="self.mode != 'External' || !has(self.distributionRef)",message="distributionRef must not be set when mode is External (the tree is Cobbler-only)"
 // +kubebuilder:validation:XValidation:rule="self.mode != 'External' || !has(self.rootPasswordSecretRef)",message="rootPasswordSecretRef must not be set when mode is External"
 // +kubebuilder:validation:XValidation:rule="self.mode != 'External' || (!has(self.kickstartContents) && (!has(self.scripts) || size(self.scripts) == 0) && (!has(self.childChannelRefs) || size(self.childChannelRefs) == 0) && (!has(self.variables) || size(self.variables) == 0))",message="kickstartContents, scripts, childChannelRefs and variables must not be set when mode is External"
+// +kubebuilder:validation:XValidation:rule="self.mode != 'Managed' || self.label.matches('^[a-z0-9][a-z0-9._-]*$')",message="label must match ^[a-z0-9][a-z0-9._-]*$ in Managed mode"
 type AutoinstallProfileSpec struct {
-	// Label is the Cobbler profile label. Immutable after creation.
+	// Label is the Cobbler profile label. Immutable after creation. In Managed
+	// mode it must be a clean Cobbler label (lowercase alnum and ._-, enforced
+	// by the CEL rule above). In External mode it is whatever Uyuni assigned to
+	// the auto-created profile (may contain uppercase, ':' etc.), so no pattern
+	// is imposed.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9._-]*$`
 	Label string `json:"label"`
 
 	// Mode selects how the operator manages the Cobbler profile.
