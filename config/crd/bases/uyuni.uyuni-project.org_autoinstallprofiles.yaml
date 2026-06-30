@@ -48,7 +48,8 @@ spec:
           spec:
             properties:
               childChannelRefs:
-                description: ChildChannelRefs lists software channels to subscribe the system to during installation.
+                description: ChildChannelRefs lists software channels to subscribe
+                  the system to during installation.
                 items:
                   description: |-
                     LocalObjectRef is a name-only reference to a CR in the same namespace.
@@ -65,7 +66,8 @@ spec:
               distributionRef:
                 description: |-
                   DistributionRef references the AutoinstallDistribution providing the OS tree.
-                  Immutable after creation.
+                  Required and immutable in Managed mode; must be empty in External mode
+                  (the tree is Cobbler-only and read from the observed profile).
                 properties:
                   name:
                     type: string
@@ -113,12 +115,14 @@ spec:
                 - name
                 type: object
               preserveKsFile:
-                description: 'PreserveKsFile: if true, saves the kickstart file to /root/ks.cfg after install.'
+                description: 'PreserveKsFile: if true, saves the kickstart file to
+                  /root/ks.cfg after install.'
                 type: boolean
               rootPasswordSecretRef:
                 description: |-
                   RootPasswordSecretRef references a Secret in the same namespace containing the
-                  root account password set during installation.
+                  root account password set during installation. Required in Managed mode;
+                  must be empty in External mode.
                 properties:
                   key:
                     type: string
@@ -134,29 +138,35 @@ spec:
                   Each script's Name field is the reconcile key.
                   Mutually exclusive with KickstartContents — ignored when KickstartContents is set.
                 items:
-                  description: AutoinstallScriptSpec describes a pre or post installation script added to the profile.
+                  description: AutoinstallScriptSpec describes a pre or post installation
+                    script added to the profile.
                   properties:
                     chroot:
-                      description: 'Chroot: if true, post scripts run chrooted to the installed system.'
+                      description: 'Chroot: if true, post scripts run chrooted to
+                        the installed system.'
                       type: boolean
                     contents:
                       description: Contents is the full script body.
                       type: string
                     errorOnFail:
-                      description: 'ErrorOnFail: if true, installation aborts if the script exits non-zero.'
+                      description: 'ErrorOnFail: if true, installation aborts if the
+                        script exits non-zero.'
                       type: boolean
                     interpreter:
                       default: /bin/bash
                       description: Interpreter is the script interpreter path.
                       type: string
                     name:
-                      description: Name uniquely identifies this script within the profile. Used as reconcile key.
+                      description: Name uniquely identifies this script within the
+                        profile. Used as reconcile key.
                       type: string
                     template:
-                      description: 'Template: if true, the script is rendered as a Cobbler template before execution.'
+                      description: 'Template: if true, the script is rendered as a
+                        Cobbler template before execution.'
                       type: boolean
                     type:
-                      description: 'Type controls when the script runs: pre (before install) or post (after install).'
+                      description: 'Type controls when the script runs: pre (before
+                        install) or post (after install).'
                       enum:
                       - pre
                       - post
@@ -169,7 +179,8 @@ spec:
                 type: array
               updateType:
                 default: all
-                description: UpdateType controls whether packages are updated during installation.
+                description: UpdateType controls whether packages are updated during
+                  installation.
                 enum:
                 - all
                 - none
@@ -183,7 +194,8 @@ spec:
                 type: object
               virtualizationType:
                 default: none
-                description: VirtualizationType controls Cobbler's virtualization support for this profile.
+                description: VirtualizationType controls Cobbler's virtualization
+                  support for this profile.
                 enum:
                 - none
                 - qemu
@@ -197,19 +209,24 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: distributionRef is required when mode is Managed
-              rule: "self.mode != 'Managed' || has(self.distributionRef)"
+              rule: self.mode != 'Managed' || has(self.distributionRef)
             - message: rootPasswordSecretRef is required when mode is Managed
-              rule: "self.mode != 'Managed' || has(self.rootPasswordSecretRef)"
-            - message: distributionRef must not be set when mode is External (the tree is Cobbler-only)
-              rule: "self.mode != 'External' || !has(self.distributionRef)"
+              rule: self.mode != 'Managed' || has(self.rootPasswordSecretRef)
+            - message: distributionRef must not be set when mode is External (the
+                tree is Cobbler-only)
+              rule: self.mode != 'External' || !has(self.distributionRef)
             - message: rootPasswordSecretRef must not be set when mode is External
-              rule: "self.mode != 'External' || !has(self.rootPasswordSecretRef)"
-            - message: kickstartContents, scripts, childChannelRefs and variables must not be set when mode is External
-              rule: "self.mode != 'External' || (!has(self.kickstartContents) && (!has(self.scripts) || size(self.scripts) == 0) && (!has(self.childChannelRefs) || size(self.childChannelRefs) == 0) && (!has(self.variables) || size(self.variables) == 0))"
+              rule: self.mode != 'External' || !has(self.rootPasswordSecretRef)
+            - message: kickstartContents, scripts, childChannelRefs and variables
+                must not be set when mode is External
+              rule: self.mode != 'External' || (!has(self.kickstartContents) && (!has(self.scripts)
+                || size(self.scripts) == 0) && (!has(self.childChannelRefs) || size(self.childChannelRefs)
+                == 0) && (!has(self.variables) || size(self.variables) == 0))
           status:
             properties:
               childChannelLabels:
-                description: ChildChannelLabels is the realized list of child channel labels.
+                description: ChildChannelLabels is the realized list of child channel
+                  labels.
                 items:
                   type: string
                 type: array
@@ -275,7 +292,10 @@ spec:
                   Used to detect changes and avoid re-importing an identical file.
                 type: string
               distributionLabel:
-                description: DistributionLabel is the resolved Cobbler tree label from spec.distributionRef.
+                description: |-
+                  DistributionLabel is the resolved Cobbler tree label. In Managed mode it is
+                  resolved from spec.distributionRef; in External mode it is the observed
+                  profile's tree_label.
                 type: string
               external:
                 description: |-
@@ -286,15 +306,19 @@ spec:
                 format: int64
                 type: integer
               scriptIds:
-                description: ScriptIDs tracks Uyuni-assigned script IDs keyed by script Name.
+                description: ScriptIDs tracks Uyuni-assigned script IDs keyed by script
+                  Name.
                 items:
-                  description: ProfileScriptStatus records the Uyuni-assigned ID for a reconciled script.
+                  description: ProfileScriptStatus records the Uyuni-assigned ID for
+                    a reconciled script.
                   properties:
                     name:
-                      description: Name matches AutoinstallScriptSpec.Name and is used as the reconcile key.
+                      description: Name matches AutoinstallScriptSpec.Name and is
+                        used as the reconcile key.
                       type: string
                     uyuniId:
-                      description: UyuniID is the Uyuni-assigned script ID used to update or remove the script.
+                      description: UyuniID is the Uyuni-assigned script ID used to
+                        update or remove the script.
                       type: integer
                   required:
                   - name

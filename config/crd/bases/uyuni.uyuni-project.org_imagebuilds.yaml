@@ -4,23 +4,26 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.5
-  name: custominfokeys.uyuni.uyuni-project.org
+  name: imagebuilds.uyuni.uyuni-project.org
 spec:
   group: uyuni.uyuni-project.org
   names:
-    kind: CustomInfoKey
-    listKind: CustomInfoKeyList
-    plural: custominfokeys
-    singular: custominfokey
+    kind: ImageBuild
+    listKind: ImageBuildList
+    plural: imagebuilds
+    singular: imagebuild
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.label
-      name: Label
+    - jsonPath: .spec.profileRef.name
+      name: Profile
       type: string
-    - jsonPath: .status.uyuniId
-      name: UyuniID
-      type: integer
+    - jsonPath: .status.version
+      name: Version
+      type: string
+    - jsonPath: .status.buildStatus
+      name: Status
+      type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: Ready
       type: string
@@ -46,37 +49,51 @@ spec:
           metadata:
             type: object
           spec:
-            description: |-
-              CustomInfoKeySpec defines an organization-level custom system info key in
-              Uyuni (system.custominfo). Systems reference these keys via
-              System.spec.customInfoValues and supply per-system values.
             properties:
-              description:
-                description: Description is a human-readable description of the key.
-                type: string
-              label:
-                description: Label is the custom info key label in Uyuni. Immutable
-                  after creation.
-                pattern: ^[a-zA-Z0-9._-]+$
-                type: string
-              organizationRef:
-                description: |-
-                  LocalObjectRef is a name-only reference to a CR in the same namespace.
-                  We deliberately don't include namespace or kind: cross-namespace refs
-                  complicate RBAC and aren't needed in our model, and each ref's kind is
-                  implied by the field where it appears.
+              buildHostRef:
+                description: BuildHostRef overrides the ImageProfile's buildHostRef
+                  for this specific build.
                 properties:
                   name:
                     type: string
                 required:
                 - name
                 type: object
+              earliest:
+                description: Earliest is the optional earliest time at which Uyuni
+                  will start the build action.
+                format: date-time
+                type: string
+              profileRef:
+                description: ProfileRef references the ImageProfile CR. Immutable
+                  after the first build is scheduled.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              version:
+                description: |-
+                  Version is the image tag to apply to this build.
+                  Auto-generated as "YYYYMMDD-HHMM" when empty.
+                type: string
             required:
-            - label
-            - organizationRef
+            - profileRef
             type: object
           status:
             properties:
+              actionId:
+                description: ActionID is the Uyuni action ID returned by ScheduleImageBuild.
+                type: integer
+              buildStatus:
+                description: BuildStatus is the current build state.
+                enum:
+                - Scheduled
+                - Running
+                - Succeeded
+                - Failed
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -133,12 +150,17 @@ spec:
                   - type
                   type: object
                 type: array
+              imageId:
+                description: ImageID is the Uyuni image record ID after the build
+                  completes successfully.
+                type: integer
               observedGeneration:
                 format: int64
                 type: integer
-              uyuniId:
-                description: UyuniID is the custom info key ID assigned by Uyuni.
-                type: integer
+              version:
+                description: Version records the version string actually used when
+                  the build was scheduled.
+                type: string
             type: object
         type: object
     served: true

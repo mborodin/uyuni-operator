@@ -125,10 +125,9 @@ spec:
                 properties:
                   contentProjectRef:
                     description: |-
-                      LocalObjectRef is a name-only reference to a CR in the same namespace.
-                      We deliberately don't include namespace or kind: cross-namespace refs
-                      complicate RBAC and aren't needed in our model, and each ref's kind is
-                      implied by the field where it appears.
+                      ContentProjectRef is optional. When its name is empty, no content
+                      project channel is attached and resolution is skipped (the resource
+                      reconciles without a project-derived channel) rather than erroring.
                     properties:
                       name:
                         type: string
@@ -136,6 +135,8 @@ spec:
                     - name
                     type: object
                   environment:
+                    description: Environment is optional; required only when ContentProjectRef
+                      is set.
                     pattern: ^[a-z0-9-]+$
                     type: string
                   sourceChannelLabel:
@@ -186,10 +187,9 @@ spec:
                   properties:
                     contentProjectRef:
                       description: |-
-                        LocalObjectRef is a name-only reference to a CR in the same namespace.
-                        We deliberately don't include namespace or kind: cross-namespace refs
-                        complicate RBAC and aren't needed in our model, and each ref's kind is
-                        implied by the field where it appears.
+                        ContentProjectRef is optional. When its name is empty, no content
+                        project channel is attached and resolution is skipped (the resource
+                        reconciles without a project-derived channel) rather than erroring.
                       properties:
                         name:
                           type: string
@@ -197,6 +197,8 @@ spec:
                       - name
                       type: object
                     environment:
+                      description: Environment is optional; required only when ContentProjectRef
+                        is set.
                       pattern: ^[a-z0-9-]+$
                       type: string
                     sourceChannelLabel:
@@ -228,7 +230,8 @@ spec:
                 type: array
               contactMethod:
                 default: default
-                description: ContactMethod controls how the Uyuni server communicates with this system.
+                description: ContactMethod controls how the Uyuni server communicates
+                  with this system.
                 enum:
                 - default
                 - ssh-push
@@ -240,8 +243,8 @@ spec:
                   the system. Each entry references a CustomInfoKey CR (which guarantees the
                   key exists in Uyuni before a value is set) and supplies the value.
                 items:
-                  description: CustomInfoValue assigns a value to an organization custom
-                    info key.
+                  description: CustomInfoValue assigns a value to an organization
+                    custom info key.
                   properties:
                     keyRef:
                       description: KeyRef references a CustomInfoKey CR in the same
@@ -258,6 +261,7 @@ spec:
                       type: string
                   required:
                   - keyRef
+                  - value
                   type: object
                 type: array
               deletionPolicy:
@@ -360,11 +364,17 @@ spec:
                 - name
                 type: object
               type:
-                description: SystemType classifies the system role. Optional; omit for generic managed systems.
-                enum:
-                - pos
-                - storehub
-                - branchserver
+                allOf:
+                - enum:
+                  - pos
+                  - storehub
+                  - branchserver
+                - enum:
+                  - pos
+                  - storehub
+                  - branchserver
+                description: SystemType classifies the system role. Optional; omit
+                  for generic managed systems.
                 type: string
             required:
             - minionId
@@ -382,15 +392,18 @@ spec:
                 items:
                   type: string
                 type: array
-              proxyActionId:
-                description: ProxyActionID is the Uyuni action ID of the last changeProxy
-                  action.
+              autoinstallActionId:
+                description: AutoinstallActionID is the Uyuni action ID of the last
+                  scheduled provisioning.
                 type: integer
-              proxyServerId:
-                description: |-
-                  ProxyServerID is the Uyuni server ID of the proxy the system was last
-                  connected through (0 = direct to server).
-                type: integer
+              autoinstallStatus:
+                description: AutoinstallStatus reflects the Uyuni-side outcome of
+                  the last provisioning action.
+                enum:
+                - Scheduled
+                - Completed
+                - Failed
+                type: string
               baseChannelLabel:
                 type: string
               childChannelLabels:
@@ -453,6 +466,20 @@ spec:
                   - type
                   type: object
                 type: array
+              configChannelLabels:
+                description: |-
+                  ConfigChannelLabels is the realized ordered config channel subscription
+                  (direct refs first, then group-sourced). Used to detect and apply drift.
+                items:
+                  type: string
+                type: array
+              groupNames:
+                description: |-
+                  GroupNames is the set of Uyuni group names the system was last placed in.
+                  Used to compute removals on next reconcile.
+                items:
+                  type: string
+                type: array
               lastCheckinTime:
                 format: date-time
                 type: string
@@ -463,9 +490,24 @@ spec:
                 enum:
                 - Pending
                 - PreProvisioned
+                - Reprovisioning
                 - Registered
                 - Reconciled
                 type: string
+              phaseTransitionTime:
+                description: PhaseTransitionTime records when Phase last changed.
+                  Used to enforce AdoptionTimeout.
+                format: date-time
+                type: string
+              proxyActionId:
+                description: ProxyActionID is the Uyuni action ID of the last changeProxy
+                  action.
+                type: integer
+              proxyServerId:
+                description: |-
+                  ProxyServerID is the Uyuni server ID of the proxy the system was last
+                  connected through (0 = direct to server).
+                type: integer
               uyuniServerId:
                 type: integer
             type: object

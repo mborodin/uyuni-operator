@@ -194,6 +194,11 @@ spec:
               syncedFileCount:
                 description: Number of configuration files currently synced from repository
                 type: integer
+              syncedFiles:
+                description: List of file paths synced in the last successful sync
+                items:
+                  type: string
+                type: array
               uyuniId:
                 type: integer
             type: object

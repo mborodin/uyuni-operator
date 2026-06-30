@@ -74,6 +74,9 @@ spec:
               description:
                 type: string
               memberRefs:
+                description: |-
+                  Deprecated: use System.spec.groupRefs instead. System-side declaration is
+                  the authoritative source; this field is retained for backward compatibility.
                 items:
                   description: |-
                     LocalObjectRef is a name-only reference to a CR in the same namespace.
