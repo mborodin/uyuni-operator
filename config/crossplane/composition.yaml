@@ -22,7 +22,7 @@
 # Assumptions (matches the standard BrandRegionClaim structure):
 #   - 2 repositories  (indices 0, 1)
 #   - 2 softwareChannels (indices 0=base, 1=updates/child)
-#   - 1 configChannel  (index 0)
+#   - 3 configChannels  (indices 0, 1, 2)
 #   - 3 systemGroups   (indices 0, 1, 2)
 #   - 3 activationKeys (indices 0, 1, 2)
 #   - 1 contentProject (index 0) with 3 environments (dev, test, prod)
@@ -452,6 +452,206 @@ spec:
         - type: FromCompositeFieldPath
           fromFieldPath: spec.configChannels[0].spec.description
           toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.url
+          toFieldPath: spec.forProvider.manifest.spec.url
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.repositoryType
+          toFieldPath: spec.forProvider.manifest.spec.repositoryType
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.autoSync
+          toFieldPath: spec.forProvider.manifest.spec.autoSync
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.repositoryRef
+          toFieldPath: spec.forProvider.manifest.spec.repositoryRef
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.repositoryPath
+          toFieldPath: spec.forProvider.manifest.spec.repositoryPath
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[0].spec.syncSchedule
+          toFieldPath: spec.forProvider.manifest.spec.syncSchedule
+          policy:
+            fromFieldPath: Optional
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 7b. ConfigurationChannel 1
+    #     Named: {composite.name}-{spec.configChannels[1].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: configchannel-1
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ConfigurationChannel
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.deletionPolicy
+          toFieldPath: spec.deletionPolicy
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.configChannels[1].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.cluster
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.id
+          toFieldPath: spec.forProvider.manifest.spec.id
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.type
+          toFieldPath: spec.forProvider.manifest.spec.type
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.url
+          toFieldPath: spec.forProvider.manifest.spec.url
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.repositoryType
+          toFieldPath: spec.forProvider.manifest.spec.repositoryType
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.autoSync
+          toFieldPath: spec.forProvider.manifest.spec.autoSync
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.repositoryRef
+          toFieldPath: spec.forProvider.manifest.spec.repositoryRef
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.repositoryPath
+          toFieldPath: spec.forProvider.manifest.spec.repositoryPath
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[1].spec.syncSchedule
+          toFieldPath: spec.forProvider.manifest.spec.syncSchedule
+          policy:
+            fromFieldPath: Optional
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 7c. ConfigurationChannel 2
+    #     Named: {composite.name}-{spec.configChannels[2].name}
+    # ─────────────────────────────────────────────────────────────────────────────
+    - name: configchannel-2
+      base:
+        apiVersion: kubernetes.crossplane.io/v1alpha2
+        kind: Object
+        spec:
+          providerConfigRef:
+            name: kubernetes-provider
+          forProvider:
+            manifest:
+              apiVersion: uyuni.uyuni-project.org/v1alpha1
+              kind: ConfigurationChannel
+              metadata:
+                namespace: default
+              spec: {}
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.deletionPolicy
+          toFieldPath: spec.deletionPolicy
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: metadata.name
+              - fromFieldPath: spec.configChannels[2].name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.manifest.metadata.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+          toFieldPath: spec.forProvider.manifest.metadata.namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.cluster
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.manifest.spec.organizationRef
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.id
+          toFieldPath: spec.forProvider.manifest.spec.id
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.name
+          toFieldPath: spec.forProvider.manifest.spec.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.type
+          toFieldPath: spec.forProvider.manifest.spec.type
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.description
+          toFieldPath: spec.forProvider.manifest.spec.description
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.url
+          toFieldPath: spec.forProvider.manifest.spec.url
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.repositoryType
+          toFieldPath: spec.forProvider.manifest.spec.repositoryType
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.autoSync
+          toFieldPath: spec.forProvider.manifest.spec.autoSync
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.repositoryRef
+          toFieldPath: spec.forProvider.manifest.spec.repositoryRef
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.repositoryPath
+          toFieldPath: spec.forProvider.manifest.spec.repositoryPath
+          policy:
+            fromFieldPath: Optional
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.configChannels[2].spec.syncSchedule
+          toFieldPath: spec.forProvider.manifest.spec.syncSchedule
           policy:
             fromFieldPath: Optional
 
