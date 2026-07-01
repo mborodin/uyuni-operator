@@ -200,12 +200,12 @@ func (r *SystemGroupReconciler) resolveMembers(ctx context.Context, uc uyuni.API
 
 func (r *SystemGroupReconciler) resolveConfigChannels(ctx context.Context, sg *uyuniv1.SystemGroup) (labels []string, wait string, err error) {
 	for _, ref := range sg.Spec.ConfigChannelRefs {
-		var cc uyuniv1.ConfigurationChannel
-		if err := r.Get(ctx, types.NamespacedName{Namespace: sg.Namespace, Name: ref.Name}, &cc); err != nil {
-			if client.IgnoreNotFound(err) == nil {
-				return nil, fmt.Sprintf("ConfigurationChannel %q not found", ref.Name), nil
-			}
+		cc, err := r.findConfigChannel(ctx, sg.Namespace, ref.Name)
+		if err != nil {
 			return nil, "", err
+		}
+		if cc == nil {
+			return nil, fmt.Sprintf("ConfigurationChannel %q not found", ref.Name), nil
 		}
 		if cc.Status.UyuniID == 0 {
 			return nil, fmt.Sprintf("ConfigurationChannel %q not yet realized", ref.Name), nil
@@ -213,6 +213,29 @@ func (r *SystemGroupReconciler) resolveConfigChannels(ctx context.Context, sg *u
 		labels = append(labels, cc.Spec.ID)
 	}
 	return labels, "", nil
+}
+
+// findConfigChannel looks up a ConfigurationChannel by CR name first, then by spec.id.
+// This allows configChannelRefs to reference channels either by their Kubernetes CR name
+// or by their Uyuni channel ID, which is useful for cross-XR references.
+func (r *SystemGroupReconciler) findConfigChannel(ctx context.Context, namespace, nameOrID string) (*uyuniv1.ConfigurationChannel, error) {
+	var cc uyuniv1.ConfigurationChannel
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: nameOrID}, &cc); err == nil {
+		return &cc, nil
+	} else if client.IgnoreNotFound(err) != nil {
+		return nil, err
+	}
+	// Not found by CR name — fall back to matching by spec.id.
+	var list uyuniv1.ConfigurationChannelList
+	if err := r.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	for i := range list.Items {
+		if list.Items[i].Spec.ID == nameOrID {
+			return &list.Items[i], nil
+		}
+	}
+	return nil, nil
 }
 
 func (r *SystemGroupReconciler) fail(ctx context.Context, sg *uyuniv1.SystemGroup, reason string, err error) (ctrl.Result, error) {
@@ -251,6 +274,12 @@ func (r *SystemGroupReconciler) groupsForSystem(ctx context.Context, obj client.
 }
 
 func (r *SystemGroupReconciler) groupsForConfigChannel(ctx context.Context, obj client.Object) []reconcile.Request {
+	crName := obj.GetName()
+	var specID string
+	if cc, ok := obj.(*uyuniv1.ConfigurationChannel); ok {
+		specID = cc.Spec.ID
+	}
+
 	var list uyuniv1.SystemGroupList
 	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
 		return nil
@@ -258,7 +287,7 @@ func (r *SystemGroupReconciler) groupsForConfigChannel(ctx context.Context, obj 
 	var out []reconcile.Request
 	for _, sg := range list.Items {
 		for _, ref := range sg.Spec.ConfigChannelRefs {
-			if ref.Name == obj.GetName() {
+			if ref.Name == crName || (specID != "" && ref.Name == specID) {
 				out = append(out, reconcile.Request{
 					NamespacedName: types.NamespacedName{Namespace: sg.Namespace, Name: sg.Name},
 				})
