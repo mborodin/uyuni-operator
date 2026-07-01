@@ -50,6 +50,27 @@ spec:
             type: object
           spec:
             properties:
+              auth:
+                description: |-
+                  Auth injects username/password Basic Auth into the repository URL (URL)
+                  at reconcile time. Credentials are read from the named Secret and never stored in status.
+                properties:
+                  name:
+                    description: Name is the Secret in the same namespace.
+                    type: string
+                  passwordKey:
+                    default: password
+                    description: PasswordKey is the key for the password value. Defaults
+                      to "password".
+                    type: string
+                  usernameKey:
+                    default: username
+                    description: UsernameKey is the key for the username value. Defaults
+                      to "username".
+                    type: string
+                required:
+                - name
+                type: object
               autoSync:
                 default: true
                 description: Whether to automatically sync files from the repository
@@ -194,6 +215,11 @@ spec:
               syncedFileCount:
                 description: Number of configuration files currently synced from repository
                 type: integer
+              syncedFiles:
+                description: List of file paths synced in the last successful sync
+                items:
+                  type: string
+                type: array
               uyuniId:
                 type: integer
             type: object

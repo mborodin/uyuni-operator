@@ -4,11 +4,14 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -25,6 +28,7 @@ type ConfigurationChannelReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=configurationchannels,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=configurationchannels/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=configurationchannels/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cc uyuniv1.ConfigurationChannel
@@ -79,7 +83,7 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 	// Sync repository files if configured
 	if cc.Spec.AutoSync != nil && *cc.Spec.AutoSync && cc.Spec.URL != "" {
 		if r.shouldSync(&cc) {
-			files, repoHash, syncErr := r.syncRepositoryFiles(ctx, &cc)
+			files, repoHash, syncErr := r.syncRepositoryFiles(ctx, r.Client, &cc)
 			if syncErr != nil {
 				setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionFalse, "RepoSyncFailed", syncErr.Error())
 				cc.Status.SyncStatus = "Failed"
@@ -239,9 +243,15 @@ func parseSyncInterval(schedule string) time.Duration {
 	return 6 * time.Hour
 }
 
-func (r *ConfigurationChannelReconciler) syncRepositoryFiles(ctx context.Context, cc *uyuniv1.ConfigurationChannel) (map[string]string, string, error) {
+func (r *ConfigurationChannelReconciler) syncRepositoryFiles(ctx context.Context, c client.Client, cc *uyuniv1.ConfigurationChannel) (map[string]string, string, error) {
 	if cc.Spec.URL == "" {
 		return nil, "", fmt.Errorf("repository URL is required for sync")
+	}
+
+	// Build the repository URL, optionally injecting Basic Auth credentials.
+	repoURL, err := r.buildAuthenticatedURL(ctx, c, cc)
+	if err != nil {
+		return nil, "", fmt.Errorf("building authenticated URL: %w", err)
 	}
 
 	gitClient := git.New()
@@ -256,7 +266,7 @@ func (r *ConfigurationChannelReconciler) syncRepositoryFiles(ctx context.Context
 		ref = "main" // default to main branch
 	}
 
-	files, hash, err := gitClient.Clone(cc.Spec.URL, ref, subPath)
+	files, hash, err := gitClient.Clone(repoURL, ref, subPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to sync repository: %w", err)
 	}
@@ -304,6 +314,40 @@ func sortedMapKeys(m map[string]string) []string {
 		}
 	}
 	return keys
+}
+
+// buildAuthenticatedURL constructs the repository URL from spec.url,
+// then optionally injects Basic Auth credentials from spec.auth.
+func (r *ConfigurationChannelReconciler) buildAuthenticatedURL(ctx context.Context, c client.Client, cc *uyuniv1.ConfigurationChannel) (string, error) {
+	raw := cc.Spec.URL
+	if cc.Spec.Auth == nil {
+		return raw, nil
+	}
+	var secret corev1.Secret
+	if err := c.Get(ctx, types.NamespacedName{Namespace: cc.Namespace, Name: cc.Spec.Auth.Name}, &secret); err != nil {
+		return "", fmt.Errorf("reading auth secret %q: %w", cc.Spec.Auth.Name, err)
+	}
+	usernameKey := cc.Spec.Auth.UsernameKey
+	if usernameKey == "" {
+		usernameKey = "username"
+	}
+	passwordKey := cc.Spec.Auth.PasswordKey
+	if passwordKey == "" {
+		passwordKey = "password"
+	}
+	username := string(secret.Data[usernameKey])
+	password := string(secret.Data[passwordKey])
+	return ccInjectBasicAuth(raw, username, password)
+}
+
+// ccInjectBasicAuth injects username:password into the URL's authority component.
+func ccInjectBasicAuth(rawURL, username, password string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid source URL %q: %w", rawURL, err)
+	}
+	u.User = url.UserPassword(username, password)
+	return u.String(), nil
 }
 
 func (r *ConfigurationChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {

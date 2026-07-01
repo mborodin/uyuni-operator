@@ -46,6 +46,11 @@ type ConfigurationChannelSpec struct {
 	// Examples: "salt/baseline", "configs", "files"
 	RepositoryPath string `json:"repositoryPath,omitempty"`
 
+	// Auth injects username/password Basic Auth into the repository URL (URL)
+	// at reconcile time. Credentials are read from the named Secret and never stored in status.
+	// +optional
+	Auth *BasicAuthRef `json:"auth,omitempty"`
+
 	// +kubebuilder:validation:Pattern=`^(@(hourly|daily|weekly)|every \d+[mh]|0 .* .* .* .*)?$`
 	// Cron schedule for repository syncs. If empty, syncs only on reconciliation.
 	// Examples: "0 */6 * * *" (every 6 hours), "@daily" (daily), "every 2h" (every 2 hours)
