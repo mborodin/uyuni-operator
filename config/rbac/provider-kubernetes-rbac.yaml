@@ -45,6 +45,9 @@ rules:
   - clmenvironments
   - clmenvironments/status
   - clmenvironments/finalizers
+  - systems
+  - systems/status
+  - systems/finalizers
   verbs:
   - create
   - delete

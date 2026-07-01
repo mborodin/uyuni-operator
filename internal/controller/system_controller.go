@@ -358,6 +358,28 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		// until the minion finishes registering before issuing the call, to
 		// avoid spamming Uyuni with one doomed action per reconcile.
 		if current.BaseEntitlement == "bootstrap_entitled" {
+			// Group membership via server ID works before the minion completes its
+			// first registration, so assign groups now rather than waiting.
+			if len(sys.Spec.GroupRefs) > 0 {
+				desiredGroups, groupWait, err := r.resolveGroupMembership(ctx, sys)
+				if err != nil {
+					return r.fail(ctx, sys, "ResolveRefs", err)
+				}
+				if groupWait == "" {
+					addGroups, rmGroups := diffStringSets(sys.Status.GroupNames, desiredGroups)
+					for _, name := range addGroups {
+						if err := uc.AddSystemsToGroup(ctx, name, []int{sys.Status.UyuniServerID}); err != nil {
+							return r.fail(ctx, sys, "UpdateFailed", err)
+						}
+					}
+					for _, name := range rmGroups {
+						if err := uc.RemoveSystemsFromGroup(ctx, name, []int{sys.Status.UyuniServerID}); err != nil {
+							return r.fail(ctx, sys, "UpdateFailed", err)
+						}
+					}
+					sys.Status.GroupNames = desiredGroups
+				}
+			}
 			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
 				"WaitingForBaseEntitlement", "system has not completed registration yet (still on bootstrap base entitlement); cannot subscribe to software channels")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
