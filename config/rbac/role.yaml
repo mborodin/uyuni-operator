@@ -22,6 +22,7 @@ rules:
   - configurationchannels
   - contentprojects
   - custominfokeys
+  - imagebuilds
   - imageprofiles
   - organizations
   - repositories
@@ -47,6 +48,7 @@ rules:
   - configurationchannels/finalizers
   - contentprojects/finalizers
   - custominfokeys/finalizers
+  - imagebuilds/finalizers
   - imageprofiles/finalizers
   - organizations/finalizers
   - repositories/finalizers
@@ -67,6 +69,7 @@ rules:
   - contentprojectpromotions/status
   - contentprojects/status
   - custominfokeys/status
+  - imagebuilds/status
   - imageprofiles/status
   - organizations/status
   - repositories/status
@@ -82,14 +85,6 @@ rules:
 - apiGroups:
   - uyuni.uyuni-project.org
   resources:
-  - imagestores
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - uyuni.uyuni-project.org
-  resources:
   - contentprojectpromotions
   - tasks
   verbs:
@@ -98,4 +93,12 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - uyuni.uyuni-project.org
+  resources:
+  - imagestores
+  verbs:
+  - get
+  - list
   - watch
