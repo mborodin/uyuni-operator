@@ -77,10 +77,24 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if !strings.Contains(err.Error(), "already exists") {
 			return r.fail(ctx, &cp, "CreateProjectFailed", err)
 		}
-		setReady(&cp.Status.Conditions, cp.Generation, metav1.ConditionFalse,
-			"ProjectLabelConflict", fmt.Sprintf("a content project with label %q already exists in Uyuni; rename this project or delete the existing one first", cp.Spec.Label))
-		_ = r.Status().Update(ctx, &cp)
-		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		// Project already exists — look it up and check for a duplicate CR before adopting.
+		existing, lookupErr := uc.LookupProject(ctx, cp.Spec.Label)
+		if lookupErr != nil {
+			return r.fail(ctx, &cp, "LookupProjectFailed", lookupErr)
+		}
+		var list uyuniv1.ContentProjectList
+		if listErr := r.List(ctx, &list, client.InNamespace(cp.Namespace)); listErr != nil {
+			return ctrl.Result{}, listErr
+		}
+		for _, other := range list.Items {
+			if other.Name != cp.Name && other.Spec.Label == cp.Spec.Label && other.Status.UyuniID != 0 {
+				setReady(&cp.Status.Conditions, cp.Generation, metav1.ConditionFalse,
+					"ProjectLabelConflict", fmt.Sprintf("content project %q is already managed by ContentProject CR %q; rename this project or delete the existing one first", cp.Spec.Label, other.Name))
+				_ = r.Status().Update(ctx, &cp)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
+		}
+		cp.Status.UyuniID = existing.ID
 	} else {
 		cp.Status.UyuniID = created.ID
 	}

@@ -825,8 +825,7 @@ func (c *Client) ProvisionSystem(ctx context.Context, serverID int, profile stri
 
 func (c *Client) DeleteSystem(ctx context.Context, serverID int) error {
 	_, err := apiPost[any](c, "system/deleteSystems", map[string]any{
-		"sids":        []int{serverID},
-		"cleanUpType": "NONE",
+		"sids": []int{serverID},
 	})
 	return asNotFound(err)
 }

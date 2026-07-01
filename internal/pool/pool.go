@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -169,7 +170,26 @@ func (p *Pool) ForOrganization(ctx context.Context, orgName string, orgNamespace
 func (p *Pool) buildForOrg(ctx context.Context, orgName, orgNamespace, key string) (uyuni.API, error) {
 	var org uyuniv1.Organization
 	if err := p.client.Get(ctx, types.NamespacedName{Namespace: orgNamespace, Name: orgName}, &org); err != nil {
-		return nil, fmt.Errorf("getting Organization %q/%q: %w", orgNamespace, orgName, err)
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("getting Organization %q/%q: %w", orgNamespace, orgName, err)
+		}
+		// Fallback: match by spec.name (Uyuni org display name) so callers can
+		// use either the CR's metadata.name or the human-readable org name.
+		var list uyuniv1.OrganizationList
+		if listErr := p.client.List(ctx, &list, client.InNamespace(orgNamespace)); listErr != nil {
+			return nil, fmt.Errorf("getting Organization %q/%q: %w", orgNamespace, orgName, err)
+		}
+		found := false
+		for i := range list.Items {
+			if list.Items[i].Spec.Name == orgName {
+				org = list.Items[i]
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("getting Organization %q/%q: %w", orgNamespace, orgName, err)
+		}
 	}
 
 	// If no org-specific credentials, reuse the provider client.

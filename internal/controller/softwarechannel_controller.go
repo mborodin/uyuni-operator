@@ -104,6 +104,20 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	} else if err != nil {
 		return ctrl.Result{}, err
+	} else {
+		// Channel already exists in Uyuni — check if another SoftwareChannel CR manages it.
+		var list uyuniv1.SoftwareChannelList
+		if listErr := r.List(ctx, &list, client.InNamespace(sc.Namespace)); listErr != nil {
+			return ctrl.Result{}, listErr
+		}
+		for _, other := range list.Items {
+			if other.Name != sc.Name && other.Spec.Label == sc.Spec.Label && other.Status.UyuniID != 0 {
+				setReady(&sc.Status.Conditions, sc.Generation, metav1.ConditionFalse,
+					"ChannelLabelConflict", fmt.Sprintf("software channel %q is already managed by SoftwareChannel CR %q; rename this channel or delete the existing one first", sc.Spec.Label, other.Name))
+				_ = r.Status().Update(ctx, &sc)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
+		}
 	}
 
 	sc.Status.UyuniID = current.ID

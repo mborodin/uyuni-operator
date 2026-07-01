@@ -72,6 +72,19 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	} else if err != nil {
 		return r.fail(ctx, &sg, "GetFailed", err)
 	} else {
+		// Group already exists in Uyuni — check if another SystemGroup CR manages it.
+		var list uyuniv1.SystemGroupList
+		if listErr := r.List(ctx, &list, client.InNamespace(sg.Namespace)); listErr != nil {
+			return ctrl.Result{}, listErr
+		}
+		for _, other := range list.Items {
+			if other.Name != sg.Name && other.Spec.Name == sg.Spec.Name && other.Status.UyuniID != 0 {
+				setReady(&sg.Status.Conditions, sg.Generation, metav1.ConditionFalse,
+					"GroupNameConflict", fmt.Sprintf("system group %q is already managed by SystemGroup CR %q; rename this group or delete the existing one first", sg.Spec.Name, other.Name))
+				_ = r.Status().Update(ctx, &sg)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
+		}
 		sg.Status.UyuniID = current.ID
 		if current.Description != sg.Spec.Description {
 			if err := uc.UpdateSystemGroupDescription(ctx, sg.Spec.Name, sg.Spec.Description); err != nil {
