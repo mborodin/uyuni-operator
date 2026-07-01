@@ -63,6 +63,19 @@ func (r *ConfigurationChannelReconciler) Reconcile(ctx context.Context, req ctrl
 	} else if err != nil {
 		return ctrl.Result{}, err
 	} else {
+		// Channel already exists in Uyuni — check if another ConfigurationChannel CR manages it.
+		var list uyuniv1.ConfigurationChannelList
+		if listErr := r.List(ctx, &list, client.InNamespace(cc.Namespace)); listErr != nil {
+			return ctrl.Result{}, listErr
+		}
+		for _, other := range list.Items {
+			if other.Name != cc.Name && other.Spec.ID == cc.Spec.ID && other.Status.UyuniID != 0 {
+				setReady(&cc.Status.Conditions, cc.Generation, metav1.ConditionFalse,
+					"ChannelIDConflict", fmt.Sprintf("configuration channel %q is already managed by ConfigurationChannel CR %q; rename this channel or delete the existing one first", cc.Spec.ID, other.Name))
+				_ = r.Status().Update(ctx, &cc)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
+		}
 		cc.Status.UyuniID = current.ID
 
 		if current.Name != cc.Spec.Name || current.Description != cc.Spec.Description {
