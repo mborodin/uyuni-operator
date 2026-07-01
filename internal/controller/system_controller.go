@@ -199,40 +199,16 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 
-		// Mirror the UI flow: once the profile exists, create the Cobbler system
-		// record for the pre-created system so PXE serves the profile with named
-		// network interfaces, then set its netboot flag and ks_meta variables.
-		// Guarded by AutoinstallRecordLabel so it runs once per resolved profile;
-		// the label is persisted alongside AutoinstallActionID in the status
-		// update below.
-		if sys.Spec.PreCreate && sys.Status.AutoinstallRecordLabel != profileLabel {
-			vars, waitVars, err := r.resolveAutoinstallVariables(ctx, sys)
-			if err != nil {
-				return r.fail(ctx, sys, "ResolveRefs", err)
-			}
-			if waitVars != "" {
-				setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
-					"ReferenceUnavailable", waitVars)
-				_ = r.Status().Update(ctx, sys)
-				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-			}
-			if err := uc.CreateSystemRecord(ctx, sys.Spec.Hostname, profileLabel, "",
-				sys.Spec.Description, netDevicesForSystem(sys)); err != nil {
-				return r.fail(ctx, sys, "CreateFailed", err)
-			}
-			// system.setVariables REPLACES the record's entire ks_meta set and
-			// couples it with the netboot flag, so only call it when the CR
-			// actually declares variables — otherwise we would wipe the
-			// Uyuni/saltboot-generated metadata (bootstrap_token, store_id,
-			// vlans, ...). When variables ARE declared, the CR is treated as the
-			// complete authoritative set.
-			if len(vars) > 0 {
-				netboot := sys.Spec.Autoinstall.Netboot == nil || *sys.Spec.Autoinstall.Netboot
-				if err := uc.SetVariables(ctx, sys.Status.UyuniServerID, netboot, vars); err != nil {
-					return r.fail(ctx, sys, "UpdateFailed", err)
-				}
-			}
-			sys.Status.AutoinstallRecordLabel = profileLabel
+		// Mirror the UI flow: once the profile exists, ensure the Cobbler system
+		// record (named interfaces + profile link) and its netboot/ks_meta
+		// variables. Idempotent via AutoinstallRecordLabel; the label is persisted
+		// alongside AutoinstallActionID in the status update below.
+		if _, waitReason2, waitMsg2, err := r.ensureAutoinstallRecord(ctx, uc, sys); err != nil {
+			return r.fail(ctx, sys, "CreateFailed", err)
+		} else if waitReason2 != "" {
+			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, waitReason2, waitMsg2)
+			_ = r.Status().Update(ctx, sys)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 
 		earliest := now
@@ -323,6 +299,23 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		// Strip the annotation in a separate update after status is durable.
 		delete(sys.Annotations, uyuniv1.AnnReinstallNow)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Update(ctx, sys)
+	}
+
+	// Ensure the Cobbler system record + variables for pre-created autoinstall
+	// systems. This runs before the steady-state config (and before the
+	// bootstrap-entitlement gate below): the Cobbler binding is what lets a
+	// pre-created, still-bootstrap host PXE-boot the profile in the first place.
+	if changed, waitReason, waitMsg, err := r.ensureAutoinstallRecord(ctx, uc, sys); err != nil {
+		return r.fail(ctx, sys, "CreateFailed", err)
+	} else if waitReason != "" {
+		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, waitReason, waitMsg)
+		_ = r.Status().Update(ctx, sys)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	} else if changed {
+		if err := r.Status().Update(ctx, sys); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// 1. System details (description, contact method).
@@ -731,6 +724,56 @@ func netDevicesForSystem(sys *uyuniv1.System) []uyuni.NetworkDevice {
 		})
 	}
 	return devs
+}
+
+// ensureAutoinstallRecord creates/refreshes the Cobbler system record for a
+// pre-created system that has autoinstall configured: it names the network
+// interfaces, links the autoinstall profile, and (when variables are declared)
+// sets netboot + ks_meta via system.setVariables. It is idempotent — guarded by
+// status.AutoinstallRecordLabel — and must run regardless of whether the system
+// has completed registration, because this Cobbler binding is precisely what
+// lets a pre-created, still-bootstrap host PXE-boot the profile.
+//
+// It mutates sys.Status.AutoinstallRecordLabel in memory when it acts; the
+// caller persists status when changed is true. A non-empty waitReason/waitMsg
+// means the profile or a referenced Secret/ConfigMap isn't ready yet and the
+// caller should requeue.
+func (r *SystemReconciler) ensureAutoinstallRecord(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (changed bool, waitReason, waitMsg string, err error) {
+	if !sys.Spec.PreCreate || sys.Spec.Autoinstall == nil || sys.Status.UyuniServerID == 0 {
+		return false, "", "", nil
+	}
+	profileLabel, wait, err := r.resolveProfileLabel(ctx, sys)
+	if err != nil {
+		return false, "", "", err
+	}
+	if wait != "" {
+		return false, "WaitingForProfile", wait, nil
+	}
+	if profileLabel == "" || sys.Status.AutoinstallRecordLabel == profileLabel {
+		return false, "", "", nil
+	}
+	vars, waitVars, err := r.resolveAutoinstallVariables(ctx, sys)
+	if err != nil {
+		return false, "", "", err
+	}
+	if waitVars != "" {
+		return false, "ReferenceUnavailable", waitVars, nil
+	}
+	if err := uc.CreateSystemRecord(ctx, sys.Spec.Hostname, profileLabel, "",
+		sys.Spec.Description, netDevicesForSystem(sys)); err != nil {
+		return false, "", "", err
+	}
+	// system.setVariables REPLACES the record's entire ks_meta and couples it
+	// with netboot, so only call it when the CR declares variables — otherwise
+	// we would wipe Uyuni/saltboot-generated metadata.
+	if len(vars) > 0 {
+		netboot := sys.Spec.Autoinstall.Netboot == nil || *sys.Spec.Autoinstall.Netboot
+		if err := uc.SetVariables(ctx, sys.Status.UyuniServerID, netboot, vars); err != nil {
+			return false, "", "", err
+		}
+	}
+	sys.Status.AutoinstallRecordLabel = profileLabel
+	return true, "", "", nil
 }
 
 // resolveAutoinstallVariables materializes spec.autoinstall.variables and
