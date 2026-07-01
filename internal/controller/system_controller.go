@@ -148,8 +148,24 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 			if errors.As(err, &existsErr) && len(existsErr.IDs) > 0 {
 				// A system with this hostname already exists in Uyuni.
 				// Do not adopt it — surface a conflict so the operator can investigate.
-				setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
-					"SystemNameConflict", fmt.Sprintf("a system named %q already exists in Uyuni (IDs: %v); rename this system or delete the existing one first", sys.Spec.Hostname, existsErr.IDs))
+				// Try to find which System CR already manages one of those IDs.
+				msg := fmt.Sprintf("a system named %q already exists in Uyuni (IDs: %v); rename this system or delete the existing one first", sys.Spec.Hostname, existsErr.IDs)
+				var allSystems uyuniv1.SystemList
+				if listErr := r.List(ctx, &allSystems, client.InNamespace(sys.Namespace)); listErr == nil {
+					idSet := make(map[int]struct{}, len(existsErr.IDs))
+					for _, id := range existsErr.IDs {
+						idSet[id] = struct{}{}
+					}
+					for _, other := range allSystems.Items {
+						if other.Name != sys.Name {
+							if _, hit := idSet[other.Status.UyuniServerID]; hit {
+								msg = fmt.Sprintf("a system named %q is already managed by System CR %q; rename this system or delete the existing one first", sys.Spec.Hostname, other.Name)
+								break
+							}
+						}
+					}
+				}
+				setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, "SystemNameConflict", msg)
 				_ = r.Status().Update(ctx, sys)
 				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}

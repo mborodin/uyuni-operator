@@ -87,6 +87,23 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		env.Status.State = "NEW"
 	}
 
+	// Environment exists in Uyuni — check if another ClmEnvironment CR in the same
+	// project already manages it before adopting.
+	var envList uyuniv1.ClmEnvironmentList
+	if listErr := r.List(ctx, &envList, client.InNamespace(env.Namespace)); listErr == nil {
+		for _, other := range envList.Items {
+			if other.Name != env.Name &&
+				other.Spec.Id == env.Spec.Id &&
+				other.Spec.ProjectRef.Name == env.Spec.ProjectRef.Name &&
+				other.Status.ObservedGeneration > 0 {
+				setReady(&env.Status.Conditions, env.Generation, metav1.ConditionFalse,
+					"EnvironmentIDConflict", fmt.Sprintf("environment %q in project %q is already managed by ClmEnvironment CR %q; rename this environment or delete the existing one first", env.Spec.Id, env.Spec.ProjectRef.Name, other.Name))
+				_ = r.Status().Update(ctx, &env)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
+		}
+	}
+
 	// Try to update name/description (best effort)
 	updateErr := uc.UpdateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description)
 	if updateErr != nil {

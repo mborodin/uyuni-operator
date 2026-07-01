@@ -87,7 +87,7 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, listErr
 		}
 		for _, other := range list.Items {
-			if other.Name != cp.Name && other.Spec.Label == cp.Spec.Label && other.Status.UyuniID != 0 {
+			if other.Name != cp.Name && other.Spec.Label == cp.Spec.Label && other.Status.ObservedGeneration > 0 {
 				setReady(&cp.Status.Conditions, cp.Generation, metav1.ConditionFalse,
 					"ProjectLabelConflict", fmt.Sprintf("content project %q is already managed by ContentProject CR %q; rename this project or delete the existing one first", cp.Spec.Label, other.Name))
 				_ = r.Status().Update(ctx, &cp)

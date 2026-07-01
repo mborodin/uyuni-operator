@@ -139,6 +139,19 @@ func (r *ActivationKeyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// Key already exists in Uyuni — check if another ActivationKey CR manages it.
+	var akList uyuniv1.ActivationKeyList
+	if listErr := r.List(ctx, &akList, client.InNamespace(ak.Namespace)); listErr == nil {
+		for _, other := range akList.Items {
+			if other.Name != ak.Name && other.Status.UyuniKey == ak.Status.UyuniKey && other.Status.UyuniKey != "" {
+				setReady(&ak.Status.Conditions, ak.Generation, metav1.ConditionFalse,
+					"ActivationKeyConflict", fmt.Sprintf("activation key %q is already managed by ActivationKey CR %q; rename this key or delete the existing one first", ak.Status.UyuniKey, other.Name))
+				_ = r.Status().Update(ctx, &ak)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
+		}
+	}
+
 	// Drift reconciliation. Children, config channels, and groups each have
 	// their own add/remove APIs in Uyuni, so we diff and apply per-list.
 	if needsDetailsUpdate(current, &ak, res.BaseChannelLabel) {
