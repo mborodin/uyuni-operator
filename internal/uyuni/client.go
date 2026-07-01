@@ -768,6 +768,45 @@ func (c *Client) CreateSystemProfile(ctx context.Context, name string, data Syst
 	return id, nil
 }
 
+// CreateSystemRecord creates/refreshes the Cobbler system record for an
+// already pre-created system, setting its named network interfaces and linking
+// the autoinstall (Cobbler) profile identified by ksLabel. Uyuni returns 1 on
+// success, which we discard.
+func (c *Client) CreateSystemRecord(ctx context.Context, systemName, ksLabel, kernelOptions, comment string, netDevices []NetworkDevice) error {
+	devs := make([]map[string]any, 0, len(netDevices))
+	for _, d := range netDevices {
+		devs = append(devs, map[string]any{
+			"name":    d.Name,
+			"ip":      d.IP,
+			"mac":     d.MAC,
+			"dnsname": d.DNSName,
+		})
+	}
+	_, err := apiPost[int](c, "system/createSystemRecord", map[string]any{
+		"systemName": systemName,
+		"ksLabel":    ksLabel,
+		"kOptions":   kernelOptions,
+		"comment":    comment,
+		"netDevices": devs,
+	})
+	return err
+}
+
+// SetVariables sets the Cobbler system-record netboot flag and ks_meta
+// variables on a system.
+func (c *Client) SetVariables(ctx context.Context, serverID int, netboot bool, variables map[string]string) error {
+	vars := make(map[string]any, len(variables))
+	for k, v := range variables {
+		vars[k] = v
+	}
+	_, err := apiPost[any](c, "system/setVariables", map[string]any{
+		"sid":       serverID,
+		"netboot":   netboot,
+		"variables": vars,
+	})
+	return err
+}
+
 func (c *Client) GetSystemDetails(ctx context.Context, serverID int) (*SystemDetails, error) {
 	r, err := apiGet[wireSystem](c, fmt.Sprintf("system/getDetails?sid=%d", serverID))
 	if err != nil {

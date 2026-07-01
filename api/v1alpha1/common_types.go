@@ -17,6 +17,14 @@ type SecretKeyRef struct {
 	Key string `json:"key"`
 }
 
+// ConfigMapKeyRef selects a key from a Kubernetes ConfigMap in the same namespace.
+type ConfigMapKeyRef struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// +kubebuilder:validation:Required
+	Key string `json:"key"`
+}
+
 // BasicAuthRef references a Secret that contains username and password keys for HTTP Basic Auth.
 // The controller reads the credentials at reconcile time and injects them into the source URL;
 // they are never stored in status.

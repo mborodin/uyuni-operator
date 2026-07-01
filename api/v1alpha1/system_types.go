@@ -27,9 +27,69 @@ type AutoinstallSpec struct {
 	// Mutually exclusive with Profile.
 	ProfileRef *LocalObjectRef `json:"profileRef,omitempty"`
 
+	// Netboot enables PXE netboot on the Cobbler system record — the netboot
+	// flag of system.setVariables, matching the UI's "Enable netboot" toggle.
+	// Defaults to true. Applied together with Variables (system.setVariables
+	// couples the two), so it only takes effect when at least one variable is
+	// declared; otherwise createSystemRecord's default (netboot on) stands.
+	// +kubebuilder:default=true
+	Netboot *bool `json:"netboot,omitempty"`
+
+	// Variables are per-system Cobbler system-record variables (ks_meta),
+	// substituted into the autoinstall template. Each entry sets a literal
+	// Value or sources it from a Secret/ConfigMap key (like a pod env var).
+	// Applied via system.setVariables when PreCreate is true and at least one
+	// variable is declared. IMPORTANT: system.setVariables REPLACES the record's
+	// entire ks_meta set, so this must be the COMPLETE authoritative set — any
+	// Uyuni-generated key you want to keep (e.g. bootstrap_token, activation_key)
+	// must be included here, typically sourced from a Secret. Explicit Variables
+	// override keys imported by VariablesFrom.
+	Variables []AutoinstallVariable `json:"variables,omitempty"`
+
+	// VariablesFrom bulk-imports every key of the referenced Secrets/ConfigMaps
+	// as ks_meta variables (like a pod's envFrom). Sources are applied in order;
+	// later sources and explicit Variables override earlier keys.
+	VariablesFrom []AutoinstallVariableSource `json:"variablesFrom,omitempty"`
+
 	// Earliest is the earliest time at which to schedule the autoinstall action.
 	// Defaults to immediate execution.
 	Earliest *metav1.Time `json:"earliest,omitempty"`
+}
+
+// AutoinstallVariable is one Cobbler ks_meta variable, shaped like a pod env
+// var: the value is either literal (Value) or sourced from a Secret/ConfigMap
+// key (ValueFrom). Exactly one of Value/ValueFrom is set (webhook-enforced).
+type AutoinstallVariable struct {
+	// Name is the ks_meta variable key.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Value is a literal value. Mutually exclusive with ValueFrom.
+	Value string `json:"value,omitempty"`
+
+	// ValueFrom sources the value from a Secret or ConfigMap key in the same
+	// namespace. Mutually exclusive with Value.
+	ValueFrom *AutoinstallVariableValueFrom `json:"valueFrom,omitempty"`
+}
+
+// AutoinstallVariableValueFrom selects a variable value from a Secret or
+// ConfigMap key. Exactly one of the two is set (webhook-enforced).
+type AutoinstallVariableValueFrom struct {
+	// SecretKeyRef selects a key of a Secret in the same namespace.
+	SecretKeyRef *SecretKeyRef `json:"secretKeyRef,omitempty"`
+	// ConfigMapKeyRef selects a key of a ConfigMap in the same namespace.
+	ConfigMapKeyRef *ConfigMapKeyRef `json:"configMapKeyRef,omitempty"`
+}
+
+// AutoinstallVariableSource bulk-imports all keys of a Secret or ConfigMap as
+// ks_meta variables. Exactly one of the two is set (webhook-enforced).
+type AutoinstallVariableSource struct {
+	// SecretRef imports all keys from a Secret in the same namespace.
+	SecretRef *LocalObjectRef `json:"secretRef,omitempty"`
+	// ConfigMapRef imports all keys from a ConfigMap in the same namespace.
+	ConfigMapRef *LocalObjectRef `json:"configMapRef,omitempty"`
+	// Prefix is prepended to each imported variable key.
+	Prefix string `json:"prefix,omitempty"`
 }
 
 type NetworkInterface struct {
@@ -183,6 +243,12 @@ type SystemStatus struct {
 
 	// AutoinstallActionID is the Uyuni action ID of the last scheduled provisioning.
 	AutoinstallActionID int `json:"autoinstallActionId,omitempty"`
+
+	// AutoinstallRecordLabel is the Cobbler autoinstall profile label the
+	// pre-create system record (system.createSystemRecord) was last created
+	// with. Empty until the record is created; used to make record creation
+	// idempotent and to detect a changed profile.
+	AutoinstallRecordLabel string `json:"autoinstallRecordLabel,omitempty"`
 
 	// AutoinstallStatus reflects the Uyuni-side outcome of the last provisioning action.
 	// +kubebuilder:validation:Enum=Scheduled;Completed;Failed

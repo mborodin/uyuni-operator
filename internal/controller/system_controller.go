@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,6 +33,7 @@ type SystemReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/finalizers,verbs=update
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups;configurationchannels;softwarechannels;contentprojects;custominfokeys,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=organizations,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets;configmaps,verbs=get;list;watch
 
 func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var sys uyuniv1.System
@@ -196,6 +198,43 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 			_ = r.Status().Update(ctx, sys)
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
+
+		// Mirror the UI flow: once the profile exists, create the Cobbler system
+		// record for the pre-created system so PXE serves the profile with named
+		// network interfaces, then set its netboot flag and ks_meta variables.
+		// Guarded by AutoinstallRecordLabel so it runs once per resolved profile;
+		// the label is persisted alongside AutoinstallActionID in the status
+		// update below.
+		if sys.Spec.PreCreate && sys.Status.AutoinstallRecordLabel != profileLabel {
+			vars, waitVars, err := r.resolveAutoinstallVariables(ctx, sys)
+			if err != nil {
+				return r.fail(ctx, sys, "ResolveRefs", err)
+			}
+			if waitVars != "" {
+				setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+					"ReferenceUnavailable", waitVars)
+				_ = r.Status().Update(ctx, sys)
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+			if err := uc.CreateSystemRecord(ctx, sys.Spec.Hostname, profileLabel, "",
+				sys.Spec.Description, netDevicesForSystem(sys)); err != nil {
+				return r.fail(ctx, sys, "CreateFailed", err)
+			}
+			// system.setVariables REPLACES the record's entire ks_meta set and
+			// couples it with the netboot flag, so only call it when the CR
+			// actually declares variables — otherwise we would wipe the
+			// Uyuni/saltboot-generated metadata (bootstrap_token, store_id,
+			// vlans, ...). When variables ARE declared, the CR is treated as the
+			// complete authoritative set.
+			if len(vars) > 0 {
+				netboot := sys.Spec.Autoinstall.Netboot == nil || *sys.Spec.Autoinstall.Netboot
+				if err := uc.SetVariables(ctx, sys.Status.UyuniServerID, netboot, vars); err != nil {
+					return r.fail(ctx, sys, "UpdateFailed", err)
+				}
+			}
+			sys.Status.AutoinstallRecordLabel = profileLabel
+		}
+
 		earliest := now
 		if sys.Spec.Autoinstall.Earliest != nil {
 			earliest = sys.Spec.Autoinstall.Earliest.Time
@@ -677,6 +716,100 @@ func (r *SystemReconciler) resolveProfileLabel(ctx context.Context, sys *uyuniv1
 		return ap.Spec.Label, "", nil
 	}
 	return "", "", nil
+}
+
+// netDevicesForSystem maps spec.network to Uyuni createSystemRecord netDevices,
+// carrying each interface's name (eth0, ...), MAC and IP so the Cobbler system
+// record shows real interface names instead of "undefined".
+func netDevicesForSystem(sys *uyuniv1.System) []uyuni.NetworkDevice {
+	devs := make([]uyuni.NetworkDevice, 0, len(sys.Spec.Network))
+	for _, nic := range sys.Spec.Network {
+		devs = append(devs, uyuni.NetworkDevice{
+			Name: nic.Name,
+			MAC:  nic.MACAddress,
+			IP:   nic.IPAddress,
+		})
+	}
+	return devs
+}
+
+// resolveAutoinstallVariables materializes spec.autoinstall.variables and
+// variablesFrom into a flat key/value map for system.setVariables. VariablesFrom
+// sources are applied first (in order), then explicit Variables override them —
+// mirroring how a pod's env overrides envFrom. A missing Secret/ConfigMap (or
+// key) returns a non-empty wait reason so the caller requeues rather than fails,
+// which keeps the operator GitOps-friendly for out-of-order application.
+func (r *SystemReconciler) resolveAutoinstallVariables(ctx context.Context, sys *uyuniv1.System) (map[string]string, string, error) {
+	out := map[string]string{}
+	if sys.Spec.Autoinstall == nil {
+		return out, "", nil
+	}
+	ns := sys.Namespace
+
+	for _, src := range sys.Spec.Autoinstall.VariablesFrom {
+		switch {
+		case src.SecretRef != nil:
+			var sec corev1.Secret
+			if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: src.SecretRef.Name}, &sec); err != nil {
+				if client.IgnoreNotFound(err) == nil {
+					return nil, fmt.Sprintf("Secret %q not found (variablesFrom)", src.SecretRef.Name), nil
+				}
+				return nil, "", err
+			}
+			for k, v := range sec.Data {
+				out[src.Prefix+k] = string(v)
+			}
+		case src.ConfigMapRef != nil:
+			var cm corev1.ConfigMap
+			if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: src.ConfigMapRef.Name}, &cm); err != nil {
+				if client.IgnoreNotFound(err) == nil {
+					return nil, fmt.Sprintf("ConfigMap %q not found (variablesFrom)", src.ConfigMapRef.Name), nil
+				}
+				return nil, "", err
+			}
+			for k, v := range cm.Data {
+				out[src.Prefix+k] = v
+			}
+		}
+	}
+
+	for _, v := range sys.Spec.Autoinstall.Variables {
+		if v.ValueFrom == nil {
+			out[v.Name] = v.Value
+			continue
+		}
+		switch {
+		case v.ValueFrom.SecretKeyRef != nil:
+			ref := v.ValueFrom.SecretKeyRef
+			var sec corev1.Secret
+			if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: ref.Name}, &sec); err != nil {
+				if client.IgnoreNotFound(err) == nil {
+					return nil, fmt.Sprintf("Secret %q not found (variable %q)", ref.Name, v.Name), nil
+				}
+				return nil, "", err
+			}
+			data, ok := sec.Data[ref.Key]
+			if !ok {
+				return nil, fmt.Sprintf("key %q not found in Secret %q (variable %q)", ref.Key, ref.Name, v.Name), nil
+			}
+			out[v.Name] = string(data)
+		case v.ValueFrom.ConfigMapKeyRef != nil:
+			ref := v.ValueFrom.ConfigMapKeyRef
+			var cm corev1.ConfigMap
+			if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: ref.Name}, &cm); err != nil {
+				if client.IgnoreNotFound(err) == nil {
+					return nil, fmt.Sprintf("ConfigMap %q not found (variable %q)", ref.Name, v.Name), nil
+				}
+				return nil, "", err
+			}
+			data, ok := cm.Data[ref.Key]
+			if !ok {
+				return nil, fmt.Sprintf("key %q not found in ConfigMap %q (variable %q)", ref.Key, ref.Name, v.Name), nil
+			}
+			out[v.Name] = data
+		}
+	}
+	return out, "", nil
 }
 
 // resolveGroupMembership returns the list of Uyuni group names the system should belong to.

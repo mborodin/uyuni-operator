@@ -33,6 +33,14 @@ type SystemProfileData struct {
 	Hostname  string
 }
 
+// NetworkDevice is one entry of system.createSystemRecord's netDevices array.
+type NetworkDevice struct {
+	Name    string
+	IP      string
+	MAC     string
+	DNSName string
+}
+
 // --- SystemGroup ---
 
 type SystemGroupDetails struct {

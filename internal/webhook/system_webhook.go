@@ -134,6 +134,8 @@ func (v *SystemValidator) validate(ctx context.Context, sys *uyuniv1.System) (ad
 		sys.Spec.Formulas, field.NewPath("spec", "formulas"))...)
 	errs = append(errs, validation.SystemCustomInfoValues(
 		sys.Spec.CustomInfoValues, field.NewPath("spec", "customInfoValues"))...)
+	errs = append(errs, validation.AutoinstallVariables(
+		sys.Spec.Autoinstall, field.NewPath("spec", "autoinstall"))...)
 	if sys.Spec.ProxyRef != nil && sys.Spec.ProxyRef.Name == sys.Name {
 		errs = append(errs, field.Invalid(
 			field.NewPath("spec", "proxyRef", "name"), sys.Spec.ProxyRef.Name,

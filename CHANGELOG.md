@@ -4,6 +4,27 @@
 
 ### Added
 
+- **System: Cobbler system record on pre-create.** When a pre-created
+  (`preCreate: true`) System has `spec.autoinstall` set, the reconciler now
+  follows the UI flow — after `system.createSystemProfile` it calls
+  `system.createSystemRecord` with the interface list from `spec.network`, so
+  Uyuni shows real interface names (`eth0`, ...) instead of `undefined` and the
+  Cobbler record is linked to the autoinstall profile for PXE boot. The resolved
+  profile label is tracked in `status.autoinstallRecordLabel` for idempotency.
+- **System: autoinstall variables (env-style) + netboot toggle.**
+  `System.spec.autoinstall.variables` sets per-system Cobbler system-record
+  variables (ks_meta) via `system.setVariables`. Each entry is shaped like a pod
+  env var — a literal `value` or a `valueFrom` sourcing a `secretKeyRef` /
+  `configMapKeyRef` (same namespace). `spec.autoinstall.variablesFrom` bulk-imports
+  every key of a Secret/ConfigMap (like `envFrom`, with optional `prefix`);
+  explicit `variables` override imported keys. `spec.autoinstall.netboot` (default
+  `true`) toggles PXE netboot on the Cobbler record, matching the UI. Applied only
+  when `preCreate` is true. **`system.setVariables` REPLACES the record's entire
+  ks_meta**, so the declared set is authoritative and complete — the operator only
+  calls it when at least one variable is declared (never wiping Uyuni-generated
+  metadata by accident). Requires the operator's new `configmaps` get/list/watch
+  RBAC.
+
 - **External autoinstallation profiles.** `AutoinstallProfile.spec.mode:
   Managed|External` (default `Managed`). In `External` mode the operator
   observes an existing Cobbler-managed profile (e.g. one Uyuni auto-creates for
