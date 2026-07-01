@@ -89,13 +89,12 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if createErr != nil {
 			if strings.Contains(strings.ToLower(createErr.Error()), "already exists") ||
 				strings.Contains(strings.ToLower(createErr.Error()), "duplicate") {
-				current, err = uc.GetChannel(ctx, sc.Spec.Label)
-				if err != nil {
-					return r.fail(ctx, &sc, "CreateFailed", createErr)
-				}
-			} else {
-				return r.fail(ctx, &sc, "CreateFailed", createErr)
+				setReady(&sc.Status.Conditions, sc.Generation, metav1.ConditionFalse,
+					"ChannelLabelConflict", fmt.Sprintf("a software channel with label %q already exists in Uyuni; rename this channel or delete the existing one first", sc.Spec.Label))
+				_ = r.Status().Update(ctx, &sc)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}
+			return r.fail(ctx, &sc, "CreateFailed", createErr)
 		} else {
 			justCreated = true
 			current, err = uc.GetChannel(ctx, sc.Spec.Label)

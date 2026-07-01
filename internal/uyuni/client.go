@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -738,10 +740,27 @@ func (c *Client) CreateSystemProfile(ctx context.Context, name string, data Syst
 	if err != nil {
 		// Uyuni returns a specific error when the system already exists; surface
 		// it as SystemExistsError so callers can adopt the existing system.
-		if strings.Contains(strings.ToLower(err.Error()), "already exists") {
-			existing, listErr := c.FindSystemByMAC(ctx, data.HWAddress)
-			if listErr == nil && existing != nil {
-				return 0, &SystemExistsError{IDs: []int{existing.ID}}
+		lowerErr := strings.ToLower(err.Error())
+		if strings.Contains(lowerErr, "already exists") || strings.Contains(lowerErr, "existing system") {
+			// Try MAC lookup first (for systems with network configured).
+			if data.HWAddress != "" {
+				existing, listErr := c.FindSystemByMAC(ctx, data.HWAddress)
+				if listErr == nil && existing != nil {
+					return 0, &SystemExistsError{IDs: []int{existing.ID}}
+				}
+			}
+			// Parse IDs from Uyuni error message e.g. "Existing system IDs: [1000010003]".
+			re := regexp.MustCompile(`\[(\d+(?:,\s*\d+)*)\]`)
+			if m := re.FindStringSubmatch(err.Error()); len(m) > 1 {
+				var ids []int
+				for _, part := range strings.Split(m[1], ",") {
+					if id, parseErr := strconv.Atoi(strings.TrimSpace(part)); parseErr == nil {
+						ids = append(ids, id)
+					}
+				}
+				if len(ids) > 0 {
+					return 0, &SystemExistsError{IDs: ids}
+				}
 			}
 		}
 		return 0, err
@@ -806,8 +825,8 @@ func (c *Client) ProvisionSystem(ctx context.Context, serverID int, profile stri
 
 func (c *Client) DeleteSystem(ctx context.Context, serverID int) error {
 	_, err := apiPost[any](c, "system/deleteSystem", map[string]any{
-		"sid":           serverID,
-		"clean_up_type": "NONE",
+		"sids":        []int{serverID},
+		"cleanUpType": "NONE",
 	})
 	return asNotFound(err)
 }

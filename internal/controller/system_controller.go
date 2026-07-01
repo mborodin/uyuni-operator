@@ -146,11 +146,14 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 		if err != nil {
 			var existsErr *uyuni.SystemExistsError
 			if errors.As(err, &existsErr) && len(existsErr.IDs) > 0 {
-				// Already exists — adopt it.
-				serverID = existsErr.IDs[0]
-			} else {
-				return r.fail(ctx, sys, "CreateFailed", err)
+				// A system with this hostname already exists in Uyuni.
+				// Do not adopt it — surface a conflict so the operator can investigate.
+				setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
+					"SystemNameConflict", fmt.Sprintf("a system named %q already exists in Uyuni (IDs: %v); rename this system or delete the existing one first", sys.Spec.Hostname, existsErr.IDs))
+				_ = r.Status().Update(ctx, sys)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}
+			return r.fail(ctx, sys, "CreateFailed", err)
 		}
 		sys.Status.UyuniServerID = serverID
 		t := metav1.NewTime(now)

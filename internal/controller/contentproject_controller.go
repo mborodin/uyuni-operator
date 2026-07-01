@@ -77,19 +77,10 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if !strings.Contains(err.Error(), "already exists") {
 			return r.fail(ctx, &cp, "CreateProjectFailed", err)
 		}
-		existing, lookupErr := uc.LookupProject(ctx, cp.Spec.Label)
-		if lookupErr != nil {
-			return r.fail(ctx, &cp, "CreateProjectFailed", fmt.Errorf("project already exists but lookup failed: %w", lookupErr))
-		}
-		cp.Status.UyuniID = existing.ID
-
-		// Auto-heal name/description if changed directly in Uyuni. Label is
-		// the lookup key, so it can't drift without breaking discovery entirely.
-		if existing.Name != cp.Spec.Name || existing.Description != cp.Spec.Description {
-			if err := uc.UpdateProject(ctx, cp.Spec.Label, cp.Spec.Name, cp.Spec.Description); err != nil {
-				return r.fail(ctx, &cp, "UpdateFailed", err)
-			}
-		}
+		setReady(&cp.Status.Conditions, cp.Generation, metav1.ConditionFalse,
+			"ProjectLabelConflict", fmt.Sprintf("a content project with label %q already exists in Uyuni; rename this project or delete the existing one first", cp.Spec.Label))
+		_ = r.Status().Update(ctx, &cp)
+		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 	} else {
 		cp.Status.UyuniID = created.ID
 	}

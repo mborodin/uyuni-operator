@@ -58,17 +58,14 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if uyuni.IsNotFound(err) || (err != nil && strings.Contains(strings.ToLower(err.Error()), "unable to locate")) {
 		created, createErr := uc.CreateSystemGroup(ctx, sg.Spec.Name, sg.Spec.Description)
 		if createErr != nil {
-			// Race or pre-existing group: adopt it rather than failing.
 			if strings.Contains(strings.ToLower(createErr.Error()), "already exists") ||
 				strings.Contains(strings.ToLower(createErr.Error()), "duplicate") {
-				existing, getErr := uc.GetSystemGroup(ctx, sg.Spec.Name)
-				if getErr != nil {
-					return r.fail(ctx, &sg, "CreateFailed", createErr)
-				}
-				sg.Status.UyuniID = existing.ID
-			} else {
-				return r.fail(ctx, &sg, "CreateFailed", createErr)
+				setReady(&sg.Status.Conditions, sg.Generation, metav1.ConditionFalse,
+					"GroupNameConflict", fmt.Sprintf("a system group named %q already exists in Uyuni; rename this group or delete the existing one first", sg.Spec.Name))
+				_ = r.Status().Update(ctx, &sg)
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 			}
+			return r.fail(ctx, &sg, "CreateFailed", createErr)
 		} else {
 			sg.Status.UyuniID = created.ID
 		}
