@@ -179,7 +179,9 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 		// in the Uyuni UI before the minion registers. Errors are non-fatal.
 		for _, nic := range sys.Spec.Network {
 			if nic.IPAddress != "" {
-				_ = uc.SetNetworkInformation(ctx, serverID, sys.Spec.Hostname, nic.IPAddress)
+				if err := uc.SetNetworkInformation(ctx, serverID, sys.Spec.Hostname, nic.IPAddress); err != nil {
+					log.FromContext(ctx).Error(err, "SetNetworkInformation failed (non-fatal)", "serverID", serverID, "ip", nic.IPAddress)
+				}
 				break
 			}
 		}
@@ -421,7 +423,9 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 			// Best-effort: keep IP visible in Uyuni UI during the bootstrap phase.
 			for _, nic := range sys.Spec.Network {
 				if nic.IPAddress != "" {
-					_ = uc.SetNetworkInformation(ctx, sys.Status.UyuniServerID, sys.Spec.Hostname, nic.IPAddress)
+					if err := uc.SetNetworkInformation(ctx, sys.Status.UyuniServerID, sys.Spec.Hostname, nic.IPAddress); err != nil {
+						log.FromContext(ctx).Error(err, "SetNetworkInformation failed (non-fatal)", "serverID", sys.Status.UyuniServerID, "ip", nic.IPAddress)
+					}
 					break
 				}
 			}
