@@ -1098,7 +1098,18 @@ func (c *Client) DeleteSystem(ctx context.Context, serverID int) error {
 	_, err := apiPost[any](c, "system/deleteSystems", map[string]any{
 		"sids": []int{serverID},
 	})
-	return asNotFound(err)
+	err = asNotFound(err)
+	if err == nil || IsNotFound(err) {
+		return err
+	}
+	// deleteSystems rejects IDs it can't act on (e.g. "The following systems
+	// were NOT deleted: <id>") instead of treating a missing system as a
+	// no-op. Confirm independently before surfacing the error, so a system
+	// that's already gone doesn't wedge the caller's finalizer forever.
+	if _, getErr := c.GetSystemDetails(ctx, serverID); IsNotFound(getErr) {
+		return nil
+	}
+	return err
 }
 
 func (c *Client) GetCustomInfo(ctx context.Context, serverID int) (map[string]string, error) {
