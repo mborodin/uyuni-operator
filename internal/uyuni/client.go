@@ -1113,19 +1113,13 @@ func (c *Client) DeleteSystem(ctx context.Context, serverID int) error {
 }
 
 func (c *Client) GetCustomInfo(ctx context.Context, serverID int) (map[string]string, error) {
-	type keyVal struct {
-		Key   string `json:"key"`
-		Value string `json:"value"`
-	}
-	list, err := apiGet[[]keyVal](c, fmt.Sprintf("system/getCustomValues?sid=%d", serverID))
+	// system.getCustomValues returns a struct/object keyed by custom info label
+	// ({"label": "value", ...}), not an array of key/value pairs.
+	m, err := apiGet[map[string]string](c, fmt.Sprintf("system/getCustomValues?sid=%d", serverID))
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string, len(list))
-	for _, kv := range list {
-		out[kv.Key] = kv.Value
-	}
-	return out, nil
+	return m, nil
 }
 
 func (c *Client) SetCustomInfo(ctx context.Context, serverID int, kv map[string]string) error {
