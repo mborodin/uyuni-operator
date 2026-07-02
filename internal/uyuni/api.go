@@ -42,8 +42,13 @@ type API interface {
 	// the UI flow of "create the system profile, then create its system record".
 	CreateSystemRecord(ctx context.Context, systemName, ksLabel, kernelOptions, comment string, netDevices []NetworkDevice) error
 	// SetVariables sets the Cobbler system-record netboot flag and ks_meta
-	// variables on a system (system.setVariables).
+	// variables on a system (drives the WebUI Variables.do action).
 	SetVariables(ctx context.Context, serverID int, netboot bool, variables map[string]string) error
+	// GeneratePxeConfig creates/updates the Cobbler system record via the WebUI
+	// ScheduleWizard "generate PXE installation configuration" action, for
+	// Cobbler-only profiles the JSON createSystemRecord rejects. proxyID is the
+	// boot proxy's Uyuni server id (0 = none).
+	GeneratePxeConfig(ctx context.Context, serverID int, profileLabel string, proxyID int) error
 	GetSystemDetails(ctx context.Context, serverID int) (*SystemDetails, error)
 	// SetSystemDetails updates mutable system properties via system.setDetails.
 	// Only fields set in d are sent; zero values are omitted.

@@ -4,6 +4,17 @@
 
 ### Added
 
+- **System: Cobbler-only profile support (image/PXE profiles).** Autoinstall
+  profiles that have no Uyuni KickstartData (e.g. auto-created image/PXE
+  profiles) are rejected by the JSON kickstart API (403 / "Invalid
+  autoinstallation label") even for admins. The operator now drives the same
+  WebUI actions the browser uses, via its existing session: `SetVariables` posts
+  to `Variables.do` (ks_meta + netboot), and a new `GeneratePxeConfig` posts the
+  ScheduleWizard "generate PXE installation configuration" action to create the
+  Cobbler system record and bind the profile, passing the boot proxy (resolved
+  from `spec.proxyRef` to its Uyuni server id). Applied for pre-created systems
+  with `spec.autoinstall`.
+
 - **System: Cobbler system record on pre-create.** When a pre-created
   (`preCreate: true`) System has `spec.autoinstall` set, the reconciler now
   follows the UI flow — after `system.createSystemProfile` it calls

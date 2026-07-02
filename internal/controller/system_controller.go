@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
@@ -498,6 +499,12 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	if err != nil && !uyuni.IsNotFound(err) {
 		return r.fail(ctx, sys, "ProviderError", err)
 	}
+	// ListEntitlements returns the base entitlement (salt_entitled,
+	// foreign_entitled, ...) alongside add-ons. Base entitlements are set by
+	// registration, never by spec.addOns, and cannot be removed via
+	// system.removeEntitlements (Uyuni rejects with "Invalid entitlement"), so
+	// drop them before diffing against the desired add-on set.
+	currentAddOns = filterOutBaseEntitlements(currentAddOns)
 	addOns, rmOns := diffStringSets(currentAddOns, sys.Spec.AddOns)
 	if len(addOns) > 0 {
 		if _, err := uc.AddEntitlements(ctx, sys.Status.UyuniServerID, addOns); err != nil {
@@ -711,6 +718,30 @@ func (r *SystemReconciler) resolveProfileLabel(ctx context.Context, sys *uyuniv1
 	return "", "", nil
 }
 
+// baseEntitlements are Uyuni base (system-type) entitlements, managed by
+// registration rather than spec.addOns. They appear in system.getEntitlements
+// but must never be passed to system.removeEntitlements (Uyuni rejects them
+// with "Invalid entitlement").
+var baseEntitlements = map[string]bool{
+	"salt_entitled":       true,
+	"foreign_entitled":    true,
+	"bootstrap_entitled":  true,
+	"enterprise_entitled": true,
+	"management_entitled": true,
+}
+
+// filterOutBaseEntitlements returns ents with base entitlements removed, so only
+// true add-on entitlements remain for diffing against spec.addOns.
+func filterOutBaseEntitlements(ents []string) []string {
+	var out []string
+	for _, e := range ents {
+		if !baseEntitlements[e] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // netDevicesForSystem maps spec.network to Uyuni createSystemRecord netDevices,
 // carrying each interface's name (eth0, ...), MAC and IP so the Cobbler system
 // record shows real interface names instead of "undefined".
@@ -761,7 +792,26 @@ func (r *SystemReconciler) ensureAutoinstallRecord(ctx context.Context, uc uyuni
 	}
 	if err := uc.CreateSystemRecord(ctx, sys.Spec.Hostname, profileLabel, "",
 		sys.Spec.Description, netDevicesForSystem(sys)); err != nil {
-		return false, "", "", err
+		if !strings.Contains(err.Error(), "Invalid autoinstallation label") {
+			return false, "", "", err
+		}
+		// A Cobbler-only profile (e.g. an auto-created image/PXE profile with no
+		// Uyuni KickstartData) is rejected by the JSON createSystemRecord. Create
+		// the Cobbler system record via the WebUI "generate PXE installation
+		// configuration" action (ScheduleWizard), which works for these profiles.
+		// The boot proxy is passed as its Uyuni server id, resolved from ProxyRef.
+		proxyID, waitProxy, perr := r.resolveProxyID(ctx, sys)
+		if perr != nil {
+			return false, "", "", perr
+		}
+		if waitProxy != "" {
+			return false, "WaitingForRegistration", waitProxy, nil
+		}
+		if err := uc.GeneratePxeConfig(ctx, sys.Status.UyuniServerID, profileLabel, proxyID); err != nil {
+			return false, "", "", err
+		}
+		log.FromContext(ctx).Info("generated PXE installation config via ScheduleWizard for Cobbler-only profile",
+			"system", sys.Name, "label", profileLabel, "proxyId", proxyID)
 	}
 	// system.setVariables REPLACES the record's entire ks_meta and couples it
 	// with netboot, so only call it when the CR declares variables — otherwise
@@ -958,24 +1008,37 @@ func (r *SystemReconciler) reconcileFormulas(ctx context.Context, uc uyuni.API, 
 	return "", nil
 }
 
+// resolveProxyID resolves spec.proxyRef to the proxy System's Uyuni server id.
+// Returns (0, "", nil) when no proxy is set, or a non-empty wait reason when the
+// referenced proxy System is missing or not yet registered in Uyuni.
+func (r *SystemReconciler) resolveProxyID(ctx context.Context, sys *uyuniv1.System) (int, string, error) {
+	if sys.Spec.ProxyRef == nil || sys.Spec.ProxyRef.Name == "" {
+		return 0, "", nil
+	}
+	var proxy uyuniv1.System
+	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.ProxyRef.Name}, &proxy); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return 0, fmt.Sprintf("proxy System %q not found", sys.Spec.ProxyRef.Name), nil
+		}
+		return 0, "", err
+	}
+	if proxy.Status.UyuniServerID == 0 {
+		return 0, fmt.Sprintf("proxy System %q not yet registered in Uyuni", sys.Spec.ProxyRef.Name), nil
+	}
+	return proxy.Status.UyuniServerID, "", nil
+}
+
 // reconcileProxy connects the system to its spec.proxyRef proxy (or directly to
 // the server when unset). changeProxy is asynchronous, so we act only when the
 // desired proxy differs from the last one we requested (status.ProxyServerID),
 // to avoid re-scheduling the action on every reconcile.
 func (r *SystemReconciler) reconcileProxy(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (string, error) {
-	desiredProxyID := 0
-	if sys.Spec.ProxyRef != nil {
-		var proxy uyuniv1.System
-		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.ProxyRef.Name}, &proxy); err != nil {
-			if client.IgnoreNotFound(err) == nil {
-				return fmt.Sprintf("proxy System %q not found", sys.Spec.ProxyRef.Name), nil
-			}
-			return "", err
-		}
-		if proxy.Status.UyuniServerID == 0 {
-			return fmt.Sprintf("proxy System %q not yet registered in Uyuni", sys.Spec.ProxyRef.Name), nil
-		}
-		desiredProxyID = proxy.Status.UyuniServerID
+	desiredProxyID, wait, err := r.resolveProxyID(ctx, sys)
+	if err != nil {
+		return "", err
+	}
+	if wait != "" {
+		return wait, nil
 	}
 
 	if desiredProxyID == sys.Status.ProxyServerID {
