@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -142,17 +143,41 @@ func resolveChannelRefs(ctx context.Context, c client.Client, namespace string, 
 }
 
 func resolveDirectChannelRef(ctx context.Context, c client.Client, namespace string, ref uyuniv1.LocalObjectRef) (label, waitDetail, hardError string, err error) {
-	var sc uyuniv1.SoftwareChannel
-	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.Name}, &sc); err != nil {
-		if client.IgnoreNotFound(err) == nil {
-			return "", "", fmt.Sprintf("SoftwareChannel %q not found", ref.Name), nil
-		}
+	sc, err := findSoftwareChannel(ctx, c, namespace, ref.Name)
+	if err != nil {
 		return "", "", "", err
+	}
+	if sc == nil {
+		return "", "", fmt.Sprintf("SoftwareChannel %q not found", ref.Name), nil
 	}
 	if sc.Status.Label == "" {
 		return "", fmt.Sprintf("SoftwareChannel %q not yet realized in Uyuni", ref.Name), "", nil
 	}
 	return sc.Status.Label, "", "", nil
+}
+
+// findSoftwareChannel looks up a SoftwareChannel first by exact CR metadata.name,
+// then falls back to a suffix match so callers can use the short name from a
+// BrandRegion claim (e.g. "opensuse-leap-16-0-x86-64") without knowing the
+// full generated prefix (e.g. "gmrc-pzcpz-opensuse-leap-16-0-x86-64").
+func findSoftwareChannel(ctx context.Context, c client.Client, namespace, name string) (*uyuniv1.SoftwareChannel, error) {
+	var sc uyuniv1.SoftwareChannel
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sc); err == nil {
+		return &sc, nil
+	} else if client.IgnoreNotFound(err) != nil {
+		return nil, err
+	}
+	var list uyuniv1.SoftwareChannelList
+	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	suffix := "-" + name
+	for i := range list.Items {
+		if strings.HasSuffix(list.Items[i].Name, suffix) {
+			return &list.Items[i], nil
+		}
+	}
+	return nil, nil
 }
 
 func resolveFromProject(ctx context.Context, c client.Client, namespace string, ref uyuniv1.ChannelFromProject) (label, waitDetail, hardError string, err error) {
