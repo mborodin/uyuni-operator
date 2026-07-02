@@ -1524,6 +1524,10 @@ func (c *Client) GetChannel(ctx context.Context, label string) (*ChannelDetails,
 }
 
 func (c *Client) SetChannelDetails(ctx context.Context, id int, d ChannelDetails) error {
+	gpgCheck := "N"
+	if d.GPGCheck {
+		gpgCheck = "Y"
+	}
 	_, err := apiPost[any](c, "channel/software/setDetails", map[string]any{
 		"channelId": id,
 		"details": map[string]any{
@@ -1533,7 +1537,7 @@ func (c *Client) SetChannelDetails(ctx context.Context, id int, d ChannelDetails
 			"gpg_key_url":    d.GPGKeyURL,
 			"gpg_key_id":     d.GPGKeyID,
 			"gpg_key_fp":     d.GPGKeyFp,
-			"gpg_check":      d.GPGCheck,
+			"gpg_check":      gpgCheck,
 			"checksum_label": d.ChecksumLabel,
 		},
 	})
