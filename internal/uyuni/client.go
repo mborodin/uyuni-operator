@@ -13,6 +13,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -766,6 +767,230 @@ func (c *Client) CreateSystemProfile(ctx context.Context, name string, data Syst
 		return 0, err
 	}
 	return id, nil
+}
+
+// CreateSystemRecord creates/refreshes the Cobbler system record for an
+// already pre-created system, setting its named network interfaces and linking
+// the autoinstall (Cobbler) profile identified by ksLabel. Uyuni returns 1 on
+// success, which we discard.
+func (c *Client) CreateSystemRecord(ctx context.Context, systemName, ksLabel, kernelOptions, comment string, netDevices []NetworkDevice) error {
+	devs := make([]map[string]any, 0, len(netDevices))
+	for _, d := range netDevices {
+		devs = append(devs, map[string]any{
+			"name":    d.Name,
+			"ip":      d.IP,
+			"mac":     d.MAC,
+			"dnsname": d.DNSName,
+		})
+	}
+	_, err := apiPost[int](c, "system/createSystemRecord", map[string]any{
+		"systemName": systemName,
+		"ksLabel":    ksLabel,
+		"kOptions":   kernelOptions,
+		"comment":    comment,
+		"netDevices": devs,
+	})
+	return err
+}
+
+// csrfTokenRe extracts the CSRF token from a Uyuni WebUI form page.
+var csrfTokenRe = regexp.MustCompile(`name="csrf_token"[^>]*value="([^"]*)"`)
+
+// listIDRe extracts the dynamic list-widget id from a ScheduleWizard page
+// (the profile-selection radio list is named list_<id>_radio).
+var listIDRe = regexp.MustCompile(`name="list_(\d+)_radio"`)
+
+// GeneratePxeConfig creates/updates the Cobbler system record for a system by
+// driving the WebUI "generate PXE installation configuration" action
+// (/rhn/systems/details/kickstart/ScheduleWizard.do, wizardStep=fourth). This
+// works for Cobbler-only profiles (auto-created image/PXE profiles with no Uyuni
+// KickstartData) that the JSON system.createSystemRecord rejects with 403.
+//
+// The wizard identifies the chosen profile by a per-render row hash, not the
+// label, so we GET the page and map profileLabel -> hash by parsing the radio
+// rows (each row carries the label in a /cblr/svc/op/autoinstall/profile/<label>
+// link and as text). proxyID is the boot proxy's Uyuni server id (0 = none;
+// the WebUI field is named proxyHost but takes the id).
+func (c *Client) GeneratePxeConfig(ctx context.Context, serverID int, profileLabel string, proxyID int) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.rawLogin(); err != nil {
+		return err
+	}
+	pageURL := fmt.Sprintf("%s/rhn/systems/details/kickstart/ScheduleWizard.do?sid=%d", c.baseURL, serverID)
+
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	if err != nil {
+		return err
+	}
+	getResp, err := c.rawHTTP.Do(getReq)
+	if err != nil {
+		return fmt.Errorf("GET ScheduleWizard.do: %w", err)
+	}
+	page, _ := io.ReadAll(getResp.Body)
+	getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET ScheduleWizard.do returned HTTP %d", getResp.StatusCode)
+	}
+	csrf := csrfTokenRe.FindSubmatch(page)
+	if csrf == nil {
+		return fmt.Errorf("could not find csrf_token on ScheduleWizard.do")
+	}
+	idm := listIDRe.FindSubmatch(page)
+	if idm == nil {
+		return fmt.Errorf("no autoinstallation profiles offered on ScheduleWizard for system %d", serverID)
+	}
+	listID := string(idm[1])
+	hash := pxeRadioHashForProfile(page, listID, profileLabel)
+	if hash == "" {
+		return fmt.Errorf("autoinstallation profile %q not offered on ScheduleWizard for system %d", profileLabel, serverID)
+	}
+
+	proxyHost := ""
+	if proxyID != 0 {
+		proxyHost = strconv.Itoa(proxyID)
+	}
+	form := url.Values{}
+	form.Set("csrf_token", string(csrf[1]))
+	form.Set("submitted", "true")
+	form.Set("list_"+listID+"_hidden", hash)
+	form.Set("list_"+listID+"_filterby", "Autoinstallation Profile")
+	form.Set("list_"+listID+"_filterattr", "label")
+	form.Set("list_"+listID+"_radio", hash)
+	form.Set("list_"+listID+"_parent_is_an_element", "true")
+	form.Set("bondType", "none")
+	form.Set("wizardStep", "fourth")
+	form.Set("cobbler_id", "")
+	form.Set("sid", strconv.Itoa(serverID))
+	form.Set("destroyDisks", "false")
+	form.Set("proxyHost", proxyHost)
+
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, pageURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postResp, err := c.rawHTTP.Do(postReq)
+	if err != nil {
+		return fmt.Errorf("POST ScheduleWizard.do: %w", err)
+	}
+	body, _ := io.ReadAll(postResp.Body)
+	postResp.Body.Close()
+	if postResp.StatusCode >= 400 {
+		return fmt.Errorf("POST ScheduleWizard.do returned HTTP %d", postResp.StatusCode)
+	}
+	if bytes.Contains(body, []byte(`class="alert alert-danger"`)) || bytes.Contains(body, []byte("messages-error")) {
+		return fmt.Errorf("ScheduleWizard.do rejected generating PXE config for system %d (profile %q)", serverID, profileLabel)
+	}
+	return nil
+}
+
+// pxeRadioHashForProfile finds the ScheduleWizard row hash (the list_<id>_radio
+// value) whose row references the given Cobbler profile label. Each radio's
+// segment (up to the next radio) contains the label as text and in a
+// /cblr/svc/op/autoinstall/profile/<label> link; the full label (with its
+// :S:<org>:<name> suffix) is specific enough that a substring match won't
+// collide with version-prefixed siblings (e.g. ...-0.6.13 vs ...-0.6.13-1).
+func pxeRadioHashForProfile(page []byte, listID, profileLabel string) string {
+	radioRe := regexp.MustCompile(`name="list_` + regexp.QuoteMeta(listID) + `_radio" value="([0-9a-fA-F]+)"`)
+	locs := radioRe.FindAllSubmatchIndex(page, -1)
+	label := []byte(profileLabel)
+	for i, loc := range locs {
+		end := len(page)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		if bytes.Contains(page[loc[1]:end], label) {
+			return string(page[loc[2]:loc[3]])
+		}
+	}
+	return ""
+}
+
+// SetVariables sets the Cobbler system-record netboot flag and ks_meta variables
+// on a system by driving the WebUI action /rhn/systems/details/kickstart/
+// Variables.do, rather than the JSON API's system.setVariables.
+//
+// Why the WebUI: system.setVariables (and the whole kickstart JSON API) refuses
+// Cobbler-only profiles — e.g. the auto-created image/saltboot profiles that
+// have no Uyuni KickstartData — with HTTP 403 even for a super-admin. The
+// Variables.do action is the exact path the browser uses and works for those
+// profiles. The operator's rawHTTP session cookie authenticates it, so we GET
+// the page for a CSRF token, then POST the form. The variables textarea is
+// key=value, one per line; this REPLACES the record's entire ks_meta set.
+func (c *Client) SetVariables(ctx context.Context, serverID int, netboot bool, variables map[string]string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.rawLogin(); err != nil {
+		return err
+	}
+	pageURL := fmt.Sprintf("%s/rhn/systems/details/kickstart/Variables.do?sid=%d", c.baseURL, serverID)
+
+	// 1. GET the page to obtain a session-bound CSRF token.
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	if err != nil {
+		return err
+	}
+	getResp, err := c.rawHTTP.Do(getReq)
+	if err != nil {
+		return fmt.Errorf("GET Variables.do: %w", err)
+	}
+	page, _ := io.ReadAll(getResp.Body)
+	getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET Variables.do returned HTTP %d", getResp.StatusCode)
+	}
+	m := csrfTokenRe.FindSubmatch(page)
+	if m == nil {
+		return fmt.Errorf("could not find csrf_token on Variables.do (session/auth problem?)")
+	}
+
+	// 2. Build the form. Sort keys so repeated reconciles produce identical
+	// payloads (no spurious churn).
+	keys := make([]string, 0, len(variables))
+	for k := range variables {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var textarea strings.Builder
+	for _, k := range keys {
+		textarea.WriteString(k)
+		textarea.WriteByte('=')
+		textarea.WriteString(variables[k])
+		textarea.WriteByte('\n')
+	}
+	form := url.Values{}
+	form.Set("csrf_token", string(m[1]))
+	form.Set("sid", strconv.Itoa(serverID))
+	form.Set("submitted", "true")
+	form.Set("variables", textarea.String())
+	if netboot {
+		// Unchecked HTML checkboxes submit nothing; only send when enabling.
+		form.Set("netbootEnabled", "on")
+	}
+
+	// 3. POST the form.
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/rhn/systems/details/kickstart/Variables.do", strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postResp, err := c.rawHTTP.Do(postReq)
+	if err != nil {
+		return fmt.Errorf("POST Variables.do: %w", err)
+	}
+	body, _ := io.ReadAll(postResp.Body)
+	postResp.Body.Close()
+	if postResp.StatusCode >= 400 {
+		return fmt.Errorf("POST Variables.do returned HTTP %d", postResp.StatusCode)
+	}
+	// Struts re-renders the form (HTTP 200) with an error banner on failure and
+	// redirects on success; surface an obvious error banner if present.
+	if bytes.Contains(body, []byte("class=\"alert alert-danger\"")) || bytes.Contains(body, []byte("messages-error")) {
+		return fmt.Errorf("Variables.do rejected the update (see system %d kickstart variables page)", serverID)
+	}
+	return nil
 }
 
 func (c *Client) GetSystemDetails(ctx context.Context, serverID int) (*SystemDetails, error) {

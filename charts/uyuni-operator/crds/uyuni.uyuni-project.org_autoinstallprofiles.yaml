@@ -84,8 +84,12 @@ spec:
                   Defaults to the Uyuni server's configured hostname when empty.
                 type: string
               label:
-                description: Label is the Cobbler profile label. Immutable after creation.
-                pattern: ^[a-z0-9][a-z0-9._-]*$
+                description: |-
+                  Label is the Cobbler profile label. Immutable after creation. In Managed
+                  mode it must be a clean Cobbler label (lowercase alnum and ._-, enforced by
+                  the CEL rule). In External mode it is whatever Uyuni assigned to the
+                  auto-created profile (may contain uppercase, ':' etc.), so no pattern is
+                  imposed.
                 type: string
               mode:
                 default: Managed
@@ -206,6 +210,8 @@ spec:
               rule: "self.mode != 'External' || !has(self.rootPasswordSecretRef)"
             - message: kickstartContents, scripts, childChannelRefs and variables must not be set when mode is External
               rule: "self.mode != 'External' || (!has(self.kickstartContents) && (!has(self.scripts) || size(self.scripts) == 0) && (!has(self.childChannelRefs) || size(self.childChannelRefs) == 0) && (!has(self.variables) || size(self.variables) == 0))"
+            - message: label must match ^[a-z0-9][a-z0-9._-]*$ in Managed mode
+              rule: "self.mode != 'Managed' || self.label.matches('^[a-z0-9][a-z0-9._-]*$')"
           status:
             properties:
               childChannelLabels:

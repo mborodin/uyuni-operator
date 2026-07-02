@@ -94,6 +94,15 @@ spec:
                       Defaults to immediate execution.
                     format: date-time
                     type: string
+                  netboot:
+                    default: true
+                    description: |-
+                      Netboot enables PXE netboot on the Cobbler system record — the netboot
+                      flag of system.setVariables, matching the UI's "Enable netboot" toggle.
+                      Defaults to true. Applied together with Variables (system.setVariables
+                      couples the two), so it only takes effect when at least one variable is
+                      declared; otherwise createSystemRecord's default (netboot on) stands.
+                    type: boolean
                   profile:
                     description: |-
                       Profile is the bare Cobbler/Kickstart profile label registered in Uyuni.
@@ -111,6 +120,87 @@ spec:
                     required:
                     - name
                     type: object
+                  variables:
+                    description: |-
+                      Variables are per-system Cobbler system-record variables (ks_meta),
+                      substituted into the autoinstall template. Each entry sets a literal
+                      Value or sources it from a Secret/ConfigMap key (like a pod env var).
+                      Applied via system.setVariables when PreCreate is true and at least one
+                      variable is declared. IMPORTANT: system.setVariables REPLACES the record's
+                      entire ks_meta set, so this must be the COMPLETE authoritative set — any
+                      Uyuni-generated key you want to keep (e.g. bootstrap_token, activation_key)
+                      must be included here, typically sourced from a Secret. Explicit Variables
+                      override keys imported by VariablesFrom.
+                    items:
+                      description: AutoinstallVariable is one Cobbler ks_meta variable.
+                      properties:
+                        name:
+                          description: Name is the ks_meta variable key.
+                          type: string
+                        value:
+                          description: Value is a literal value. Mutually exclusive with ValueFrom.
+                          type: string
+                        valueFrom:
+                          description: |-
+                            ValueFrom sources the value from a Secret or ConfigMap key in the
+                            same namespace. Mutually exclusive with Value.
+                          properties:
+                            configMapKeyRef:
+                              description: ConfigMapKeyRef selects a key of a ConfigMap in the same namespace.
+                              properties:
+                                key:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                            secretKeyRef:
+                              description: SecretKeyRef selects a key of a Secret in the same namespace.
+                              properties:
+                                key:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  variablesFrom:
+                    description: |-
+                      VariablesFrom bulk-imports every key of the referenced Secrets/ConfigMaps
+                      as ks_meta variables (like a pod's envFrom). Sources are applied in order;
+                      later sources and explicit Variables override earlier keys.
+                    items:
+                      description: AutoinstallVariableSource bulk-imports all keys of a Secret or ConfigMap.
+                      properties:
+                        configMapRef:
+                          description: ConfigMapRef imports all keys from a ConfigMap in the same namespace.
+                          properties:
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        prefix:
+                          description: Prefix is prepended to each imported variable key.
+                          type: string
+                        secretRef:
+                          description: SecretRef imports all keys from a Secret in the same namespace.
+                          properties:
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                      type: object
+                    type: array
                 type: object
               baseChannelFrom:
                 description: |-
@@ -376,6 +466,13 @@ spec:
                 items:
                   type: string
                 type: array
+              autoinstallRecordLabel:
+                description: |-
+                  AutoinstallRecordLabel is the Cobbler autoinstall profile label the
+                  pre-create system record (system.createSystemRecord) was last created
+                  with. Empty until the record is created; used to make record creation
+                  idempotent and to detect a changed profile.
+                type: string
               activeFormulas:
                 description: ActiveFormulas is the set of Salt formulas last enabled
                   on the system.

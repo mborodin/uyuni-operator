@@ -36,6 +36,19 @@ type API interface {
 	FindSystemByMinionID(ctx context.Context, minionID string) (*SystemDetails, error)
 	FindSystemByMAC(ctx context.Context, mac string) (*SystemDetails, error)
 	CreateSystemProfile(ctx context.Context, name string, data SystemProfileData) (int, error)
+	// CreateSystemRecord creates/refreshes the Cobbler system record for an
+	// already pre-created system (system.createSystemRecord), setting its named
+	// network interfaces and linking the autoinstall (Cobbler) profile. Mirrors
+	// the UI flow of "create the system profile, then create its system record".
+	CreateSystemRecord(ctx context.Context, systemName, ksLabel, kernelOptions, comment string, netDevices []NetworkDevice) error
+	// SetVariables sets the Cobbler system-record netboot flag and ks_meta
+	// variables on a system (drives the WebUI Variables.do action).
+	SetVariables(ctx context.Context, serverID int, netboot bool, variables map[string]string) error
+	// GeneratePxeConfig creates/updates the Cobbler system record via the WebUI
+	// ScheduleWizard "generate PXE installation configuration" action, for
+	// Cobbler-only profiles the JSON createSystemRecord rejects. proxyID is the
+	// boot proxy's Uyuni server id (0 = none).
+	GeneratePxeConfig(ctx context.Context, serverID int, profileLabel string, proxyID int) error
 	GetSystemDetails(ctx context.Context, serverID int) (*SystemDetails, error)
 	// SetSystemDetails updates mutable system properties via system.setDetails.
 	// Only fields set in d are sent; zero values are omitted.
