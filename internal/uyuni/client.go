@@ -850,15 +850,43 @@ func (c *Client) GeneratePxeConfig(ctx context.Context, serverID int, profileLab
 	if proxyID != 0 {
 		proxyHost = strconv.Itoa(proxyID)
 	}
+	// Send the full field set the browser submits (captured from the WebUI).
+	// Struts form binding is order-insensitive but expects the fields to be
+	// present, including the empty ones — omitting them causes the wizard to
+	// reject the step. lp is the per-render list-widget field prefix.
+	lp := "list_" + listID + "_"
 	form := url.Values{}
 	form.Set("csrf_token", string(csrf[1]))
 	form.Set("submitted", "true")
-	form.Set("list_"+listID+"_hidden", hash)
-	form.Set("list_"+listID+"_filterby", "Autoinstallation Profile")
-	form.Set("list_"+listID+"_filterattr", "label")
-	form.Set("list_"+listID+"_radio", hash)
-	form.Set("list_"+listID+"_parent_is_an_element", "true")
+	form.Set(lp+"hidden", hash)
+	form.Set(lp+"filtername", "")
+	form.Set(lp+"oldfilterval", "")
+	form.Set(lp+"filterby", "Autoinstallation Profile")
+	form.Set(lp+"filterval", "")
+	form.Set(listID+"_PAGE_SIZE_LABEL", "25")
+	form.Set(listID+"_PAGE_SIZE_LABEL_SELECTED", "null")
+	form.Set(lp+"filterattr", "label")
+	form.Set(lp+"radio", hash)
+	form.Set(lp+"sortby", "")
+	form.Set(lp+"sortdir", "")
+	form.Set(lp+"parent_is_an_element", "true")
+	form.Set("targetProfileType", "")
+	form.Set("targetProfile", "")
+	form.Set("targetServerProfile", "")
+	form.Set("postKernelParamsType", "")
+	form.Set("postKernelParams", "")
+	form.Set("kernelParamsType", "")
+	form.Set("kernelParams", "")
+	form.Set("networkType", "")
+	form.Set("networkInterface", "")
 	form.Set("bondType", "none")
+	form.Set("bondInterface", "")
+	form.Set("bondOptions", "")
+	form.Set("hiddenBondSlaveInterfaces", "")
+	form.Set("bondStatic", "")
+	form.Set("bondAddress", "")
+	form.Set("bondNetmask", "")
+	form.Set("bondGateway", "")
 	form.Set("wizardStep", "fourth")
 	form.Set("cobbler_id", "")
 	form.Set("sid", strconv.Itoa(serverID))
@@ -879,10 +907,27 @@ func (c *Client) GeneratePxeConfig(ctx context.Context, serverID int, profileLab
 	if postResp.StatusCode >= 400 {
 		return fmt.Errorf("POST ScheduleWizard.do returned HTTP %d", postResp.StatusCode)
 	}
-	if bytes.Contains(body, []byte(`class="alert alert-danger"`)) || bytes.Contains(body, []byte("messages-error")) {
-		return fmt.Errorf("ScheduleWizard.do rejected generating PXE config for system %d (profile %q)", serverID, profileLabel)
+	if msg := webUIErrorBanner(body); msg != "" {
+		return fmt.Errorf("ScheduleWizard.do rejected PXE config for system %d (profile %q): %s", serverID, profileLabel, msg)
 	}
 	return nil
+}
+
+// alertDangerRe and htmlTagRe extract the human-readable text of a Uyuni WebUI
+// error banner so failures carry the server's actual message.
+var alertDangerRe = regexp.MustCompile(`(?s)alert-danger[^>]*>(.*?)</div>`)
+var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
+// webUIErrorBanner returns the trimmed text of an alert-danger banner in a WebUI
+// response, or "" if there is none / it is empty (which avoids false positives
+// from hidden/empty alert templates that are always present in the page).
+func webUIErrorBanner(body []byte) string {
+	m := alertDangerRe.FindSubmatch(body)
+	if m == nil {
+		return ""
+	}
+	text := htmlTagRe.ReplaceAllString(string(m[1]), " ")
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // pxeRadioHashForProfile finds the ScheduleWizard row hash (the list_<id>_radio
@@ -986,9 +1031,9 @@ func (c *Client) SetVariables(ctx context.Context, serverID int, netboot bool, v
 		return fmt.Errorf("POST Variables.do returned HTTP %d", postResp.StatusCode)
 	}
 	// Struts re-renders the form (HTTP 200) with an error banner on failure and
-	// redirects on success; surface an obvious error banner if present.
-	if bytes.Contains(body, []byte("class=\"alert alert-danger\"")) || bytes.Contains(body, []byte("messages-error")) {
-		return fmt.Errorf("Variables.do rejected the update (see system %d kickstart variables page)", serverID)
+	// redirects on success; surface the banner's actual text if present.
+	if msg := webUIErrorBanner(body); msg != "" {
+		return fmt.Errorf("Variables.do rejected the update for system %d: %s", serverID, msg)
 	}
 	return nil
 }
