@@ -175,20 +175,6 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 			return r.fail(ctx, sys, "CreateFailed", err)
 		}
 		sys.Status.UyuniServerID = serverID
-		// Best-effort: set primary IP on the pre-created profile so it's visible
-		// in the Uyuni UI before the minion registers. Errors are non-fatal.
-		// Uses the provider (satellite-admin) client — org-scoped users lack the
-		// required role for system.saveNetworkInformation.
-		if adminUC, adminErr := r.providerClientForSystem(ctx, sys); adminErr == nil {
-			for _, nic := range sys.Spec.Network {
-				if nic.IPAddress != "" {
-					if err := adminUC.SetNetworkInformation(ctx, serverID, sys.Spec.Hostname, nic.IPAddress); err != nil {
-						log.FromContext(ctx).Error(err, "SetNetworkInformation failed (non-fatal)", "serverID", serverID, "ip", nic.IPAddress)
-					}
-					break
-				}
-			}
-		}
 		t := metav1.NewTime(now)
 		sys.Status.Phase = "PreProvisioned"
 		sys.Status.PhaseTransitionTime = &t
@@ -424,17 +410,6 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		// until the minion finishes registering before issuing the call, to
 		// avoid spamming Uyuni with one doomed action per reconcile.
 		if current.BaseEntitlement == "bootstrap_entitled" {
-			// Best-effort: keep IP visible in Uyuni UI during the bootstrap phase.
-			if adminUC, adminErr := r.providerClientForSystem(ctx, sys); adminErr == nil {
-				for _, nic := range sys.Spec.Network {
-					if nic.IPAddress != "" {
-						if err := adminUC.SetNetworkInformation(ctx, sys.Status.UyuniServerID, sys.Spec.Hostname, nic.IPAddress); err != nil {
-							log.FromContext(ctx).Error(err, "SetNetworkInformation failed (non-fatal)", "serverID", sys.Status.UyuniServerID, "ip", nic.IPAddress)
-						}
-						break
-					}
-				}
-			}
 			// Group membership via server ID works before the minion completes its
 			// first registration, so assign groups now rather than waiting.
 			if len(sys.Spec.GroupRefs) > 0 {
@@ -946,18 +921,6 @@ func (r *SystemReconciler) resolveGroupMembership(ctx context.Context, sys *uyun
 		names = append(names, sg.Spec.Name)
 	}
 	return names, "", nil
-}
-
-// providerClientForSystem returns the satellite-admin API client for the
-// UyuniProvider that backs the system's organization. Used for operations
-// that require satellite-admin privileges (e.g. system.saveNetworkInformation)
-// and must not use the org-scoped credentials.
-func (r *SystemReconciler) providerClientForSystem(ctx context.Context, sys *uyuniv1.System) (uyuni.API, error) {
-	var org uyuniv1.Organization
-	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: orgRef(sys.Spec.OrganizationRef)}, &org); err != nil {
-		return nil, err
-	}
-	return r.Clients.For(ctx, &uyuni.LocalObjectRef{Name: org.Spec.ProviderRef.Name}, sys.Namespace)
 }
 
 func (r *SystemReconciler) fail(ctx context.Context, sys *uyuniv1.System, reason string, err error) (ctrl.Result, error) {

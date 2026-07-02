@@ -1016,22 +1016,6 @@ func (c *Client) SetSystemDetails(ctx context.Context, serverID int, d SystemDet
 	return err
 }
 
-func (c *Client) SetNetworkInformation(ctx context.Context, serverID int, hostname, ipAddr string) error {
-	_, err := apiPost[any](c, "system/saveNetworkInformation", map[string]any{
-		"sid": serverID,
-		"networkInfo": map[string]any{
-			"hostname":         hostname,
-			"ip_addr":          ipAddr,
-			"ip6_addr":         "",
-			"netmask":          "",
-			"default_gateway":  "",
-			"primary_dns":      "",
-			"secondary_dns":    "",
-			"ternary_dns":      "",
-		},
-	})
-	return err
-}
 
 func (c *Client) ListSystemConfigChannels(ctx context.Context, serverID int) ([]string, error) {
 	type wireCCInfo struct {
