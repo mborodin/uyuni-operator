@@ -53,6 +53,9 @@ type API interface {
 	// SetSystemDetails updates mutable system properties via system.setDetails.
 	// Only fields set in d are sent; zero values are omitted.
 	SetSystemDetails(ctx context.Context, serverID int, d SystemDetailsUpdate) error
+	// SetNetworkInformation sets the primary IP address and hostname for a
+	// pre-created system profile via system.saveNetworkInformation.
+	SetNetworkInformation(ctx context.Context, serverID int, hostname, ipAddr string) error
 	DeleteSystem(ctx context.Context, serverID int) error
 
 	GetCustomInfo(ctx context.Context, serverID int) (map[string]string, error)

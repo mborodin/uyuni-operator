@@ -175,6 +175,14 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 			return r.fail(ctx, sys, "CreateFailed", err)
 		}
 		sys.Status.UyuniServerID = serverID
+		// Best-effort: set primary IP on the pre-created profile so it's visible
+		// in the Uyuni UI before the minion registers. Errors are non-fatal.
+		for _, nic := range sys.Spec.Network {
+			if nic.IPAddress != "" {
+				_ = uc.SetNetworkInformation(ctx, serverID, sys.Spec.Hostname, nic.IPAddress)
+				break
+			}
+		}
 		t := metav1.NewTime(now)
 		sys.Status.Phase = "PreProvisioned"
 		sys.Status.PhaseTransitionTime = &t
@@ -410,6 +418,13 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		// until the minion finishes registering before issuing the call, to
 		// avoid spamming Uyuni with one doomed action per reconcile.
 		if current.BaseEntitlement == "bootstrap_entitled" {
+			// Best-effort: keep IP visible in Uyuni UI during the bootstrap phase.
+			for _, nic := range sys.Spec.Network {
+				if nic.IPAddress != "" {
+					_ = uc.SetNetworkInformation(ctx, sys.Status.UyuniServerID, sys.Spec.Hostname, nic.IPAddress)
+					break
+				}
+			}
 			// Group membership via server ID works before the minion completes its
 			// first registration, so assign groups now rather than waiting.
 			if len(sys.Spec.GroupRefs) > 0 {
