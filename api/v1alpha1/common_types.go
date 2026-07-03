@@ -25,6 +25,26 @@ type ConfigMapKeyRef struct {
 	Key string `json:"key"`
 }
 
+// ObjectFieldRef selects a field from another uyuni.uyuni-project.org resource
+// in the same namespace via a JSONPath. Only the uyuni.uyuni-project.org API
+// group is permitted (webhook-enforced) — the operator does not read arbitrary
+// cluster resources.
+type ObjectFieldRef struct {
+	// APIVersion is the group/version, e.g. "uyuni.uyuni-project.org/v1alpha1".
+	// +kubebuilder:validation:Required
+	APIVersion string `json:"apiVersion"`
+	// Kind is the referenced resource kind, e.g. "ImageProfile".
+	// +kubebuilder:validation:Required
+	Kind string `json:"kind"`
+	// Name is the referenced object's name in the same namespace.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// FieldPath is a JSONPath into the object, e.g.
+	// "status.lastBuild.files[?(@.type=='image')].url".
+	// +kubebuilder:validation:Required
+	FieldPath string `json:"fieldPath"`
+}
+
 // BasicAuthRef references a Secret that contains username and password keys for HTTP Basic Auth.
 // The controller reads the credentials at reconcile time and injects them into the source URL;
 // they are never stored in status.

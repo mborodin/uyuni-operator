@@ -37,4 +37,11 @@ const (
 	// The reconciler strips the annotation after recording the action ID in status.
 	// Requires spec.autoinstall to be set. Value must be exactly "true".
 	AnnReinstallNow = Group + "/reinstall-now"
+
+	// AnnApplyFormulaValues on a System forces the operator to re-resolve
+	// formula valuesFrom references and push them to Uyuni, even without a spec
+	// change. Use it after a referenced value changes (e.g. a new image build)
+	// and the FormulaValuesDrift condition indicates the applied values are
+	// stale. Stripped after the values are applied. Value must be exactly "true".
+	AnnApplyFormulaValues = Group + "/apply-formula-values"
 )

@@ -11,6 +11,7 @@ resources:
 - bases/uyuni.uyuni-project.org_contentprojectpromotions.yaml
 - bases/uyuni.uyuni-project.org_contentprojects.yaml
 - bases/uyuni.uyuni-project.org_custominfokeys.yaml
+- bases/uyuni.uyuni-project.org_imagebuilds.yaml
 - bases/uyuni.uyuni-project.org_imageprofiles.yaml
 - bases/uyuni.uyuni-project.org_imagestores.yaml
 - bases/uyuni.uyuni-project.org_organizations.yaml

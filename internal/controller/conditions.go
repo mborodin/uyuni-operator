@@ -13,6 +13,7 @@ const (
 	condBuildHost            = "BuildHost"
 	condPreProvisioned       = "PreProvisioned"
 	condAutoinstallScheduled = "AutoinstallScheduled"
+	condFormulaValuesDrift   = "FormulaValuesDrift"
 )
 
 // setCondition is the generic primitive. setReady and similar are thin

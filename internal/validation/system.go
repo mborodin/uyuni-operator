@@ -67,8 +67,73 @@ func SystemFormulas(formulas []uyuniv1.FormulaAssignment, path *field.Path) fiel
 			errs = append(errs, field.Duplicate(p, f.Name))
 		}
 		seen[f.Name] = true
+
+		for j, vf := range f.ValuesFrom {
+			vp := path.Index(i).Child("valuesFrom").Index(j)
+			if vf.Path == "" {
+				errs = append(errs, field.Required(vp.Child("path"), "path is required"))
+			}
+			n := 0
+			if vf.SecretKeyRef != nil {
+				n++
+			}
+			if vf.ConfigMapKeyRef != nil {
+				n++
+			}
+			if vf.ObjectFieldRef != nil {
+				n++
+			}
+			if n != 1 {
+				errs = append(errs, field.Invalid(vp, vf.Path,
+					"exactly one of secretKeyRef, configMapKeyRef or objectFieldRef must be set"))
+			}
+			if vf.ObjectFieldRef != nil {
+				errs = append(errs, objectFieldRefErrs(vf.ObjectFieldRef, vp.Child("objectFieldRef"))...)
+			}
+		}
+		for j, src := range f.ValuesFromSources {
+			sp := path.Index(i).Child("valuesFromSources").Index(j)
+			s, c := src.SecretRef != nil, src.ConfigMapRef != nil
+			if s == c {
+				errs = append(errs, field.Invalid(sp, src.Path,
+					"exactly one of secretRef or configMapRef must be set"))
+			}
+		}
 	}
 	return errs
+}
+
+// objectFieldRef restricts references to the uyuni.uyuni-project.org API group
+// so the operator never reads arbitrary cluster resources.
+func objectFieldRefErrs(ref *uyuniv1.ObjectFieldRef, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	if ref.Kind == "" {
+		errs = append(errs, field.Required(path.Child("kind"), "kind is required"))
+	}
+	if ref.Name == "" {
+		errs = append(errs, field.Required(path.Child("name"), "name is required"))
+	}
+	if ref.FieldPath == "" {
+		errs = append(errs, field.Required(path.Child("fieldPath"), "fieldPath is required"))
+	}
+	group := ref.APIVersion
+	if i := indexByte(group, '/'); i >= 0 {
+		group = group[:i]
+	}
+	if group != uyuniv1.Group {
+		errs = append(errs, field.Invalid(path.Child("apiVersion"), ref.APIVersion,
+			"objectFieldRef may only reference the "+uyuniv1.Group+" API group"))
+	}
+	return errs
+}
+
+func indexByte(s string, b byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
 }
 
 // SystemCustomInfoValues validates a system's custom info values: each must

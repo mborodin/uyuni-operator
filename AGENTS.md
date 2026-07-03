@@ -135,11 +135,11 @@ Implementation status (current repo state):
 
 - **API types**: all 22 Kinds above are declared in `api/v1alpha1/`.
 
-- **`cmd/main.go`**: present. Registers **19 reconcilers** (Organization,
+- **`cmd/main.go`**: present. Registers **20 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
-  AutoinstallProfile, ImageProfile, CustomInfoKey, CobblerSystem,
+  AutoinstallProfile, ImageProfile, ImageBuild, CustomInfoKey, CobblerSystem,
   CobblerDistro, CobblerProfile) and **14 webhooks**. The Cobbler controllers
   talk XMLRPC to Uyuni's `/cobbler_api` via `internal/cobbler` (reads unauth;
   writes need cobbler `redhat_management_permissive` enabled).
@@ -226,7 +226,7 @@ Canonical reason taxonomy:
 - `AdoptionTimedOut` — system never registered within `AdoptionTimeout`
 - `Reconciled` — happy path; the only `True` reason
 
-### 5. Conditions: Ready, UyuniDrift, BuildHost
+### 5. Conditions: Ready, UyuniDrift, BuildHost, PreProvisioned, FormulaValuesDrift
 
 Standard condition types and their semantics:
 
@@ -240,6 +240,13 @@ Standard condition types and their semantics:
 - `PreProvisioned` (System only) — `True` between profile creation and
   first registration. Different from `Ready` because the system isn't
   actually managed yet.
+- `FormulaValuesDrift` (System only) — `True` when a `spec.formulas[].valuesFrom`
+  reference now resolves to a value different from what was last pushed to Uyuni.
+  Not applied automatically (a new image build must not silently rewrite formula
+  config); apply with a spec change or the
+  `uyuni.uyuni-project.org/apply-formula-values` annotation. Gated by
+  `status.formulaDataGeneration`; `objectFieldRef` is restricted to the
+  `uyuni.uyuni-project.org` group, same namespace.
 
 ### 6. Owner refs do cascading
 

@@ -198,6 +198,9 @@ type API interface {
 	// GetImagePillar returns the Salt pillar for a built image, which exposes the
 	// saltboot boot data (boot_images) for PXE/OS images.
 	GetImagePillar(ctx context.Context, imageID int) (map[string]any, error)
+	// GetImageDetails returns a built image's metadata and artifact files
+	// (image/kernel/initrd) with download URLs (image.getDetails).
+	GetImageDetails(ctx context.Context, imageID int) (*ImageDetails, error)
 
 	// Scheduled actions (tasks)
 	ScheduleHighstate(ctx context.Context, serverIDs []int, earliest time.Time, test bool) (int, error)

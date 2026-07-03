@@ -315,6 +315,7 @@ func (r *ImageProfileReconciler) pollBuild(ctx context.Context, uc uyuni.API, ip
 				if img.Version == ip.Status.LastBuild.Version {
 					ip.Status.LastBuild.BuildID = img.ID
 					ip.Status.BootImage = r.bootImageFromPillar(ctx, uc, img)
+					r.recordBuildFiles(ctx, uc, ip, img.ID)
 					break
 				}
 			}
@@ -350,6 +351,28 @@ func (r *ImageProfileReconciler) bootImageFromPillar(ctx context.Context, uc uyu
 		return expected
 	}
 	return ""
+}
+
+// recordBuildFiles fetches the built image's artifact files (image, kernel,
+// initrd, ...) and records them on status.lastBuild, so other resources can
+// reference e.g. status.lastBuild.files[?(@.type=='image')].url or
+// status.lastBuild.imageUrl.
+func (r *ImageProfileReconciler) recordBuildFiles(ctx context.Context, uc uyuni.API, ip *uyuniv1.ImageProfile, imageID int) {
+	d, err := uc.GetImageDetails(ctx, imageID)
+	if err != nil || d == nil {
+		return
+	}
+	ip.Status.LastBuild.Revision = d.Revision
+	ip.Status.LastBuild.Checksum = d.Checksum
+	ip.Status.LastBuild.ImageURL = ""
+	files := make([]uyuniv1.ImageFile, 0, len(d.Files))
+	for _, f := range d.Files {
+		files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
+		if f.Type == "image" {
+			ip.Status.LastBuild.ImageURL = f.URL
+		}
+	}
+	ip.Status.LastBuild.Files = files
 }
 
 func (r *ImageProfileReconciler) fail(ctx context.Context, ip *uyuniv1.ImageProfile, reason string, err error) (ctrl.Result, error) {

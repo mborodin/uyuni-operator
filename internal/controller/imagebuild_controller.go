@@ -172,12 +172,25 @@ func (r *ImageBuildReconciler) pollAction(ctx context.Context, uc uyuni.API, ib 
 	case "Completed":
 		ib.Status.BuildStatus = "Succeeded"
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionTrue, "Succeeded", "")
-		// Try to find the resulting image ID.
+		// Try to find the resulting image ID and record its artifact files, so
+		// this immutable build record pins the version's downloadable files.
 		imgs, listErr := uc.ListImagesForProfile(ctx, profileLabel)
 		if listErr == nil {
 			for _, img := range imgs {
 				if img.Version == ib.Status.Version {
 					ib.Status.ImageID = img.ID
+					if d, derr := uc.GetImageDetails(ctx, img.ID); derr == nil && d != nil {
+						ib.Status.Checksum = d.Checksum
+						ib.Status.ImageURL = ""
+						files := make([]uyuniv1.ImageFile, 0, len(d.Files))
+						for _, f := range d.Files {
+							files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
+							if f.Type == "image" {
+								ib.Status.ImageURL = f.URL
+							}
+						}
+						ib.Status.Files = files
+					}
 					break
 				}
 			}

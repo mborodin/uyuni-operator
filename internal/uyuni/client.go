@@ -308,8 +308,8 @@ func apiDelete(c *Client, path string) error {
 	fmt.Printf("DEBUG: DELETE response body: %s\n", string(respBody))
 
 	var apiResp struct {
-		Success  bool   `json:"success"`
-		Message  string `json:"message"`
+		Success  bool     `json:"success"`
+		Message  string   `json:"message"`
 		Messages []string `json:"messages"`
 	}
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
@@ -422,8 +422,8 @@ func apiDeleteWithBody(c *Client, path string, bodyData map[string]any) error {
 	fmt.Printf("DEBUG: DELETE with body response: %s\n", string(respBody))
 
 	var apiResp struct {
-		Success  bool   `json:"success"`
-		Message  string `json:"message"`
+		Success  bool     `json:"success"`
+		Message  string   `json:"message"`
 		Messages []string `json:"messages"`
 	}
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
@@ -554,11 +554,11 @@ type wireConfigChannelType struct {
 }
 
 type wireConfigChannel struct {
-	ID                int                    `json:"id"`
-	Label             string                 `json:"label"`
-	Name              string                 `json:"name"`
-	Description       string                 `json:"description"`
-	ConfigChannelType wireConfigChannelType  `json:"configChannelType"`
+	ID                int                   `json:"id"`
+	Label             string                `json:"label"`
+	Name              string                `json:"name"`
+	Description       string                `json:"description"`
+	ConfigChannelType wireConfigChannelType `json:"configChannelType"`
 }
 
 type wireConfigFile struct {
@@ -791,7 +791,6 @@ func (c *Client) SetSystemDetails(ctx context.Context, serverID int, d SystemDet
 	return err
 }
 
-
 func (c *Client) ListSystemConfigChannels(ctx context.Context, serverID int) ([]string, error) {
 	type wireCCInfo struct {
 		Label string `json:"label"`
@@ -809,8 +808,8 @@ func (c *Client) ListSystemConfigChannels(ctx context.Context, serverID int) ([]
 
 func (c *Client) SetSystemConfigChannels(ctx context.Context, serverID int, channelLabels []string) error {
 	_, err := apiPost[any](c, "system/config/setChannels", map[string]any{
-		"sids":                 []int{serverID},
-		"configChannelLabels":  channelLabels,
+		"sids":                []int{serverID},
+		"configChannelLabels": channelLabels,
 	})
 	return err
 }
@@ -1200,7 +1199,7 @@ func (c *Client) RemoveActivationKeyEntitlements(ctx context.Context, key string
 
 func (c *Client) AddChildChannels(ctx context.Context, key string, labels []string) error {
 	_, err := apiPost[any](c, "activationkey/addChildChannels", map[string]any{
-		"key":               key,
+		"key":                key,
 		"childChannelLabels": labels,
 	})
 	return err
@@ -1208,7 +1207,7 @@ func (c *Client) AddChildChannels(ctx context.Context, key string, labels []stri
 
 func (c *Client) RemoveChildChannels(ctx context.Context, key string, labels []string) error {
 	_, err := apiPost[any](c, "activationkey/removeChildChannels", map[string]any{
-		"key":               key,
+		"key":                key,
 		"childChannelLabels": labels,
 	})
 	return err
@@ -1216,7 +1215,7 @@ func (c *Client) RemoveChildChannels(ctx context.Context, key string, labels []s
 
 func (c *Client) SetActivationKeyConfigChannels(ctx context.Context, key string, channelLabels []string) error {
 	_, err := apiPost[any](c, "activationkey/setConfigChannels", map[string]any{
-		"keys":               []string{key},
+		"keys":                []string{key},
 		"configChannelLabels": channelLabels,
 	})
 	return err
@@ -1230,7 +1229,7 @@ func (c *Client) SetActivationKeyGroups(ctx context.Context, key string, groupID
 	}
 	if len(existing.ServerGroupIDs) > 0 {
 		if _, err := apiPost[any](c, "activationkey/removeServerGroups", map[string]any{
-			"key":              key,
+			"key":            key,
 			"serverGroupIds": existing.ServerGroupIDs,
 		}); err != nil {
 			return err
@@ -1238,7 +1237,7 @@ func (c *Client) SetActivationKeyGroups(ctx context.Context, key string, groupID
 	}
 	if len(groupIDs) > 0 {
 		if _, err := apiPost[any](c, "activationkey/addServerGroups", map[string]any{
-			"key":              key,
+			"key":            key,
 			"serverGroupIds": groupIDs,
 		}); err != nil {
 			return err
@@ -1382,9 +1381,9 @@ func (c *Client) CreateRepo(ctx context.Context, r RepoDetails, sslCa, sslCert, 
 		"url":   r.URL,
 	}
 	if sslCa != "" || sslCert != "" || sslKey != "" {
-		payload["sslCaCert"]  = sslCa
+		payload["sslCaCert"] = sslCa
 		payload["sslCliCert"] = sslCert
-		payload["sslCliKey"]  = sslKey
+		payload["sslCliKey"] = sslKey
 	}
 	created, err := apiPost[wireRepo](c, "channel/software/createRepo", payload)
 	if err != nil {
@@ -1582,10 +1581,10 @@ func wireConfigFileToDetails(w *wireConfigFile) *ConfigFileDetails {
 func (c *Client) CreateProject(ctx context.Context, label, name, description string) (*ProjectDetails, error) {
 	r, err := apiPost[wireProject](c, "contentmanagement/projects", map[string]any{
 		"properties": map[string]any{
-			"label":           label,
-			"name":            name,
-			"description":     description,
-			"historyEntries":  []any{},
+			"label":          label,
+			"name":           name,
+			"description":    description,
+			"historyEntries": []any{},
 		},
 		"errors": map[string]any{},
 	})
@@ -1980,6 +1979,37 @@ func (c *Client) GetImagePillar(ctx context.Context, imageID int) (map[string]an
 	return apiGet[map[string]any](c, fmt.Sprintf("image/getPillar?imageId=%d", imageID))
 }
 
+type wireImageDetails struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Revision    int    `json:"revision"`
+	Checksum    string `json:"checksum"`
+	BuildStatus string `json:"buildStatus"`
+	Files       []struct {
+		File string `json:"file"`
+		Type string `json:"type"`
+		URL  string `json:"url"`
+	} `json:"files"`
+}
+
+// GetImageDetails returns a built image's metadata and artifact files (image,
+// kernel, initrd, ...) with their download URLs (image.getDetails).
+func (c *Client) GetImageDetails(ctx context.Context, imageID int) (*ImageDetails, error) {
+	r, err := apiGet[wireImageDetails](c, fmt.Sprintf("image/getDetails?imageId=%d", imageID))
+	if err != nil {
+		return nil, err
+	}
+	d := &ImageDetails{
+		ID: r.ID, Name: r.Name, Version: r.Version, Revision: r.Revision,
+		Checksum: r.Checksum, BuildStatus: r.BuildStatus,
+	}
+	for _, f := range r.Files {
+		d.Files = append(d.Files, ImageFileDetail{Name: f.File, Type: f.Type, URL: f.URL})
+	}
+	return d, nil
+}
+
 func (c *Client) ListImagesForProfile(ctx context.Context, profileLabel string) ([]ImageInfo, error) {
 	list, err := apiGet[[]wireImageInfo](c, "image/listImages?profile_label="+url.QueryEscape(profileLabel))
 	if err != nil {
@@ -2285,23 +2315,23 @@ func decodeScriptName(encoded string) (name, contents string) {
 
 func (c *Client) CreateProfile(ctx context.Context, args ProfileCreateArgs) error {
 	_, err := apiPost[any](c, "kickstart/createProfile", map[string]any{
-		"profile_label":       args.Label,
-		"vm_type":             args.VirtualizationType,
-		"kickstart_host":      args.KickstartHost,
+		"profile_label":        args.Label,
+		"vm_type":              args.VirtualizationType,
+		"kickstart_host":       args.KickstartHost,
 		"kickstart_tree_label": args.TreeLabel,
-		"download_url":        "",
-		"root_password":       args.RootPassword,
+		"download_url":         "",
+		"root_password":        args.RootPassword,
 	})
 	return err
 }
 
 func (c *Client) ImportProfile(ctx context.Context, args ProfileImportArgs) error {
 	_, err := apiPost[any](c, "kickstart/importFile", map[string]any{
-		"profile_label":       args.Label,
-		"virtualization_type": "none",
-		"kickstart_host":      args.KickstartHost,
+		"profile_label":        args.Label,
+		"virtualization_type":  "none",
+		"kickstart_host":       args.KickstartHost,
 		"kickstart_tree_label": args.TreeLabel,
-		"file_contents":       args.Contents,
+		"file_contents":        args.Contents,
 	})
 	return err
 }
@@ -2328,9 +2358,9 @@ func (c *Client) DeleteProfile(ctx context.Context, label string) error {
 
 func (c *Client) SetProfileChildChannels(ctx context.Context, label string, channelLabels []string) error {
 	_, err := apiPost[any](c, "kickstart/profile/software/setSoftwareList", map[string]any{
-		"ksLabel":      label,
-		"channels":     channelLabels,
-		"upgradeable":  false,
+		"ksLabel":     label,
+		"channels":    channelLabels,
+		"upgradeable": false,
 	})
 	return err
 }
@@ -2388,13 +2418,13 @@ func (c *Client) SetProfileCfgPreservation(ctx context.Context, label string, pr
 
 func (c *Client) AddProfileScript(ctx context.Context, label string, s ProfileScript) (int, error) {
 	r, err := apiPost[wireProfileScript](c, "kickstart/profile/script/addScript", map[string]any{
-		"ksLabel":      label,
-		"contents":     encodeScriptName(s.Name, s.Contents),
-		"interpreter":  s.Interpreter,
-		"script_type":  s.Type,
-		"chroot":       s.Chroot,
-		"template":     s.Template,
-		"errorOnFail":  s.ErrorOnFail,
+		"ksLabel":     label,
+		"contents":    encodeScriptName(s.Name, s.Contents),
+		"interpreter": s.Interpreter,
+		"script_type": s.Type,
+		"chroot":      s.Chroot,
+		"template":    s.Template,
+		"errorOnFail": s.ErrorOnFail,
 	})
 	if err != nil {
 		return 0, err

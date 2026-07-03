@@ -33,7 +33,6 @@ type SystemProfileData struct {
 	Hostname  string
 }
 
-
 // --- SystemGroup ---
 
 type SystemGroupDetails struct {
@@ -190,6 +189,24 @@ type ImageInfo struct {
 	Revision     int
 	BuildStatus  string
 	ProfileLabel string
+}
+
+// ImageDetails is a built image's metadata plus its artifact files.
+type ImageDetails struct {
+	ID          int
+	Name        string
+	Version     string
+	Revision    int
+	Checksum    string
+	BuildStatus string
+	Files       []ImageFileDetail
+}
+
+// ImageFileDetail is one artifact file of a built image.
+type ImageFileDetail struct {
+	Name string // file path within the image store
+	Type string // image, kernel, initrd, ...
+	URL  string
 }
 
 // --- Autoinstall (kickstart.tree + kickstart.profile) ---
