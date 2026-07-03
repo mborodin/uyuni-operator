@@ -79,6 +79,10 @@ internal/uyuni/              # Uyuni JSON API client
   client.go                  # HTTP *Client impl (uyuni-tools/shared/api transport)
   types.go                   # Wire types (ChannelDetails, ProjectDetails, ...)
 
+internal/cobbler/            # Cobbler XMLRPC client (Uyuni's /cobbler_api)
+  xmlrpc.go                  # Dependency-free XMLRPC codec
+  client.go                  # Reads (unauth) + writes (token via login); systems/profiles/distros
+
 config/                      # Kustomize manifests
   crd/bases/                 # Generated CRDs; crd/kustomization.yaml selects which deploy
   rbac/role.yaml             # Generated from kubebuilder markers
@@ -120,6 +124,9 @@ charts/uyuni-operator/       # Helm chart (hand-maintained packaging, see below)
 | `ContentProjectPromotion` | Namespaced | One-shot promotion action (Job-shaped, TTL'd) |
 | `ClmEnvironment` | Namespaced | CLM environment within a content project |
 | `Task` | Namespaced | Scheduled action: highstate, command, reboot, patches, configs |
+| `CobblerDistro` | Namespaced | Cobbler distribution over XMLRPC (`mode: import`/`create`) |
+| `CobblerProfile` | Namespaced | Cobbler profile over XMLRPC (`mode: import`/`create`) |
+| `CobblerSystem` | Namespaced | Cobbler system record (interfaces, ks_meta, netboot, proxy) |
 
 `BrandRegion` is **not** a native Go CRD — it is implemented as a Crossplane
 CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
@@ -127,15 +134,21 @@ CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
 
 ### Implementation status (current repo state)
 
-- **API types**: all 19 Kinds above are declared in `api/v1alpha1/`.
-- **`cmd/main.go`**: present. Registers **16 reconcilers** (Organization,
+- **API types**: all 22 Kinds above are declared in `api/v1alpha1/`.
+- **`cmd/main.go`**: present. Registers **19 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
-  AutoinstallProfile, ImageProfile, CustomInfoKey) and **14 webhooks**.
+  AutoinstallProfile, ImageProfile, CustomInfoKey, CobblerSystem,
+  CobblerDistro, CobblerProfile) and **14 webhooks**.
 - **Controllers defined but NOT registered in main.go**: `ImageBuild`.
   (`ConfigFile` and `ImageStore` have types but no controller.)
-- **CRDs**: 18 base files under `config/crd/bases/`, all included in
+- **Cobbler client (`internal/cobbler`)**: hand-rolled XMLRPC client against
+  Uyuni's `/cobbler_api`, reusing `UyuniProvider` creds via `pool.Cobbler(...)`.
+  Reads (get_*/find_*) are unauthenticated; writes (new/modify/save/remove) need
+  a token from `login`, which requires cobbler's `redhat_management_permissive`
+  setting enabled (the provider user must be `config_admin`/`org_admin`).
+- **CRDs**: 21 base files under `config/crd/bases/`, all included in
   `config/crd/kustomization.yaml`. ⚠️ Keep this aligned: `main.go` registering
   a controller for a Kind whose CRD is not installed makes the manager
   crash-loop (`no matches for kind ...` / `timed out waiting for cache to be

@@ -132,21 +132,26 @@ spec:
                       must be included here, typically sourced from a Secret. Explicit Variables
                       override keys imported by VariablesFrom.
                     items:
-                      description: AutoinstallVariable is one Cobbler ks_meta variable.
+                      description: |-
+                        AutoinstallVariable is one Cobbler ks_meta variable, shaped like a pod env
+                        var: the value is either literal (Value) or sourced from a Secret/ConfigMap
+                        key (ValueFrom). Exactly one of Value/ValueFrom is set (webhook-enforced).
                       properties:
                         name:
                           description: Name is the ks_meta variable key.
                           type: string
                         value:
-                          description: Value is a literal value. Mutually exclusive with ValueFrom.
+                          description: Value is a literal value. Mutually exclusive
+                            with ValueFrom.
                           type: string
                         valueFrom:
                           description: |-
-                            ValueFrom sources the value from a Secret or ConfigMap key in the
-                            same namespace. Mutually exclusive with Value.
+                            ValueFrom sources the value from a Secret or ConfigMap key in the same
+                            namespace. Mutually exclusive with Value.
                           properties:
                             configMapKeyRef:
-                              description: ConfigMapKeyRef selects a key of a ConfigMap in the same namespace.
+                              description: ConfigMapKeyRef selects a key of a ConfigMap
+                                in the same namespace.
                               properties:
                                 key:
                                   type: string
@@ -157,7 +162,8 @@ spec:
                               - name
                               type: object
                             secretKeyRef:
-                              description: SecretKeyRef selects a key of a Secret in the same namespace.
+                              description: SecretKeyRef selects a key of a Secret
+                                in the same namespace.
                               properties:
                                 key:
                                   type: string
@@ -178,10 +184,13 @@ spec:
                       as ks_meta variables (like a pod's envFrom). Sources are applied in order;
                       later sources and explicit Variables override earlier keys.
                     items:
-                      description: AutoinstallVariableSource bulk-imports all keys of a Secret or ConfigMap.
+                      description: |-
+                        AutoinstallVariableSource bulk-imports all keys of a Secret or ConfigMap as
+                        ks_meta variables. Exactly one of the two is set (webhook-enforced).
                       properties:
                         configMapRef:
-                          description: ConfigMapRef imports all keys from a ConfigMap in the same namespace.
+                          description: ConfigMapRef imports all keys from a ConfigMap
+                            in the same namespace.
                           properties:
                             name:
                               type: string
@@ -189,10 +198,12 @@ spec:
                           - name
                           type: object
                         prefix:
-                          description: Prefix is prepended to each imported variable key.
+                          description: Prefix is prepended to each imported variable
+                            key.
                           type: string
                         secretRef:
-                          description: SecretRef imports all keys from a Secret in the same namespace.
+                          description: SecretRef imports all keys from a Secret in
+                            the same namespace.
                           properties:
                             name:
                               type: string
@@ -476,13 +487,6 @@ spec:
                 items:
                   type: string
                 type: array
-              autoinstallRecordLabel:
-                description: |-
-                  AutoinstallRecordLabel is the Cobbler autoinstall profile label the
-                  pre-create system record (system.createSystemRecord) was last created
-                  with. Empty until the record is created; used to make record creation
-                  idempotent and to detect a changed profile.
-                type: string
               activeFormulas:
                 description: ActiveFormulas is the set of Salt formulas last enabled
                   on the system.
@@ -507,6 +511,11 @@ spec:
                 items:
                   type: string
                 type: array
+              cobblerSystemName:
+                description: |-
+                  CobblerSystemName is the name of the Cobbler system record realized for
+                  this system via its owned CobblerSystem (e.g. "<hostname>:<orgId>").
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current

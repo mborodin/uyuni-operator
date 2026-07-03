@@ -21,6 +21,9 @@ rules:
   - autoinstalldistributions
   - autoinstallprofiles
   - clmenvironments
+  - cobblerdistros
+  - cobblerprofiles
+  - cobblersystems
   - configurationchannels
   - contentprojects
   - custominfokeys
@@ -46,6 +49,9 @@ rules:
   - autoinstalldistributions/finalizers
   - autoinstallprofiles/finalizers
   - clmenvironments/finalizers
+  - cobblerdistros/finalizers
+  - cobblerprofiles/finalizers
+  - cobblersystems/finalizers
   - configurationchannels/finalizers
   - contentprojects/finalizers
   - custominfokeys/finalizers
@@ -65,6 +71,9 @@ rules:
   - autoinstalldistributions/status
   - autoinstallprofiles/status
   - clmenvironments/status
+  - cobblerdistros/status
+  - cobblerprofiles/status
+  - cobblersystems/status
   - configurationchannels/status
   - contentprojectpromotions/status
   - contentprojects/status

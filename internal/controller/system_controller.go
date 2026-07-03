@@ -15,8 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
@@ -61,6 +61,13 @@ func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	if err := reconcileOrganizationOwnership(ctx, r.Client, &sys, orgRef(sys.Spec.OrganizationRef)); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// Autoinstall is realized by an owned CobblerSystem (create mode) that the
+	// CobblerSystem controller reconciles over Cobbler XMLRPC. Independent of the
+	// system's Uyuni registration state.
+	if err := r.reconcileCobblerSystem(ctx, &sys); err != nil {
+		return r.fail(ctx, &sys, "ResolveRefs", err)
 	}
 
 	// Find the system in Uyuni, adopting by minionID or MAC if needed.
@@ -188,49 +195,10 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	// Phase: PreProvisioned / Reprovisioning — check autoinstall scheduling.
-	if sys.Status.UyuniServerID != 0 && sys.Spec.Autoinstall != nil && sys.Status.AutoinstallActionID == 0 {
-		profileLabel, waitReason, err := r.resolveProfileLabel(ctx, sys)
-		if err != nil {
-			return r.fail(ctx, sys, "ResolveProfileFailed", err)
-		}
-		if waitReason != "" {
-			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, "WaitingForProfile", waitReason)
-			_ = r.Status().Update(ctx, sys)
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-
-		// Mirror the UI flow: once the profile exists, ensure the Cobbler system
-		// record (named interfaces + profile link) and its netboot/ks_meta
-		// variables. Idempotent via AutoinstallRecordLabel; the label is persisted
-		// alongside AutoinstallActionID in the status update below.
-		if _, waitReason2, waitMsg2, err := r.ensureAutoinstallRecord(ctx, uc, sys); err != nil {
-			return r.fail(ctx, sys, "CreateFailed", err)
-		} else if waitReason2 != "" {
-			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, waitReason2, waitMsg2)
-			_ = r.Status().Update(ctx, sys)
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-
-		earliest := now
-		if sys.Spec.Autoinstall.Earliest != nil {
-			earliest = sys.Spec.Autoinstall.Earliest.Time
-		}
-		actionID, err := uc.ProvisionSystem(ctx, sys.Status.UyuniServerID, profileLabel, earliest)
-		if err != nil {
-			return r.fail(ctx, sys, "ScheduleFailed", err)
-		}
-		sys.Status.AutoinstallActionID = actionID
-		sys.Status.AutoinstallStatus = "Scheduled"
-		setCondition(&sys.Status.Conditions, condAutoinstallScheduled, metav1.ConditionTrue, sys.Generation,
-			"Scheduled", fmt.Sprintf("autoinstall action %d scheduled for profile %q", actionID, profileLabel))
-		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
-			"WaitingForRegistration", "autoinstall scheduled; waiting for system to re-register")
-		if err := r.Status().Update(ctx, sys); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
+	// Autoinstall for pre-created systems is realized by an owned CobblerSystem
+	// (reconcileCobblerSystem in Reconcile), which creates the Cobbler record —
+	// named interfaces, profile binding, netboot and ks_meta — directly over
+	// XMLRPC. No JSON provisionSystem/WebUI step here.
 
 	// Adoption timeout check.
 	if sys.Status.PhaseTransitionTime != nil && !sys.Status.PhaseTransitionTime.IsZero() {
@@ -300,23 +268,6 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		// Strip the annotation in a separate update after status is durable.
 		delete(sys.Annotations, uyuniv1.AnnReinstallNow)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Update(ctx, sys)
-	}
-
-	// Ensure the Cobbler system record + variables for pre-created autoinstall
-	// systems. This runs before the steady-state config (and before the
-	// bootstrap-entitlement gate below): the Cobbler binding is what lets a
-	// pre-created, still-bootstrap host PXE-boot the profile in the first place.
-	if changed, waitReason, waitMsg, err := r.ensureAutoinstallRecord(ctx, uc, sys); err != nil {
-		return r.fail(ctx, sys, "CreateFailed", err)
-	} else if waitReason != "" {
-		setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse, waitReason, waitMsg)
-		_ = r.Status().Update(ctx, sys)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	} else if changed {
-		if err := r.Status().Update(ctx, sys); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// 1. System details (description, contact method).
@@ -742,88 +693,107 @@ func filterOutBaseEntitlements(ents []string) []string {
 	return out
 }
 
-// netDevicesForSystem maps spec.network to Uyuni createSystemRecord netDevices,
-// carrying each interface's name (eth0, ...), MAC and IP so the Cobbler system
-// record shows real interface names instead of "undefined".
-func netDevicesForSystem(sys *uyuniv1.System) []uyuni.NetworkDevice {
-	devs := make([]uyuni.NetworkDevice, 0, len(sys.Spec.Network))
-	for _, nic := range sys.Spec.Network {
-		devs = append(devs, uyuni.NetworkDevice{
-			Name: nic.Name,
-			MAC:  nic.MACAddress,
-			IP:   nic.IPAddress,
-		})
-	}
-	return devs
-}
-
-// ensureAutoinstallRecord creates/refreshes the Cobbler system record for a
-// pre-created system that has autoinstall configured: it names the network
-// interfaces, links the autoinstall profile, and (when variables are declared)
-// sets netboot + ks_meta via system.setVariables. It is idempotent — guarded by
-// status.AutoinstallRecordLabel — and must run regardless of whether the system
-// has completed registration, because this Cobbler binding is precisely what
-// lets a pre-created, still-bootstrap host PXE-boot the profile.
-//
-// It mutates sys.Status.AutoinstallRecordLabel in memory when it acts; the
-// caller persists status when changed is true. A non-empty waitReason/waitMsg
-// means the profile or a referenced Secret/ConfigMap isn't ready yet and the
-// caller should requeue.
-func (r *SystemReconciler) ensureAutoinstallRecord(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (changed bool, waitReason, waitMsg string, err error) {
-	if !sys.Spec.PreCreate || sys.Spec.Autoinstall == nil || sys.Status.UyuniServerID == 0 {
-		return false, "", "", nil
+// reconcileCobblerSystem creates or updates an owned CobblerSystem (create mode)
+// for a pre-created system that has spec.autoinstall set. The CobblerSystem
+// controller then writes the Cobbler record over XMLRPC: named interfaces,
+// profile binding, netboot and ks_meta variables. Inputs that aren't ready yet
+// (the profile label, or a Secret/ConfigMap backing a variable) make it skip
+// this pass and retry on the next reconcile rather than block the rest of the
+// System reconcile.
+func (r *SystemReconciler) reconcileCobblerSystem(ctx context.Context, sys *uyuniv1.System) error {
+	if !sys.Spec.PreCreate || sys.Spec.Autoinstall == nil {
+		return nil
 	}
 	profileLabel, wait, err := r.resolveProfileLabel(ctx, sys)
 	if err != nil {
-		return false, "", "", err
+		return err
 	}
-	if wait != "" {
-		return false, "WaitingForProfile", wait, nil
-	}
-	if profileLabel == "" || sys.Status.AutoinstallRecordLabel == profileLabel {
-		return false, "", "", nil
+	if wait != "" || profileLabel == "" {
+		return nil // profile not realized yet; retry next reconcile
 	}
 	vars, waitVars, err := r.resolveAutoinstallVariables(ctx, sys)
 	if err != nil {
-		return false, "", "", err
+		return err
 	}
 	if waitVars != "" {
-		return false, "ReferenceUnavailable", waitVars, nil
+		return nil // referenced Secret/ConfigMap not present yet
 	}
-	if err := uc.CreateSystemRecord(ctx, sys.Spec.Hostname, profileLabel, "",
-		sys.Spec.Description, netDevicesForSystem(sys)); err != nil {
-		if !strings.Contains(err.Error(), "Invalid autoinstallation label") {
-			return false, "", "", err
-		}
-		// A Cobbler-only profile (e.g. an auto-created image/PXE profile with no
-		// Uyuni KickstartData) is rejected by the JSON createSystemRecord. Create
-		// the Cobbler system record via the WebUI "generate PXE installation
-		// configuration" action (ScheduleWizard), which works for these profiles.
-		// The boot proxy is passed as its Uyuni server id, resolved from ProxyRef.
-		proxyID, waitProxy, perr := r.resolveProxyID(ctx, sys)
-		if perr != nil {
-			return false, "", "", perr
-		}
-		if waitProxy != "" {
-			return false, "WaitingForRegistration", waitProxy, nil
-		}
-		if err := uc.GeneratePxeConfig(ctx, sys.Status.UyuniServerID, profileLabel, proxyID); err != nil {
-			return false, "", "", err
-		}
-		log.FromContext(ctx).Info("generated PXE installation config via ScheduleWizard for Cobbler-only profile",
-			"system", sys.Name, "label", profileLabel, "proxyId", proxyID)
+
+	cobblerName := fmt.Sprintf("%s:%d", sys.Spec.Hostname, r.resolveOrgID(ctx, sys))
+	ifaces := make([]uyuniv1.CobblerInterface, 0, len(sys.Spec.Network))
+	for _, n := range sys.Spec.Network {
+		ifaces = append(ifaces, uyuniv1.CobblerInterface{
+			Name:       n.Name,
+			MACAddress: n.MACAddress,
+			IPAddress:  n.IPAddress,
+		})
 	}
-	// system.setVariables REPLACES the record's entire ks_meta and couples it
-	// with netboot, so only call it when the CR declares variables — otherwise
-	// we would wipe Uyuni/saltboot-generated metadata.
-	if len(vars) > 0 {
-		netboot := sys.Spec.Autoinstall.Netboot == nil || *sys.Spec.Autoinstall.Netboot
-		if err := uc.SetVariables(ctx, sys.Status.UyuniServerID, netboot, vars); err != nil {
-			return false, "", "", err
-		}
+
+	cs := &uyuniv1.CobblerSystem{ObjectMeta: metav1.ObjectMeta{Name: sys.Name, Namespace: sys.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cs, func() error {
+		cs.Spec.Mode = uyuniv1.CobblerModeCreate
+		cs.Spec.Name = cobblerName
+		cs.Spec.ProviderRef = r.cobblerProviderRef(ctx, sys)
+		cs.Spec.ProfileName = profileLabel
+		cs.Spec.Interfaces = ifaces
+		cs.Spec.AutoinstallMeta = vars
+		cs.Spec.NetbootEnabled = sys.Spec.Autoinstall.Netboot
+		cs.Spec.Server = r.resolveProxyHost(ctx, sys)
+		cs.Spec.Comment = sys.Spec.Description
+		return controllerutil.SetControllerReference(sys, cs, r.Scheme())
+	}); err != nil {
+		return err
 	}
-	sys.Status.AutoinstallRecordLabel = profileLabel
-	return true, "", "", nil
+	sys.Status.CobblerSystemName = cobblerName
+	return nil
+}
+
+// resolveOrgID returns the Uyuni organization id for the system's org (1 = default).
+func (r *SystemReconciler) resolveOrgID(ctx context.Context, sys *uyuniv1.System) int {
+	if sys.Spec.OrganizationRef == nil {
+		return 1
+	}
+	var org uyuniv1.Organization
+	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.OrganizationRef.Name}, &org); err != nil {
+		return 1
+	}
+	if org.Status.UyuniOrgID == 0 {
+		return 1
+	}
+	return org.Status.UyuniOrgID
+}
+
+// cobblerProviderRef resolves the UyuniProvider backing the system's org so the
+// spawned CobblerSystem targets the same Cobbler. Nil = default provider.
+func (r *SystemReconciler) cobblerProviderRef(ctx context.Context, sys *uyuniv1.System) *uyuniv1.LocalObjectRef {
+	if sys.Spec.OrganizationRef == nil {
+		return nil
+	}
+	var org uyuniv1.Organization
+	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.OrganizationRef.Name}, &org); err != nil {
+		return nil
+	}
+	if org.Spec.ProviderRef.Name == "" {
+		return nil
+	}
+	return &uyuniv1.LocalObjectRef{Name: org.Spec.ProviderRef.Name}
+}
+
+// resolveProxyHost returns the hostname of the proxy System referenced by
+// spec.proxyRef (empty when unset/unresolved), used as the Cobbler server
+// override so the terminal boots through the proxy.
+func (r *SystemReconciler) resolveProxyHost(ctx context.Context, sys *uyuniv1.System) string {
+	if sys.Spec.ProxyRef == nil || sys.Spec.ProxyRef.Name == "" {
+		return ""
+	}
+	var proxy uyuniv1.System
+	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.ProxyRef.Name}, &proxy); err != nil {
+		return ""
+	}
+	if proxy.Spec.Hostname != "" {
+		return proxy.Spec.Hostname
+	}
+	return proxy.Spec.MinionID
 }
 
 // resolveAutoinstallVariables materializes spec.autoinstall.variables and
@@ -1204,4 +1174,3 @@ func (r *SystemReconciler) systemsForAutoinstallProfile(ctx context.Context, obj
 	}
 	return out
 }
-

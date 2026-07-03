@@ -5,8 +5,12 @@ package pool
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/http"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -14,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
+	"github.com/mborodin/uyuni-operator/internal/cobbler"
 	"github.com/mborodin/uyuni-operator/internal/uyuni"
 )
 
@@ -35,19 +40,21 @@ type Pool struct {
 	client     client.Client
 	operatorNS string
 
-	mu       sync.RWMutex
-	cache    map[string]entry    // keyed by provider name
-	orgCache map[string]orgEntry // keyed by "namespace/name"
+	mu           sync.RWMutex
+	cache        map[string]entry           // keyed by provider name
+	orgCache     map[string]orgEntry        // keyed by "namespace/name"
+	cobblerCache map[string]*cobbler.Client // keyed by provider name
 }
 
 // New returns an initialised Pool. operatorNS is the namespace where
 // credential Secrets are expected to live.
 func New(c client.Client, operatorNS string) *Pool {
 	return &Pool{
-		client:     c,
-		operatorNS: operatorNS,
-		cache:      make(map[string]entry),
-		orgCache:   make(map[string]orgEntry),
+		client:       c,
+		operatorNS:   operatorNS,
+		cache:        make(map[string]entry),
+		orgCache:     make(map[string]orgEntry),
+		cobblerCache: make(map[string]*cobbler.Client),
 	}
 }
 
@@ -85,12 +92,13 @@ func (p *Pool) resolveName(ctx context.Context, ref *uyuni.LocalObjectRef) (stri
 	return "", fmt.Errorf("no default UyuniProvider found; set spec.isDefault=true on one provider")
 }
 
-// build reads the UyuniProvider CR and its credentials Secret, then
-// creates and caches an API client.
-func (p *Pool) build(ctx context.Context, name string) (uyuni.API, error) {
+// resolveCreds reads a UyuniProvider CR and its credentials (and optional CA)
+// Secrets, returning the provider plus the username/password/CA used to build
+// either a Uyuni or a Cobbler client.
+func (p *Pool) resolveCreds(ctx context.Context, name string) (*uyuniv1.UyuniProvider, string, string, []byte, error) {
 	var prov uyuniv1.UyuniProvider
 	if err := p.client.Get(ctx, types.NamespacedName{Name: name}, &prov); err != nil {
-		return nil, fmt.Errorf("getting UyuniProvider %q: %w", name, err)
+		return nil, "", "", nil, fmt.Errorf("getting UyuniProvider %q: %w", name, err)
 	}
 
 	secretNS := p.operatorNS
@@ -102,13 +110,13 @@ func (p *Pool) build(ctx context.Context, name string) (uyuni.API, error) {
 		Namespace: secretNS,
 		Name:      prov.Spec.CredentialsSecretRef.Name,
 	}, &secret); err != nil {
-		return nil, fmt.Errorf("reading credentials secret for provider %q: %w", name, err)
+		return nil, "", "", nil, fmt.Errorf("reading credentials secret for provider %q: %w", name, err)
 	}
 
 	username := string(secret.Data["username"])
 	password := string(secret.Data["password"])
 	if username == "" || password == "" {
-		return nil, fmt.Errorf("credentials secret for provider %q must contain non-empty 'username' and 'password' keys", name)
+		return nil, "", "", nil, fmt.Errorf("credentials secret for provider %q must contain non-empty 'username' and 'password' keys", name)
 	}
 
 	// Optional CA certificate from a separate Secret.
@@ -123,9 +131,62 @@ func (p *Pool) build(ctx context.Context, name string) (uyuni.API, error) {
 			Namespace: caNS,
 			Name:      prov.Spec.CACertSecretRef.Name,
 		}, &caSecret); err != nil {
-			return nil, fmt.Errorf("reading CA cert secret for provider %q: %w", name, err)
+			return nil, "", "", nil, fmt.Errorf("reading CA cert secret for provider %q: %w", name, err)
 		}
 		caCert = caSecret.Data["ca.crt"]
+	}
+	return &prov, username, password, caCert, nil
+}
+
+// Cobbler resolves ref to a cached Cobbler XMLRPC client for the same provider,
+// reusing the provider's URL, credentials and TLS configuration.
+func (p *Pool) Cobbler(ctx context.Context, ref *uyuni.LocalObjectRef, requestNamespace string) (*cobbler.Client, error) {
+	name, err := p.resolveName(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.RLock()
+	cc, ok := p.cobblerCache[name]
+	p.mu.RUnlock()
+	if ok {
+		return cc, nil
+	}
+	prov, username, password, caCert, err := p.resolveCreds(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	httpClient, err := cobblerHTTPClient(prov.Spec.InsecureSkipVerify, caCert)
+	if err != nil {
+		return nil, err
+	}
+	cc = cobbler.New(prov.Spec.URL, username, password, httpClient)
+	p.mu.Lock()
+	p.cobblerCache[name] = cc
+	p.mu.Unlock()
+	return cc, nil
+}
+
+func cobblerHTTPClient(insecure bool, caCert []byte) (*http.Client, error) {
+	tlsConfig := &tls.Config{InsecureSkipVerify: insecure} //nolint:gosec
+	if len(caCert) > 0 {
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("parsing provider CA certificate")
+		}
+		tlsConfig.RootCAs = certPool
+	}
+	return &http.Client{
+		Timeout:   60 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+	}, nil
+}
+
+// build reads the UyuniProvider CR and its credentials Secret, then
+// creates and caches an API client.
+func (p *Pool) build(ctx context.Context, name string) (uyuni.API, error) {
+	prov, username, password, caCert, err := p.resolveCreds(ctx, name)
+	if err != nil {
+		return nil, err
 	}
 
 	c, err := uyuni.NewClient(prov.Spec.URL, username, password, prov.Spec.InsecureSkipVerify, caCert)
@@ -311,6 +372,7 @@ func (p *Pool) buildFromSnapshot(ctx context.Context, org *uyuniv1.Organization,
 func (p *Pool) Invalidate(providerName string) {
 	p.mu.Lock()
 	delete(p.cache, providerName)
+	delete(p.cobblerCache, providerName)
 	for k, e := range p.orgCache {
 		if e.providerName == providerName {
 			delete(p.orgCache, k)

@@ -3,6 +3,9 @@ resources:
 - bases/uyuni.uyuni-project.org_autoinstalldistributions.yaml
 - bases/uyuni.uyuni-project.org_autoinstallprofiles.yaml
 - bases/uyuni.uyuni-project.org_clmenvironments.yaml
+- bases/uyuni.uyuni-project.org_cobblerdistros.yaml
+- bases/uyuni.uyuni-project.org_cobblerprofiles.yaml
+- bases/uyuni.uyuni-project.org_cobblersystems.yaml
 - bases/uyuni.uyuni-project.org_configfiles.yaml
 - bases/uyuni.uyuni-project.org_configurationchannels.yaml
 - bases/uyuni.uyuni-project.org_contentprojectpromotions.yaml

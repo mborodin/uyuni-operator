@@ -46,4 +46,7 @@ const (
 	apFinalizer      = uyuniv1.Group + "/autoinstallprofile"
 	ibFinalizer      = uyuniv1.Group + "/imagebuild"
 	cikFinalizer     = uyuniv1.Group + "/custominfokey"
+	cobSysFinalizer  = uyuniv1.Group + "/cobblersystem"
+	cobDistFinalizer = uyuniv1.Group + "/cobblerdistro"
+	cobProfFinalizer = uyuniv1.Group + "/cobblerprofile"
 )

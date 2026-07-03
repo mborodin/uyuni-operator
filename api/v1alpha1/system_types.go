@@ -244,11 +244,9 @@ type SystemStatus struct {
 	// AutoinstallActionID is the Uyuni action ID of the last scheduled provisioning.
 	AutoinstallActionID int `json:"autoinstallActionId,omitempty"`
 
-	// AutoinstallRecordLabel is the Cobbler autoinstall profile label the
-	// pre-create system record (system.createSystemRecord) was last created
-	// with. Empty until the record is created; used to make record creation
-	// idempotent and to detect a changed profile.
-	AutoinstallRecordLabel string `json:"autoinstallRecordLabel,omitempty"`
+	// CobblerSystemName is the name of the Cobbler system record realized for
+	// this system via its owned CobblerSystem (e.g. "<hostname>:<orgId>").
+	CobblerSystemName string `json:"cobblerSystemName,omitempty"`
 
 	// AutoinstallStatus reflects the Uyuni-side outcome of the last provisioning action.
 	// +kubebuilder:validation:Enum=Scheduled;Completed;Failed

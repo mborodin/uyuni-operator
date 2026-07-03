@@ -4,6 +4,28 @@
 
 ### Added
 
+- **Cobbler controller + CRDs (`CobblerDistro`, `CobblerProfile`,
+  `CobblerSystem`).** The operator now talks to Cobbler's XMLRPC API directly
+  (via Uyuni's `/cobbler_api`), reusing the `UyuniProvider` credentials, instead
+  of the fragile WebUI/JSON-kickstart workarounds. Each resource has a
+  `mode: create|import` (default `import`): `import` observes an object created
+  elsewhere (e.g. a Uyuni image build's distro/profile) and becomes Ready once it
+  appears; `create` manages it. A `System` with `spec.autoinstall` now spawns an
+  **owned `CobblerSystem`** (create mode) that writes the Cobbler record — named
+  interfaces from `spec.network`, profile binding, netboot, and ks_meta
+  (`autoinstallMeta`) from `spec.autoinstall.variables` — with the boot proxy
+  from `spec.proxyRef`; the record name is stored in `System.status.
+  cobblerSystemName`. Reads need no auth; writes require cobbler's
+  `redhat_management_permissive` setting enabled (then the provider user's
+  `config_admin`/`org_admin` role authenticates).
+
+### Removed
+
+- The WebUI/JSON autoinstall workarounds superseded by the Cobbler controller:
+  `system.createSystemRecord`, the `Variables.do`/`ScheduleWizard.do` WebUI
+  drivers (`SetVariables`, `GeneratePxeConfig`), and the System reconciler's
+  `ensureAutoinstallRecord`/`AutoinstallRecordLabel`.
+
 - **System: Cobbler-only profile support (image/PXE profiles).** Autoinstall
   profiles that have no Uyuni KickstartData (e.g. auto-created image/PXE
   profiles) are rejected by the JSON kickstart API (403 / "Invalid

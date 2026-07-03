@@ -1,0 +1,46 @@
+# Cobbler* resources talk to Cobbler's XMLRPC API (exposed by Uyuni at
+# /cobbler_api), reusing the UyuniProvider credentials. Reads need no auth;
+# writes (mode: create) require cobbler's `redhat_management_permissive` setting
+# to be enabled on the server, after which the provider user (config_admin or
+# org_admin) can authenticate:
+#
+#   cobbler setting edit --name redhat_management_permissive --value 1
+#   systemctl restart cobblerd
+#
+# mode: import (default) observes an object created elsewhere (e.g. by a Uyuni
+# image build) and becomes Ready once it appears. mode: create manages it.
+---
+# Observe the distribution/profile that a Uyuni image build auto-creates.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CobblerProfile
+metadata:
+  name: branchserver-microos
+  namespace: nexa-platform
+spec:
+  mode: import
+  name: "BranchServer_MicroOS-0.6.13:S:1:PantheonofGoods"
+---
+# A system record created and managed by the operator. Normally you don't write
+# this directly — a System with spec.autoinstall spawns an owned CobblerSystem —
+# but it can be authored standalone too.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: CobblerSystem
+metadata:
+  name: grmc-gq-store01
+  namespace: nexa-platform
+spec:
+  mode: create
+  name: "grmc-gq-store01.nexa-dev.delhaize.test:1"
+  profileName: "BranchServer_MicroOS-0.6.13:S:1:PantheonofGoods"
+  netbootEnabled: true
+  interfaces:
+    - name: eth0
+      macAddress: "52:54:00:07:48:52"
+  autoinstallMeta:
+    store_id: gq
+    vlans: "8:storehub:br0 10:imw:br0"
+    primary_if: eth0
+    minion_id: grmc-gq-store01
+    uyuni_master: uyuni.nexa-dev.delhaize.test
+    use_ipv6_gateway: "false"
+    activation_key: "1-microos-branchserver"

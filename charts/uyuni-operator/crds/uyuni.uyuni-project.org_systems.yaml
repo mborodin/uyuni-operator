@@ -132,21 +132,26 @@ spec:
                       must be included here, typically sourced from a Secret. Explicit Variables
                       override keys imported by VariablesFrom.
                     items:
-                      description: AutoinstallVariable is one Cobbler ks_meta variable.
+                      description: |-
+                        AutoinstallVariable is one Cobbler ks_meta variable, shaped like a pod env
+                        var: the value is either literal (Value) or sourced from a Secret/ConfigMap
+                        key (ValueFrom). Exactly one of Value/ValueFrom is set (webhook-enforced).
                       properties:
                         name:
                           description: Name is the ks_meta variable key.
                           type: string
                         value:
-                          description: Value is a literal value. Mutually exclusive with ValueFrom.
+                          description: Value is a literal value. Mutually exclusive
+                            with ValueFrom.
                           type: string
                         valueFrom:
                           description: |-
-                            ValueFrom sources the value from a Secret or ConfigMap key in the
-                            same namespace. Mutually exclusive with Value.
+                            ValueFrom sources the value from a Secret or ConfigMap key in the same
+                            namespace. Mutually exclusive with Value.
                           properties:
                             configMapKeyRef:
-                              description: ConfigMapKeyRef selects a key of a ConfigMap in the same namespace.
+                              description: ConfigMapKeyRef selects a key of a ConfigMap
+                                in the same namespace.
                               properties:
                                 key:
                                   type: string
@@ -157,7 +162,8 @@ spec:
                               - name
                               type: object
                             secretKeyRef:
-                              description: SecretKeyRef selects a key of a Secret in the same namespace.
+                              description: SecretKeyRef selects a key of a Secret
+                                in the same namespace.
                               properties:
                                 key:
                                   type: string
@@ -178,10 +184,13 @@ spec:
                       as ks_meta variables (like a pod's envFrom). Sources are applied in order;
                       later sources and explicit Variables override earlier keys.
                     items:
-                      description: AutoinstallVariableSource bulk-imports all keys of a Secret or ConfigMap.
+                      description: |-
+                        AutoinstallVariableSource bulk-imports all keys of a Secret or ConfigMap as
+                        ks_meta variables. Exactly one of the two is set (webhook-enforced).
                       properties:
                         configMapRef:
-                          description: ConfigMapRef imports all keys from a ConfigMap in the same namespace.
+                          description: ConfigMapRef imports all keys from a ConfigMap
+                            in the same namespace.
                           properties:
                             name:
                               type: string
@@ -189,10 +198,12 @@ spec:
                           - name
                           type: object
                         prefix:
-                          description: Prefix is prepended to each imported variable key.
+                          description: Prefix is prepended to each imported variable
+                            key.
                           type: string
                         secretRef:
-                          description: SecretRef imports all keys from a Secret in the same namespace.
+                          description: SecretRef imports all keys from a Secret in
+                            the same namespace.
                           properties:
                             name:
                               type: string
@@ -215,10 +226,9 @@ spec:
                 properties:
                   contentProjectRef:
                     description: |-
-                      LocalObjectRef is a name-only reference to a CR in the same namespace.
-                      We deliberately don't include namespace or kind: cross-namespace refs
-                      complicate RBAC and aren't needed in our model, and each ref's kind is
-                      implied by the field where it appears.
+                      ContentProjectRef is optional. When its name is empty, no content
+                      project channel is attached and resolution is skipped (the resource
+                      reconciles without a project-derived channel) rather than erroring.
                     properties:
                       name:
                         type: string
@@ -226,6 +236,8 @@ spec:
                     - name
                     type: object
                   environment:
+                    description: Environment is optional; required only when ContentProjectRef
+                      is set.
                     pattern: ^[a-z0-9-]+$
                     type: string
                   sourceChannelLabel:
@@ -276,10 +288,9 @@ spec:
                   properties:
                     contentProjectRef:
                       description: |-
-                        LocalObjectRef is a name-only reference to a CR in the same namespace.
-                        We deliberately don't include namespace or kind: cross-namespace refs
-                        complicate RBAC and aren't needed in our model, and each ref's kind is
-                        implied by the field where it appears.
+                        ContentProjectRef is optional. When its name is empty, no content
+                        project channel is attached and resolution is skipped (the resource
+                        reconciles without a project-derived channel) rather than erroring.
                       properties:
                         name:
                           type: string
@@ -287,6 +298,8 @@ spec:
                       - name
                       type: object
                     environment:
+                      description: Environment is optional; required only when ContentProjectRef
+                        is set.
                       pattern: ^[a-z0-9-]+$
                       type: string
                     sourceChannelLabel:
@@ -318,7 +331,8 @@ spec:
                 type: array
               contactMethod:
                 default: default
-                description: ContactMethod controls how the Uyuni server communicates with this system.
+                description: ContactMethod controls how the Uyuni server communicates
+                  with this system.
                 enum:
                 - default
                 - ssh-push
@@ -330,8 +344,8 @@ spec:
                   the system. Each entry references a CustomInfoKey CR (which guarantees the
                   key exists in Uyuni before a value is set) and supplies the value.
                 items:
-                  description: CustomInfoValue assigns a value to an organization custom
-                    info key.
+                  description: CustomInfoValue assigns a value to an organization
+                    custom info key.
                   properties:
                     keyRef:
                       description: KeyRef references a CustomInfoKey CR in the same
@@ -348,6 +362,7 @@ spec:
                       type: string
                   required:
                   - keyRef
+                  - value
                   type: object
                 type: array
               deletionPolicy:
@@ -450,11 +465,17 @@ spec:
                 - name
                 type: object
               type:
-                description: SystemType classifies the system role. Optional; omit for generic managed systems.
-                enum:
-                - pos
-                - storehub
-                - branchserver
+                allOf:
+                - enum:
+                  - pos
+                  - storehub
+                  - branchserver
+                - enum:
+                  - pos
+                  - storehub
+                  - branchserver
+                description: SystemType classifies the system role. Optional; omit
+                  for generic managed systems.
                 type: string
             required:
             - minionId
@@ -466,34 +487,35 @@ spec:
                 items:
                   type: string
                 type: array
-              autoinstallRecordLabel:
-                description: |-
-                  AutoinstallRecordLabel is the Cobbler autoinstall profile label the
-                  pre-create system record (system.createSystemRecord) was last created
-                  with. Empty until the record is created; used to make record creation
-                  idempotent and to detect a changed profile.
-                type: string
               activeFormulas:
                 description: ActiveFormulas is the set of Salt formulas last enabled
                   on the system.
                 items:
                   type: string
                 type: array
-              proxyActionId:
-                description: ProxyActionID is the Uyuni action ID of the last changeProxy
-                  action.
+              autoinstallActionId:
+                description: AutoinstallActionID is the Uyuni action ID of the last
+                  scheduled provisioning.
                 type: integer
-              proxyServerId:
-                description: |-
-                  ProxyServerID is the Uyuni server ID of the proxy the system was last
-                  connected through (0 = direct to server).
-                type: integer
+              autoinstallStatus:
+                description: AutoinstallStatus reflects the Uyuni-side outcome of
+                  the last provisioning action.
+                enum:
+                - Scheduled
+                - Completed
+                - Failed
+                type: string
               baseChannelLabel:
                 type: string
               childChannelLabels:
                 items:
                   type: string
                 type: array
+              cobblerSystemName:
+                description: |-
+                  CobblerSystemName is the name of the Cobbler system record realized for
+                  this system via its owned CobblerSystem (e.g. "<hostname>:<orgId>").
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -550,6 +572,20 @@ spec:
                   - type
                   type: object
                 type: array
+              configChannelLabels:
+                description: |-
+                  ConfigChannelLabels is the realized ordered config channel subscription
+                  (direct refs first, then group-sourced). Used to detect and apply drift.
+                items:
+                  type: string
+                type: array
+              groupNames:
+                description: |-
+                  GroupNames is the set of Uyuni group names the system was last placed in.
+                  Used to compute removals on next reconcile.
+                items:
+                  type: string
+                type: array
               lastCheckinTime:
                 format: date-time
                 type: string
@@ -560,9 +596,24 @@ spec:
                 enum:
                 - Pending
                 - PreProvisioned
+                - Reprovisioning
                 - Registered
                 - Reconciled
                 type: string
+              phaseTransitionTime:
+                description: PhaseTransitionTime records when Phase last changed.
+                  Used to enforce AdoptionTimeout.
+                format: date-time
+                type: string
+              proxyActionId:
+                description: ProxyActionID is the Uyuni action ID of the last changeProxy
+                  action.
+                type: integer
+              proxyServerId:
+                description: |-
+                  ProxyServerID is the Uyuni server ID of the proxy the system was last
+                  connected through (0 = direct to server).
+                type: integer
               uyuniServerId:
                 type: integer
             type: object
