@@ -134,6 +134,18 @@ func (r *SystemReconciler) findOrAdopt(ctx context.Context, uc uyuni.API, sys *u
 	return nil, false, nil
 }
 
+// systemProfileDisplayName returns the value used as Uyuni's systemName when
+// pre-creating a profile. systemName and the hostname attribute are separate
+// fields in Uyuni; using the first DNS label keeps the system's display name
+// short even when Spec.Hostname is a domain-qualified FQDN (which is kept
+// intact in SystemProfileData.Hostname for DNS-facing consumers).
+func systemProfileDisplayName(hostname string) string {
+	if idx := strings.IndexByte(hostname, '.'); idx >= 0 {
+		return hostname[:idx]
+	}
+	return hostname
+}
+
 // handleNotRegistered handles the case where the system is not yet in Uyuni.
 // It creates a pre-create profile if configured, checks the adoption timeout,
 // and schedules autoinstall once the profile exists.
@@ -149,17 +161,17 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 				break
 			}
 		}
-		serverID, err := uc.CreateSystemProfile(ctx, sys.Spec.Hostname, uyuni.SystemProfileData{
+		serverID, err := uc.CreateSystemProfile(ctx, systemProfileDisplayName(sys.Spec.Hostname), uyuni.SystemProfileData{
 			HWAddress: hwAddr,
 			Hostname:  sys.Spec.Hostname,
 		})
 		if err != nil {
 			var existsErr *uyuni.SystemExistsError
 			if errors.As(err, &existsErr) && len(existsErr.IDs) > 0 {
-				// A system with this hostname already exists in Uyuni.
+				// A system with this profile name already exists in Uyuni.
 				// Do not adopt it — surface a conflict so the operator can investigate.
 				// Try to find which System CR already manages one of those IDs.
-				msg := fmt.Sprintf("a system named %q already exists in Uyuni (IDs: %v); rename this system or delete the existing one first", sys.Spec.Hostname, existsErr.IDs)
+				msg := fmt.Sprintf("a system named %q already exists in Uyuni (IDs: %v); rename this system or delete the existing one first", systemProfileDisplayName(sys.Spec.Hostname), existsErr.IDs)
 				var allSystems uyuniv1.SystemList
 				if listErr := r.List(ctx, &allSystems, client.InNamespace(sys.Namespace)); listErr == nil {
 					idSet := make(map[int]struct{}, len(existsErr.IDs))
@@ -169,7 +181,7 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 					for _, other := range allSystems.Items {
 						if other.Name != sys.Name {
 							if _, hit := idSet[other.Status.UyuniServerID]; hit {
-								msg = fmt.Sprintf("a system named %q is already managed by System CR %q; rename this system or delete the existing one first", sys.Spec.Hostname, other.Name)
+								msg = fmt.Sprintf("a system named %q is already managed by System CR %q; rename this system or delete the existing one first", systemProfileDisplayName(sys.Spec.Hostname), other.Name)
 								break
 							}
 						}
