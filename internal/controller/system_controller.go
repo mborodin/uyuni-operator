@@ -745,7 +745,7 @@ func (r *SystemReconciler) reconcileCobblerSystem(ctx context.Context, sys *uyun
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cs, func() error {
 		cs.Spec.Mode = uyuniv1.CobblerModeCreate
 		cs.Spec.Name = cobblerName
-		cs.Spec.ProviderRef = r.cobblerProviderRef(ctx, sys)
+		cs.Spec.ProviderRef = cobblerProviderRefForOrg(ctx, r.Client, sys.Namespace, orgRef(sys.Spec.OrganizationRef))
 		cs.Spec.ProfileName = profileLabel
 		cs.Spec.Interfaces = ifaces
 		cs.Spec.AutoinstallMeta = vars
@@ -773,22 +773,6 @@ func (r *SystemReconciler) resolveOrgID(ctx context.Context, sys *uyuniv1.System
 		return 1
 	}
 	return org.Status.UyuniOrgID
-}
-
-// cobblerProviderRef resolves the UyuniProvider backing the system's org so the
-// spawned CobblerSystem targets the same Cobbler. Nil = default provider.
-func (r *SystemReconciler) cobblerProviderRef(ctx context.Context, sys *uyuniv1.System) *uyuniv1.LocalObjectRef {
-	if sys.Spec.OrganizationRef == nil {
-		return nil
-	}
-	var org uyuniv1.Organization
-	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.OrganizationRef.Name}, &org); err != nil {
-		return nil
-	}
-	if org.Spec.ProviderRef.Name == "" {
-		return nil
-	}
-	return &uyuniv1.LocalObjectRef{Name: org.Spec.ProviderRef.Name}
 }
 
 // resolveProxyHost returns the hostname of the proxy System referenced by

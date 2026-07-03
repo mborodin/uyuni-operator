@@ -41,6 +41,23 @@ func cobblerMode(m uyuniv1.CobblerMode) uyuniv1.CobblerMode {
 	return m
 }
 
+// cobblerProviderRefForOrg resolves the UyuniProvider backing an Organization CR
+// (by name, in ns) so a spawned Cobbler* resource targets the same Cobbler.
+// Nil = default provider.
+func cobblerProviderRefForOrg(ctx context.Context, c client.Client, ns, orgName string) *uyuniv1.LocalObjectRef {
+	if orgName == "" {
+		return nil
+	}
+	var org uyuniv1.Organization
+	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: orgName}, &org); err != nil {
+		return nil
+	}
+	if org.Spec.ProviderRef.Name == "" {
+		return nil
+	}
+	return &uyuniv1.LocalObjectRef{Name: org.Spec.ProviderRef.Name}
+}
+
 // =============================================================================
 // CobblerSystem
 // =============================================================================

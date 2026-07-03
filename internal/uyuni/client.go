@@ -908,8 +908,14 @@ func (c *Client) GetServerFormulas(ctx context.Context, serverID int) ([]string,
 }
 
 func (c *Client) SetServerFormulas(ctx context.Context, serverID int, formulas []string) error {
-	if formulas == nil {
-		formulas = []string{}
+	// Uyuni's JSON API can't type-match an empty array to the string[] parameter
+	// ("No method exists with the matching parameters"), so we can't clear all
+	// formulas this way. Skipping the empty case also avoids clobbering
+	// externally-managed formulas (e.g. the retail saltboot formula) when a
+	// System declares no spec.formulas — empty means "don't manage", not "remove
+	// everything".
+	if len(formulas) == 0 {
+		return nil
 	}
 	_, err := apiPost[any](c, "formula/setFormulasOfServer", map[string]any{
 		"sid":      serverID,
@@ -2002,9 +2008,9 @@ func (c *Client) ScheduleHighstate(ctx context.Context, serverIDs []int, earlies
 		ActionID int `json:"action_id"`
 	}
 	r, err := apiPost[resp](c, "system/scheduleApplyHighstate", map[string]any{
-		"sid":                 serverIDs,
-		"earliest_occurrence": earliest.Format(time.RFC3339),
-		"test":                test,
+		"sids":               serverIDs,
+		"earliestOccurrence": earliest.Format(time.RFC3339),
+		"test":               test,
 	})
 	if err != nil {
 		return 0, err
