@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- **`baseChannelFrom`/`childChannelsFrom` with an empty `contentProjectRef` now
+  attach the channel directly.** Previously such refs were dropped, so an
+  ActivationKey (or System) that used `baseChannelFrom.sourceChannelLabel`
+  without a content project ended up with no channels. An empty
+  `contentProjectRef` now means "`sourceChannelLabel` is an existing Uyuni
+  channel label, use it directly" (a bare `{name: ""}` with no
+  `sourceChannelLabel` still means "no channel").
+
 ### Added
 
 - **Formula config values from other resources.**

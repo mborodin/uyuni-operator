@@ -57,10 +57,9 @@ spec:
                 properties:
                   contentProjectRef:
                     description: |-
-                      LocalObjectRef is a name-only reference to a CR in the same namespace.
-                      We deliberately don't include namespace or kind: cross-namespace refs
-                      complicate RBAC and aren't needed in our model, and each ref's kind is
-                      implied by the field where it appears.
+                      ContentProjectRef is optional. When its name is empty, sourceChannelLabel
+                      is treated as a direct Uyuni channel label (see the type doc). A bare
+                      {name: ""} with no sourceChannelLabel means "no channel".
                     properties:
                       name:
                         type: string
@@ -68,12 +67,16 @@ spec:
                     - name
                     type: object
                   environment:
+                    description: Environment is optional; required only when ContentProjectRef
+                      is set.
                     pattern: ^[a-z0-9-]+$
                     type: string
                   sourceChannelLabel:
                     description: |-
-                      SourceChannelLabel is the channel label as it exists upstream of the
-                      project (i.e., what's attached as a source), not the derived label.
+                      SourceChannelLabel is, with contentProjectRef set, the channel label as it
+                      exists upstream of the project (what's attached as a source, not the
+                      derived label); with contentProjectRef empty, it is the direct Uyuni
+                      channel label to use as-is.
                     type: string
                 required:
                 - sourceChannelLabel
@@ -104,21 +107,22 @@ spec:
                 description: Mutually exclusive with ChildChannelRefs.
                 items:
                   description: |-
-                    ChannelFromProject references a channel produced by a ContentProject
-                    environment. Resolution is structural: the realized Uyuni channel label
-                    is {project.spec.label}-{environment}-{sourceChannelLabel}.
+                    ChannelFromProject references a software channel either directly or through a
+                    ContentProject environment.
 
-                    Verification at reconcile time additionally checks the channel exists in
-                    the project's status.environmentStates[*].derivedChannels, which catches
-                    the case where sourceChannelLabel names a channel that isn't actually a
-                    source of the project.
+                      - With contentProjectRef set: the realized Uyuni channel label is derived
+                        structurally as {project.spec.label}-{environment}-{sourceChannelLabel},
+                        and is additionally verified against the project's
+                        status.environmentStates[*].derivedChannels.
+                      - With contentProjectRef empty: sourceChannelLabel is used directly as an
+                        existing Uyuni channel label (no project derivation). Uyuni validates the
+                        label exists when the reconciler applies it.
                   properties:
                     contentProjectRef:
                       description: |-
-                        LocalObjectRef is a name-only reference to a CR in the same namespace.
-                        We deliberately don't include namespace or kind: cross-namespace refs
-                        complicate RBAC and aren't needed in our model, and each ref's kind is
-                        implied by the field where it appears.
+                        ContentProjectRef is optional. When its name is empty, sourceChannelLabel
+                        is treated as a direct Uyuni channel label (see the type doc). A bare
+                        {name: ""} with no sourceChannelLabel means "no channel".
                       properties:
                         name:
                           type: string
@@ -126,12 +130,16 @@ spec:
                       - name
                       type: object
                     environment:
+                      description: Environment is optional; required only when ContentProjectRef
+                        is set.
                       pattern: ^[a-z0-9-]+$
                       type: string
                     sourceChannelLabel:
                       description: |-
-                        SourceChannelLabel is the channel label as it exists upstream of the
-                        project (i.e., what's attached as a source), not the derived label.
+                        SourceChannelLabel is, with contentProjectRef set, the channel label as it
+                        exists upstream of the project (what's attached as a source, not the
+                        derived label); with contentProjectRef empty, it is the direct Uyuni
+                        channel label to use as-is.
                       type: string
                   required:
                   - sourceChannelLabel

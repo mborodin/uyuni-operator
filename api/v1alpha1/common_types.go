@@ -60,18 +60,20 @@ type BasicAuthRef struct {
 	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
-// ChannelFromProject references a channel produced by a ContentProject
-// environment. Resolution is structural: the realized Uyuni channel label
-// is {project.spec.label}-{environment}-{sourceChannelLabel}.
+// ChannelFromProject references a software channel either directly or through a
+// ContentProject environment.
 //
-// Verification at reconcile time additionally checks the channel exists in
-// the project's status.environmentStates[*].derivedChannels, which catches
-// the case where sourceChannelLabel names a channel that isn't actually a
-// source of the project.
+//   - With contentProjectRef set: the realized Uyuni channel label is derived
+//     structurally as {project.spec.label}-{environment}-{sourceChannelLabel},
+//     and is additionally verified against the project's
+//     status.environmentStates[*].derivedChannels.
+//   - With contentProjectRef empty: sourceChannelLabel is used directly as an
+//     existing Uyuni channel label (no project derivation). Uyuni validates the
+//     label exists when the reconciler applies it.
 type ChannelFromProject struct {
-	// ContentProjectRef is optional. When its name is empty, no content
-	// project channel is attached and resolution is skipped (the resource
-	// reconciles without a project-derived channel) rather than erroring.
+	// ContentProjectRef is optional. When its name is empty, sourceChannelLabel
+	// is treated as a direct Uyuni channel label (see the type doc). A bare
+	// {name: ""} with no sourceChannelLabel means "no channel".
 	// +optional
 	ContentProjectRef LocalObjectRef `json:"contentProjectRef,omitempty"`
 
@@ -80,8 +82,10 @@ type ChannelFromProject struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
 	Environment string `json:"environment,omitempty"`
 
-	// SourceChannelLabel is the channel label as it exists upstream of the
-	// project (i.e., what's attached as a source), not the derived label.
+	// SourceChannelLabel is, with contentProjectRef set, the channel label as it
+	// exists upstream of the project (what's attached as a source, not the
+	// derived label); with contentProjectRef empty, it is the direct Uyuni
+	// channel label to use as-is.
 	// +kubebuilder:validation:Required
 	SourceChannelLabel string `json:"sourceChannelLabel"`
 }
