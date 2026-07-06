@@ -52,14 +52,6 @@ type ProjectBuildPolicy struct {
 	Message string `json:"message,omitempty"`
 }
 
-type ProjectChannelConfig struct {
-	// Base channels (parent channels in the software channel hierarchy)
-	BaseChannelRefs []LocalObjectRef `json:"baseChannelRefs,omitempty"`
-
-	// Child channels to create for each environment
-	ChildChannelRefs []LocalObjectRef `json:"childChannelRefs,omitempty"`
-}
-
 type ContentProjectSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
@@ -80,9 +72,6 @@ type ContentProjectSpec struct {
 
 	Build ProjectBuildPolicy `json:"build,omitempty"`
 
-	// Software channel configuration for CLM environments with auto-creation
-	Channels *ProjectChannelConfig `json:"channels,omitempty"`
-
 	// +kubebuilder:validation:Required
 	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
@@ -93,26 +82,6 @@ type EnvironmentState struct {
 	BuiltVersion    int          `json:"builtVersion,omitempty"`
 	BuiltAt         *metav1.Time `json:"builtAt,omitempty"`
 	DerivedChannels []string     `json:"derivedChannels,omitempty"`
-}
-
-type AutoCreatedChannel struct {
-	// Environment ID this channel was created for
-	EnvironmentID string `json:"environmentId"`
-
-	// Base channel name this was derived from
-	BaseChannelName string `json:"baseChannelName"`
-
-	// Actual created channel CR name
-	ChannelName string `json:"channelName"`
-
-	// Creation timestamp
-	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
-
-	// Ready status
-	Ready bool `json:"ready"`
-
-	// Error message if creation failed
-	Error string `json:"error,omitempty"`
 }
 
 type ContentProjectStatus struct {
@@ -126,9 +95,6 @@ type ContentProjectStatus struct {
 
 	// +kubebuilder:validation:Enum=Idle;Building;Failed
 	BuildStatus string `json:"buildStatus,omitempty"`
-
-	// Track auto-created child channels for CLM environments
-	AutoCreatedChannels []AutoCreatedChannel `json:"autoCreatedChannels,omitempty"`
 
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`

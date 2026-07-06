@@ -60,42 +60,6 @@ spec:
                       format.
                     type: string
                 type: object
-              channels:
-                description: Software channel configuration for CLM environments with
-                  auto-creation
-                properties:
-                  baseChannelRefs:
-                    description: Base channels (parent channels in the software channel
-                      hierarchy)
-                    items:
-                      description: |-
-                        LocalObjectRef is a name-only reference to a CR in the same namespace.
-                        We deliberately don't include namespace or kind: cross-namespace refs
-                        complicate RBAC and aren't needed in our model, and each ref's kind is
-                        implied by the field where it appears.
-                      properties:
-                        name:
-                          type: string
-                      required:
-                      - name
-                      type: object
-                    type: array
-                  childChannelRefs:
-                    description: Child channels to create for each environment
-                    items:
-                      description: |-
-                        LocalObjectRef is a name-only reference to a CR in the same namespace.
-                        We deliberately don't include namespace or kind: cross-namespace refs
-                        complicate RBAC and aren't needed in our model, and each ref's kind is
-                        implied by the field where it appears.
-                      properties:
-                        name:
-                          type: string
-                      required:
-                      - name
-                      type: object
-                    type: array
-                type: object
               description:
                 type: string
               environments:
@@ -213,36 +177,6 @@ spec:
               attachedSources:
                 items:
                   type: string
-                type: array
-              autoCreatedChannels:
-                description: Track auto-created child channels for CLM environments
-                items:
-                  properties:
-                    baseChannelName:
-                      description: Base channel name this was derived from
-                      type: string
-                    channelName:
-                      description: Actual created channel CR name
-                      type: string
-                    createdAt:
-                      description: Creation timestamp
-                      format: date-time
-                      type: string
-                    environmentId:
-                      description: Environment ID this channel was created for
-                      type: string
-                    error:
-                      description: Error message if creation failed
-                      type: string
-                    ready:
-                      description: Ready status
-                      type: boolean
-                  required:
-                  - baseChannelName
-                  - channelName
-                  - environmentId
-                  - ready
-                  type: object
                 type: array
               buildStatus:
                 enum:

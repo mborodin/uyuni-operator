@@ -44,9 +44,4 @@ const (
 	// and the FormulaValuesDrift condition indicates the applied values are
 	// stale. Stripped after the values are applied. Value must be exactly "true".
 	AnnApplyFormulaValues = Group + "/apply-formula-values"
-
-	// AnnAutoCreatedForEnvironment marks a SoftwareChannel as auto-created by a
-	// ContentProject for a specific environment. The value is the environment ID.
-	// Used to track which channels were automatically created and for audit purposes.
-	AnnAutoCreatedForEnvironment = Group + "/auto-created-for-environment"
 )

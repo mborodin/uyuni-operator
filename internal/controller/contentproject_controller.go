@@ -36,8 +36,7 @@ type ContentProjectReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=contentprojects,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=contentprojects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=contentprojects/finalizers,verbs=update
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=softwarechannels,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=clmenvironments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=softwarechannels,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=activationkeys,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=contentprojectpromotions,verbs=get;list;watch
@@ -111,11 +110,6 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.fail(ctx, &cp, "SourceReconcileFailed", err)
 	}
 	cp.Status.AttachedSources = append([]string(nil), desiredSources...)
-
-	// 4.5 Auto-create child channels for CLM environments.
-	if err := r.reconcileChannels(ctx, &cp); err != nil {
-		return r.fail(ctx, &cp, "ChannelReconcileFailed", err)
-	}
 
 	// 5. Filters.
 	if err := r.reconcileFilters(ctx, uc, &cp); err != nil {
@@ -492,222 +486,6 @@ func findEnvState(states []uyuniv1.EnvironmentState, label string) *uyuniv1.Envi
 	return nil
 }
 
-// --- auto-created child channels ---
-
-func (r *ContentProjectReconciler) reconcileChannels(ctx context.Context, cp *uyuniv1.ContentProject) error {
-	// Only process if channels config is provided
-	if cp.Spec.Channels == nil {
-		cp.Status.AutoCreatedChannels = nil
-		return nil
-	}
-
-	// Get list of environments for this project
-	envs, err := r.getProjectEnvironments(ctx, cp)
-	if err != nil {
-		return fmt.Errorf("failed to get environments: %w", err)
-	}
-
-	// Track created channels for status
-	var createdChannels []uyuniv1.AutoCreatedChannel
-
-	// For each base channel + child channel pair
-	for _, baseRef := range cp.Spec.Channels.BaseChannelRefs {
-		for _, childRef := range cp.Spec.Channels.ChildChannelRefs {
-			// Resolve base channel
-			baseChannel := &uyuniv1.SoftwareChannel{}
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: cp.Namespace,
-				Name:      baseRef.Name,
-			}, baseChannel); err != nil {
-				return fmt.Errorf("failed to resolve base channel %q: %w", baseRef.Name, err)
-			}
-
-			// Resolve child channel
-			childChannel := &uyuniv1.SoftwareChannel{}
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: cp.Namespace,
-				Name:      childRef.Name,
-			}, childChannel); err != nil {
-				return fmt.Errorf("failed to resolve child channel %q: %w", childRef.Name, err)
-			}
-
-			// For each environment, create environment-specific child channels
-			for _, env := range envs {
-				// Create child channel names
-				baseEnvChannelName := fmt.Sprintf("%s-%s", baseChannel.Name, env.Spec.Id)
-				childEnvChannelName := fmt.Sprintf("%s-%s", childChannel.Name, env.Spec.Id)
-
-				// Create base environment channel (copy from base)
-				baseEnvChannel := &uyuniv1.SoftwareChannel{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      baseEnvChannelName,
-						Namespace: cp.Namespace,
-						OwnerReferences: []metav1.OwnerReference{
-							{
-								APIVersion:         uyuniv1.GroupVersion.String(),
-								Kind:                "ContentProject",
-								Name:                cp.Name,
-								UID:                 cp.UID,
-								BlockOwnerDeletion:  ptrBool(true),
-								Controller:         ptrBool(true),
-							},
-						},
-						Labels: map[string]string{
-							"app.kubernetes.io/managed-by": "contentproject-controller",
-							"app.kubernetes.io/part-of":    cp.Name,
-							"clm.uyuni/environment":        env.Spec.Id,
-							"clm.uyuni/base-channel":       baseChannel.Name,
-						},
-						Annotations: map[string]string{
-							uyuniv1.AnnAutoCreatedForEnvironment: env.Spec.Id,
-							"clm.uyuni/content-project":        cp.Name,
-						},
-					},
-					Spec: uyuniv1.SoftwareChannelSpec{
-						Label:          fmt.Sprintf("%s-%s", baseChannel.Spec.Label, env.Spec.Id),
-						Name:           fmt.Sprintf("%s - %s", baseChannel.Spec.Name, env.Spec.Name),
-						Summary:        fmt.Sprintf("%s for %s", baseChannel.Spec.Summary, env.Spec.Name),
-						Description:    baseChannel.Spec.Description,
-						Arch:           baseChannel.Spec.Arch,
-						Checksum:       baseChannel.Spec.Checksum,
-						GPGKey:         baseChannel.Spec.GPGKey,
-						RepositoryRefs: baseChannel.Spec.RepositoryRefs,
-						Sync:           baseChannel.Spec.Sync,
-						OrganizationRef: baseChannel.Spec.OrganizationRef,
-					},
-				}
-
-				if err := r.createOrUpdateChannel(ctx, baseEnvChannel); err != nil {
-					createdChannels = append(createdChannels, uyuniv1.AutoCreatedChannel{
-						EnvironmentID:   env.Spec.Id,
-						BaseChannelName: baseChannel.Name,
-						ChannelName:     baseEnvChannelName,
-						Ready:           false,
-						Error:           err.Error(),
-					})
-					continue
-				}
-
-				createdChannels = append(createdChannels, uyuniv1.AutoCreatedChannel{
-					EnvironmentID:   env.Spec.Id,
-					BaseChannelName: baseChannel.Name,
-					ChannelName:     baseEnvChannelName,
-					CreatedAt:       &metav1.Time{Time: time.Now()},
-					Ready:           true,
-				})
-
-				// Create child environment channel (copy from child, parent ref to base env channel)
-				childEnvChannel := &uyuniv1.SoftwareChannel{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      childEnvChannelName,
-						Namespace: cp.Namespace,
-						OwnerReferences: []metav1.OwnerReference{
-							{
-								APIVersion:         uyuniv1.GroupVersion.String(),
-								Kind:                "ContentProject",
-								Name:                cp.Name,
-								UID:                 cp.UID,
-								BlockOwnerDeletion:  ptrBool(true),
-								Controller:         ptrBool(true),
-							},
-						},
-						Labels: map[string]string{
-							"app.kubernetes.io/managed-by": "contentproject-controller",
-							"app.kubernetes.io/part-of":    cp.Name,
-							"clm.uyuni/environment":        env.Spec.Id,
-							"clm.uyuni/child-channel":      childChannel.Name,
-						},
-						Annotations: map[string]string{
-							uyuniv1.AnnAutoCreatedForEnvironment: env.Spec.Id,
-							"clm.uyuni/content-project":        cp.Name,
-						},
-					},
-					Spec: uyuniv1.SoftwareChannelSpec{
-						Label:       fmt.Sprintf("%s-%s", childChannel.Spec.Label, env.Spec.Id),
-						Name:        fmt.Sprintf("%s - %s", childChannel.Spec.Name, env.Spec.Name),
-						Summary:     fmt.Sprintf("%s for %s", childChannel.Spec.Summary, env.Spec.Name),
-						Description: childChannel.Spec.Description,
-						Arch:        childChannel.Spec.Arch,
-						Checksum:    childChannel.Spec.Checksum,
-						GPGKey:      childChannel.Spec.GPGKey,
-						RepositoryRefs: childChannel.Spec.RepositoryRefs,
-						Sync:           childChannel.Spec.Sync,
-						OrganizationRef: childChannel.Spec.OrganizationRef,
-						ParentChannelRef: &uyuniv1.LocalObjectRef{
-							Name: baseEnvChannelName,
-						},
-					},
-				}
-
-				if err := r.createOrUpdateChannel(ctx, childEnvChannel); err != nil {
-					createdChannels = append(createdChannels, uyuniv1.AutoCreatedChannel{
-						EnvironmentID:   env.Spec.Id,
-						BaseChannelName: childChannel.Name,
-						ChannelName:     childEnvChannelName,
-						Ready:           false,
-						Error:           err.Error(),
-					})
-					continue
-				}
-
-				createdChannels = append(createdChannels, uyuniv1.AutoCreatedChannel{
-					EnvironmentID:   env.Spec.Id,
-					BaseChannelName: childChannel.Name,
-					ChannelName:     childEnvChannelName,
-					CreatedAt:       &metav1.Time{Time: time.Now()},
-					Ready:           true,
-				})
-			}
-		}
-	}
-
-	cp.Status.AutoCreatedChannels = createdChannels
-	return nil
-}
-
-func (r *ContentProjectReconciler) getProjectEnvironments(ctx context.Context, cp *uyuniv1.ContentProject) ([]uyuniv1.ClmEnvironment, error) {
-	var envList uyuniv1.ClmEnvironmentList
-	if err := r.List(ctx, &envList, client.InNamespace(cp.Namespace)); err != nil {
-		return nil, err
-	}
-
-	// Filter environments that belong to this project
-	var result []uyuniv1.ClmEnvironment
-	for _, env := range envList.Items {
-		if env.Spec.ProjectRef.Name == cp.Name {
-			result = append(result, env)
-		}
-	}
-	return result, nil
-}
-
-func (r *ContentProjectReconciler) createOrUpdateChannel(ctx context.Context, channel *uyuniv1.SoftwareChannel) error {
-	existing := &uyuniv1.SoftwareChannel{}
-	err := r.Get(ctx, types.NamespacedName{
-		Namespace: channel.Namespace,
-		Name:      channel.Name,
-	}, existing)
-
-	if err != nil && client.IgnoreNotFound(err) != nil {
-		return err
-	}
-
-	if err == nil {
-		// Update existing
-		existing.Spec = channel.Spec
-		existing.Labels = channel.Labels
-		existing.Annotations = channel.Annotations
-		return r.Update(ctx, existing)
-	}
-
-	// Create new
-	return r.Create(ctx, channel)
-}
-
-func ptrBool(b bool) *bool {
-	return &b
-}
-
 // --- error path & watches ---
 
 func (r *ContentProjectReconciler) fail(ctx context.Context, cp *uyuniv1.ContentProject, reason string, err error) (ctrl.Result, error) {
@@ -721,8 +499,6 @@ func (r *ContentProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&uyuniv1.ContentProject{}).
 		Watches(&uyuniv1.SoftwareChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.projectsForChannel)).
-		Watches(&uyuniv1.ClmEnvironment{},
-			handler.EnqueueRequestsFromMapFunc(r.projectsForEnvironment)).
 		Watches(&uyuniv1.ContentProjectPromotion{},
 			handler.EnqueueRequestsFromMapFunc(r.projectsForPromotion)).
 		Complete(r)
@@ -742,24 +518,6 @@ func (r *ContentProjectReconciler) projectsForChannel(ctx context.Context, obj c
 				})
 				break
 			}
-		}
-	}
-	return out
-}
-
-func (r *ContentProjectReconciler) projectsForEnvironment(ctx context.Context, obj client.Object) []reconcile.Request {
-	env := obj.(*uyuniv1.ClmEnvironment)
-	var list uyuniv1.ContentProjectList
-	if err := r.List(ctx, &list, client.InNamespace(env.Namespace)); err != nil {
-		return nil
-	}
-	var out []reconcile.Request
-	for _, cp := range list.Items {
-		// Only trigger reconciliation if this project has channel config
-		if cp.Spec.Channels != nil && cp.Name == env.Spec.ProjectRef.Name {
-			out = append(out, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: cp.Namespace, Name: cp.Name},
-			})
 		}
 	}
 	return out
