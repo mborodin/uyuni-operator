@@ -1652,7 +1652,7 @@ func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([
 func (c *Client) AttachSource(ctx context.Context, projectLabel, channelLabel string) error {
 	_, err := apiPost[any](c, "contentmanagement/attachSource", map[string]any{
 		"projectLabel": projectLabel,
-		"sourceType":   "SW_CHANNEL",
+		"sourceType":   "software",
 		"sourceLabel":  channelLabel,
 	})
 	return err
@@ -1661,7 +1661,7 @@ func (c *Client) AttachSource(ctx context.Context, projectLabel, channelLabel st
 func (c *Client) DetachSource(ctx context.Context, projectLabel, channelLabel string) error {
 	_, err := apiPost[any](c, "contentmanagement/detachSource", map[string]any{
 		"projectLabel": projectLabel,
-		"sourceType":   "SW_CHANNEL",
+		"sourceType":   "software",
 		"sourceLabel":  channelLabel,
 	})
 	return err
