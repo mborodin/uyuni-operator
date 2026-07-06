@@ -306,16 +306,12 @@ func chainOrderFromUyuni(envs []uyuni.ProjectEnvironmentInfo) []uyuni.ProjectEnv
 }
 
 func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject, desired []string) error {
-	// Source attachment is skipped if APIs are not available
-	// The spec.sourceRefs are documented but not required to be attached via API
-	// Attempt to list sources, but don't fail if the API is unavailable
-	_, err := uc.ListProjectSources(ctx, cp.Spec.Label)
-	if err != nil {
-		// Log but continue - API may not be available in this Uyuni version
-		fmt.Printf("ListProjectSources API failed (may not be available): %v\n", err)
-		return nil
+	// Attach desired sources to the project
+	for _, label := range desired {
+		if err := uc.AttachSource(ctx, cp.Spec.Label, label); err != nil {
+			return fmt.Errorf("attach source %q: %w", label, err)
+		}
 	}
-	// If API succeeded, attachment logic would go here, but skipped for now
 	return nil
 }
 
