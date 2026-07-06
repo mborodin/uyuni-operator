@@ -110,8 +110,7 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if ib.Spec.Earliest != nil {
 			earliest = ib.Spec.Earliest.Time
 		}
-		actionID, err := uc.ScheduleImageBuild(ctx, profile.Spec.Label, version, buildHostID)
-		_ = earliest // ScheduleImageBuild doesn't take earliest; stored for reference only
+		actionID, err := uc.ScheduleImageBuild(ctx, profile.Spec.Label, version, buildHostID, earliest)
 		if err != nil {
 			return r.fail(ctx, &ib, "ScheduleFailed", fmt.Errorf("scheduling image build: %w", err))
 		}

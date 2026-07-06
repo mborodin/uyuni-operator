@@ -957,20 +957,25 @@ func (c *Client) ChangeProxy(ctx context.Context, serverIDs []int, proxyID int) 
 	})
 }
 
-func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error) {
-	type resp struct {
-		ActionID int `json:"action_id"`
+// firstOrZero returns the first element of ids, or 0 when empty. The multi-sid
+// schedule APIs return an int array of action ids; callers that schedule a
+// single system take the first.
+func firstOrZero(ids []int) int {
+	if len(ids) > 0 {
+		return ids[0]
 	}
-	r, err := apiPost[resp](c, "system/scheduleChangeChannels", map[string]any{
+	return 0
+}
+
+func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error) {
+	// The single-sid scheduleChangeChannels returns a bare int action id (not a
+	// struct), so unmarshalling into a {action_id} struct fails.
+	return apiPost[int](c, "system/scheduleChangeChannels", map[string]any{
 		"sid":                 serverID,
 		"base_channel":        base,
 		"child_channels":      children,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
-	if err != nil {
-		return 0, err
-	}
-	return r.ActionID, nil
 }
 
 func (c *Client) SetBaseChannel(ctx context.Context, serverID int, label string) error {
@@ -1964,19 +1969,15 @@ func (c *Client) DeleteImageProfile(ctx context.Context, label string) error {
 	return asNotFound(err)
 }
 
-func (c *Client) ScheduleImageBuild(ctx context.Context, profileLabel, version string, buildHostID int) (int, error) {
-	type resp struct {
-		ActionID int `json:"action_id"`
-	}
-	r, err := apiPost[resp](c, "image/scheduleImageBuild", map[string]any{
-		"profile_label": profileLabel,
-		"version":       version,
-		"build_host_id": buildHostID,
+func (c *Client) ScheduleImageBuild(ctx context.Context, profileLabel, version string, buildHostID int, earliest time.Time) (int, error) {
+	// Params are camelCase and earliestOccurrence is required; the call returns
+	// a bare int action id.
+	return apiPost[int](c, "image/scheduleImageBuild", map[string]any{
+		"profileLabel":       profileLabel,
+		"version":            version,
+		"buildHostId":        buildHostID,
+		"earliestOccurrence": earliest.Format(time.RFC3339),
 	})
-	if err != nil {
-		return 0, err
-	}
-	return r.ActionID, nil
 }
 
 func (c *Client) GetImagePillar(ctx context.Context, imageID int) (map[string]any, error) {
@@ -2038,10 +2039,9 @@ func (c *Client) ListImagesForProfile(ctx context.Context, profileLabel string) 
 // =============================================================================
 
 func (c *Client) ScheduleHighstate(ctx context.Context, serverIDs []int, earliest time.Time, test bool) (int, error) {
-	type resp struct {
-		ActionID int `json:"action_id"`
-	}
-	r, err := apiPost[resp](c, "system/scheduleApplyHighstate", map[string]any{
+	// The multi-sid scheduleApplyHighstate returns a bare int array of action
+	// ids, not a struct. We schedule one system, so return the first id.
+	ids, err := apiPost[[]int](c, "system/scheduleApplyHighstate", map[string]any{
 		"sids":               serverIDs,
 		"earliestOccurrence": earliest.Format(time.RFC3339),
 		"test":               test,
@@ -2049,14 +2049,11 @@ func (c *Client) ScheduleHighstate(ctx context.Context, serverIDs []int, earlies
 	if err != nil {
 		return 0, err
 	}
-	return r.ActionID, nil
+	return firstOrZero(ids), nil
 }
 
 func (c *Client) ScheduleRemoteCommand(ctx context.Context, serverIDs []int, earliest time.Time, command, user, group string, timeoutSeconds int) (int, error) {
-	type resp struct {
-		ActionID int `json:"action_id"`
-	}
-	r, err := apiPost[resp](c, "system/scheduleScriptRun", map[string]any{
+	ids, err := apiPost[[]int](c, "system/scheduleScriptRun", map[string]any{
 		"sids":                serverIDs,
 		"username":            user,
 		"groupname":           group,
@@ -2067,50 +2064,33 @@ func (c *Client) ScheduleRemoteCommand(ctx context.Context, serverIDs []int, ear
 	if err != nil {
 		return 0, err
 	}
-	return r.ActionID, nil
+	return firstOrZero(ids), nil
 }
 
 func (c *Client) ScheduleReboot(ctx context.Context, serverIDs []int, earliest time.Time) ([]int, error) {
-	type resp struct {
-		ActionIDs []int `json:"action_ids"`
-	}
-	r, err := apiPost[resp](c, "system/scheduleReboot", map[string]any{
+	return apiPost[[]int](c, "system/scheduleReboot", map[string]any{
 		"sids":                serverIDs,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
-	if err != nil {
-		return nil, err
-	}
-	return r.ActionIDs, nil
 }
 
 func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) ([]int, error) {
-	type resp struct {
-		ActionIDs []int `json:"action_ids"`
-	}
-	r, err := apiPost[resp](c, "system/scheduleApplyErrata", map[string]any{
+	return apiPost[[]int](c, "system/scheduleApplyErrata", map[string]any{
 		"sids":                serverIDs,
 		"errata_names":        advisoryNames,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
-	if err != nil {
-		return nil, err
-	}
-	return r.ActionIDs, nil
 }
 
 func (c *Client) ScheduleApplyConfigChannels(ctx context.Context, serverIDs []int, earliest time.Time) (int, error) {
-	type resp struct {
-		ActionID int `json:"action_id"`
-	}
-	r, err := apiPost[resp](c, "system/scheduleApplyConfigChannel", map[string]any{
+	ids, err := apiPost[[]int](c, "system/scheduleApplyConfigChannel", map[string]any{
 		"sids":                serverIDs,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
 	if err != nil {
 		return 0, err
 	}
-	return r.ActionID, nil
+	return firstOrZero(ids), nil
 }
 
 func (c *Client) GetActionDetails(ctx context.Context, actionID int) (*ScheduledAction, error) {

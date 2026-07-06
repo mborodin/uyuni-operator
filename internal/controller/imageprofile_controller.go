@@ -257,7 +257,7 @@ func (r *ImageProfileReconciler) handleBuildTriggers(ctx context.Context, uc uyu
 		trigger = "annotation"
 	}
 
-	actionID, err := uc.ScheduleImageBuild(ctx, ip.Spec.Label, version, buildHostID)
+	actionID, err := uc.ScheduleImageBuild(ctx, ip.Spec.Label, version, buildHostID, time.Now())
 	if err != nil {
 		return 0, fmt.Errorf("scheduling image build: %w", err)
 	}
