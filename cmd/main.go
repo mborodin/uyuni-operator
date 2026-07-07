@@ -50,8 +50,8 @@ func main() {
 
 	// Increase rate limiter to handle parallel cache syncs for all 22 CRDs
 	cfg := ctrl.GetConfigOrDie()
-	cfg.QPS = 200   // Increase from default 5 (40x)
-	cfg.Burst = 300 // Increase from default 10 (30x)
+	cfg.QPS = 500   // Increase from default 5 (100x for sustained throughput)
+	cfg.Burst = 1000 // Increase from default 10 (100x for burst capacity)
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
