@@ -201,37 +201,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.ImageBuildReconciler{
-		Client:  mgr.GetClient(),
-		Clients: clientPool,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ImageBuild")
-		os.Exit(1)
-	}
+	// Disabled for cache sync stability testing
+	// if err := (&controller.ImageBuildReconciler{
+	// 	Client:  mgr.GetClient(),
+	// 	Clients: clientPool,
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create controller", "controller", "ImageBuild")
+	// 	os.Exit(1)
+	// }
 
-	if err := (&controller.CobblerSystemReconciler{
-		Client:  mgr.GetClient(),
-		Cobbler: clientPool,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "CobblerSystem")
-		os.Exit(1)
-	}
+	// if err := (&controller.CobblerSystemReconciler{
+	// 	Client:  mgr.GetClient(),
+	// 	Cobbler: clientPool,
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create controller", "controller", "CobblerSystem")
+	// 	os.Exit(1)
+	// }
 
-	if err := (&controller.CobblerDistroReconciler{
-		Client:  mgr.GetClient(),
-		Cobbler: clientPool,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "CobblerDistro")
-		os.Exit(1)
-	}
+	// if err := (&controller.CobblerDistroReconciler{
+	// 	Client:  mgr.GetClient(),
+	// 	Cobbler: clientPool,
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create controller", "controller", "CobblerDistro")
+	// 	os.Exit(1)
+	// }
 
-	if err := (&controller.CobblerProfileReconciler{
-		Client:  mgr.GetClient(),
-		Cobbler: clientPool,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "CobblerProfile")
-		os.Exit(1)
-	}
+	// if err := (&controller.CobblerProfileReconciler{
+	// 	Client:  mgr.GetClient(),
+	// 	Cobbler: clientPool,
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create controller", "controller", "CobblerProfile")
+	// 	os.Exit(1)
+	// }
 
 	if err := (&webhook.OrganizationValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "OrganizationValidator")
