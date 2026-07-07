@@ -334,6 +334,9 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 
 	// Detach removed sources
 	for source := range currentSet {
+		if source == "" {
+			continue
+		}
 		if !desiredSet[source] {
 			if err := uc.DetachSource(ctx, cp.Spec.Label, source); err != nil {
 				return fmt.Errorf("detach source %q: %w", source, err)
