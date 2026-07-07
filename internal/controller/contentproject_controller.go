@@ -306,12 +306,41 @@ func chainOrderFromUyuni(envs []uyuni.ProjectEnvironmentInfo) []uyuni.ProjectEnv
 }
 
 func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject, desired []string) error {
-	// Attach desired sources to the project
+	// Get current sources from Uyuni
+	current, err := uc.ListProjectSources(ctx, cp.Spec.Label)
+	if err != nil {
+		return fmt.Errorf("list sources: %w", err)
+	}
+
+	// Build sets for comparison
+	desiredSet := make(map[string]bool)
 	for _, label := range desired {
-		if err := uc.AttachSource(ctx, cp.Spec.Label, label); err != nil {
-			return fmt.Errorf("attach source %q: %w", label, err)
+		desiredSet[label] = true
+	}
+
+	currentSet := make(map[string]bool)
+	for _, source := range current {
+		currentSet[source.Channel.Label] = true
+	}
+
+	// Attach missing sources
+	for _, label := range desired {
+		if !currentSet[label] {
+			if err := uc.AttachSource(ctx, cp.Spec.Label, label); err != nil {
+				return fmt.Errorf("attach source %q: %w", label, err)
+			}
 		}
 	}
+
+	// Detach removed sources
+	for source := range currentSet {
+		if !desiredSet[source] {
+			if err := uc.DetachSource(ctx, cp.Spec.Label, source); err != nil {
+				return fmt.Errorf("detach source %q: %w", source, err)
+			}
+		}
+	}
+
 	return nil
 }
 
