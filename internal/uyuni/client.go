@@ -1634,7 +1634,7 @@ func (c *Client) RemoveProject(ctx context.Context, label string) error {
 }
 
 func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([]ProjectSource, error) {
-	list, err := apiGet[[]wireProjectSource](c, "contentmanagement/listProjectSources?project_label="+url.QueryEscape(projectLabel))
+	list, err := apiGet[[]wireProjectSource](c, "contentmanagement/listProjectSources?projectLabel="+url.QueryEscape(projectLabel))
 	if err != nil {
 		return nil, err
 	}
