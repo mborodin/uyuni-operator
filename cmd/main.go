@@ -48,7 +48,12 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	// Increase rate limiter to handle parallel cache syncs for all 22 CRDs
+	cfg := ctrl.GetConfigOrDie()
+	cfg.QPS = 60   // Increase from default 5 (12x)
+	cfg.Burst = 100 // Increase from default 10 (10x)
+
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
