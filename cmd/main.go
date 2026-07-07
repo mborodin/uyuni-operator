@@ -48,10 +48,10 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// Increase rate limiter to handle parallel cache syncs for all 22 CRDs
+	// Disable rate limiting - let all 22 controllers reconcile without limits
 	cfg := ctrl.GetConfigOrDie()
-	cfg.QPS = 500   // Increase from default 5 (100x for sustained throughput)
-	cfg.Burst = 1000 // Increase from default 10 (100x for burst capacity)
+	cfg.QPS = 999999     // Effectively unlimited sustained throughput
+	cfg.Burst = 999999   // Effectively unlimited burst capacity
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
