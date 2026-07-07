@@ -67,6 +67,8 @@ webhook:
   # -- Enable admission webhooks. When disabled, ValidatingWebhookConfiguration,
   # MutatingWebhookConfiguration, and the webhook Service are not created.
   enabled: true
+  # -- Namespace where webhook service is deployed (typically same as operator namespace)
+  namespace: uyuni-operator-system
 
   certManager:
     # -- Use cert-manager to provision the webhook TLS certificate.
