@@ -60,6 +60,39 @@ spec:
                       format.
                     type: string
                 type: object
+              channels:
+                description: Channels defines base and child channel references (preferred
+                  over sourceRefs)
+                properties:
+                  baseChannelRefs:
+                    items:
+                      description: |-
+                        LocalObjectRef is a name-only reference to a CR in the same namespace.
+                        We deliberately don't include namespace or kind: cross-namespace refs
+                        complicate RBAC and aren't needed in our model, and each ref's kind is
+                        implied by the field where it appears.
+                      properties:
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  childChannelRefs:
+                    items:
+                      description: |-
+                        LocalObjectRef is a name-only reference to a CR in the same namespace.
+                        We deliberately don't include namespace or kind: cross-namespace refs
+                        complicate RBAC and aren't needed in our model, and each ref's kind is
+                        implied by the field where it appears.
+                      properties:
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                type: object
               description:
                 type: string
               environments:

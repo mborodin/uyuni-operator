@@ -52,6 +52,11 @@ type ProjectBuildPolicy struct {
 	Message string `json:"message,omitempty"`
 }
 
+type ChannelConfig struct {
+	BaseChannelRefs []LocalObjectRef `json:"baseChannelRefs,omitempty"`
+	ChildChannelRefs []LocalObjectRef `json:"childChannelRefs,omitempty"`
+}
+
 type ContentProjectSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-]+$`
@@ -64,6 +69,9 @@ type ContentProjectSpec struct {
 	Description string `json:"description,omitempty"`
 
 	SourceRefs []LocalObjectRef `json:"sourceRefs,omitempty"`
+
+	// Channels defines base and child channel references (preferred over sourceRefs)
+	Channels *ChannelConfig `json:"channels,omitempty"`
 
 	// Environments are now managed via separate ClmEnvironment CRDs
 	Environments []ProjectEnvironment `json:"environments,omitempty"`
