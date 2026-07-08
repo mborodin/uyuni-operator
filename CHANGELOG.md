@@ -13,6 +13,12 @@
   `failed to wait for X caches to sync` for whichever controller happened to
   still be syncing. `LeaseDuration`/`RenewDeadline`/`RetryPeriod` are now
   60s/40s/10s.
+- **ImageBuild no longer waits forever with `ImageProfile … not yet realized in
+  Uyuni`.** The gate checked `ImageProfile.status.uyuniId`, but image profiles
+  have no numeric id in the Uyuni API (`image.profile.getDetails` returns none),
+  so it was always 0. ImageBuild now gates on the ImageProfile's `Ready`
+  condition instead, which turns True once the operator has ensured the profile
+  exists in Uyuni.
 - **Registered systems no longer wedge with `unmarshal number into ... []int`.**
   Every `system.schedule*` call (`scheduleApplyHighstate`, `scheduleScriptRun`,
   `scheduleReboot`, `scheduleApplyErrata`, `scheduleApplyConfigChannel`) returns a

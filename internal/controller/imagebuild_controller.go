@@ -61,8 +61,12 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	// Wait for profile to be realized.
-	if profile.Status.UyuniID == 0 {
+	// Wait for the profile to be realized in Uyuni. Image profiles have no
+	// numeric id in the Uyuni API (image.profile.getDetails returns none), so
+	// status.UyuniID is always 0 — readiness is tracked via the profile's Ready
+	// condition, which turns True once the operator has ensured the Uyuni profile
+	// exists.
+	if c := findCondition(profile.Status.Conditions, "Ready"); c == nil || c.Status != metav1.ConditionTrue {
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "WaitingForProfile",
 			fmt.Sprintf("ImageProfile %q not yet realized in Uyuni", ib.Spec.ProfileRef.Name))
 		_ = r.Status().Update(ctx, &ib)
