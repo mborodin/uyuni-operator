@@ -164,20 +164,34 @@ func resolveDirectChannelRef(ctx context.Context, c client.Client, namespace str
 	return sc.Status.Label, "", "", nil
 }
 
-// findSoftwareChannel looks up a SoftwareChannel first by exact CR metadata.name,
-// then falls back to a suffix match so callers can use the short name from a
-// BrandRegion claim (e.g. "opensuse-leap-16-0-x86-64") without knowing the
-// full generated prefix (e.g. "gmrc-pzcpz-opensuse-leap-16-0-x86-64").
+// findSoftwareChannel resolves a ref string to a SoftwareChannel CR in
+// namespace, trying each of the following in order and returning the first
+// match. No prefix is required — a caller just writes whichever identifier
+// is convenient (a same-claim short name, another claim's Uyuni label, or
+// its Uyuni display name) and this tries all of them:
 //
-// A "label:" prefix (e.g. "label:opensuse_leap16_0-x86_64") looks up by the
-// channel's Uyuni label (spec.label) instead of by Kubernetes object name.
-// This lets a ref point at a SoftwareChannel owned by a different claim
-// (different composite-name prefix, possibly even a different generated CR
-// name across reconciles) using the stable, human-meaningful Uyuni label
-// instead of the generated Kubernetes object name.
+//  1. Exact Kubernetes object metadata.name.
+//  2. Suffix match on metadata.name (e.g. "opensuse-leap-16-0-x86-64"
+//     matches "gmrc-pzcpz-opensuse-leap-16-0-x86-64") — lets a claim use its
+//     own short ref name, or another claim's, without knowing the
+//     generated composite-name prefix.
+//  3. spec.label (the Uyuni label) — stable across claims/composites and
+//     across composite recreation, since it doesn't depend on any
+//     generated Kubernetes name.
+//  4. spec.name (the Uyuni WebUI display name) — the most human-friendly
+//     identifier, but the least strictly unique of the three (Uyuni
+//     rejects a duplicate display name on create, so in practice one
+//     realized match is expected, same caveat as spec.label).
+//
+// An explicit "label:<value>" or "name:<value>" prefix skips straight to
+// step 3 or 4, bypassing 1/2 — useful only to disambiguate if a value could
+// otherwise be confused for a Kubernetes name fragment.
 func findSoftwareChannel(ctx context.Context, c client.Client, namespace, name string) (*uyuniv1.SoftwareChannel, error) {
 	if label, ok := strings.CutPrefix(name, "label:"); ok {
 		return findSoftwareChannelByLabel(ctx, c, namespace, label)
+	}
+	if displayName, ok := strings.CutPrefix(name, "name:"); ok {
+		return findSoftwareChannelByDisplayName(ctx, c, namespace, displayName)
 	}
 
 	var sc uyuniv1.SoftwareChannel
@@ -196,7 +210,13 @@ func findSoftwareChannel(ctx context.Context, c client.Client, namespace, name s
 			return &list.Items[i], nil
 		}
 	}
-	return nil, nil
+
+	if byLabel, err := findSoftwareChannelByLabel(ctx, c, namespace, name); err != nil {
+		return nil, err
+	} else if byLabel != nil {
+		return byLabel, nil
+	}
+	return findSoftwareChannelByDisplayName(ctx, c, namespace, name)
 }
 
 // findSoftwareChannelByLabel returns the SoftwareChannel CR in namespace whose
@@ -217,12 +237,48 @@ func findSoftwareChannelByLabel(ctx context.Context, c client.Client, namespace,
 	return nil, nil
 }
 
-// findSystemGroup looks up a SystemGroup first by exact CR metadata.name, then
-// falls back to a suffix match — mirrors findSoftwareChannel, so a claim can
-// reference a SystemGroup owned by a different claim/composite via
-// "external:<short-name>" (e.g. "external:branchservers" matches
-// "gmrc-5vtl5-branchservers") without knowing the owning claim's generated
-// prefix.
+// findSoftwareChannelByDisplayName returns the SoftwareChannel CR in namespace
+// whose spec.name (Uyuni display name) matches. Prefers a realized match
+// (Status.UyuniID != 0) when more than one CR shares the display name — e.g.
+// a duplicate that lost the ChannelLabelConflict race — so an ambiguous
+// suffix/name lookup doesn't pin a ref to the broken, unrealized copy (see
+// the "external:" suffix-match ambiguity this same pattern hit for
+// findSystemGroup).
+func findSoftwareChannelByDisplayName(ctx context.Context, c client.Client, namespace, displayName string) (*uyuniv1.SoftwareChannel, error) {
+	var list uyuniv1.SoftwareChannelList
+	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	var fallback *uyuniv1.SoftwareChannel
+	for i := range list.Items {
+		if list.Items[i].Spec.Name != displayName {
+			continue
+		}
+		if list.Items[i].Status.UyuniID != 0 {
+			return &list.Items[i], nil
+		}
+		if fallback == nil {
+			fallback = &list.Items[i]
+		}
+	}
+	return fallback, nil
+}
+
+// findSystemGroup resolves a ref string to a SystemGroup CR in namespace,
+// mirroring findSoftwareChannel's no-prefix-required resolution chain:
+//
+//  1. Exact Kubernetes object metadata.name.
+//  2. Suffix match on metadata.name (e.g. "branchservers" matches
+//     "gmrc-5vtl5-branchservers") — lets a claim use its own short ref name,
+//     or another claim's, without knowing the generated composite-name
+//     prefix.
+//  3. spec.name (the Uyuni group name) — prefers a realized match
+//     (Status.UyuniID != 0) if more than one CR shares it, so an ambiguous
+//     lookup doesn't pin the ref to a broken/unrealized duplicate that lost
+//     the GroupNameConflict race.
+//
+// An explicit "external:<full-k8s-name>" ref (stripped by the Composition
+// before reaching here) is just a plain name that flows through steps 1/2.
 func findSystemGroup(ctx context.Context, c client.Client, namespace, name string) (*uyuniv1.SystemGroup, error) {
 	var sg uyuniv1.SystemGroup
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sg); err == nil {
@@ -240,7 +296,20 @@ func findSystemGroup(ctx context.Context, c client.Client, namespace, name strin
 			return &list.Items[i], nil
 		}
 	}
-	return nil, nil
+
+	var byName *uyuniv1.SystemGroup
+	for i := range list.Items {
+		if list.Items[i].Spec.Name != name {
+			continue
+		}
+		if list.Items[i].Status.UyuniID != 0 {
+			return &list.Items[i], nil
+		}
+		if byName == nil {
+			byName = &list.Items[i]
+		}
+	}
+	return byName, nil
 }
 
 func resolveFromProject(ctx context.Context, c client.Client, namespace string, ref uyuniv1.ChannelFromProject) (label, waitDetail, hardError string, err error) {
