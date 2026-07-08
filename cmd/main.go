@@ -59,9 +59,9 @@ func main() {
 	// causing controller-runtime to conclude it lost leadership and cancel
 	// the manager context mid-startup (surfaces as "failed to wait for X
 	// caches to sync" even though nothing is actually wrong with X).
-	leaseDuration := 60 * time.Second
-	renewDeadline := 40 * time.Second
-	retryPeriod := 10 * time.Second
+	leaseDuration := 120 * time.Second
+	renewDeadline := 90 * time.Second
+	retryPeriod := 15 * time.Second
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
