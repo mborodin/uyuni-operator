@@ -323,6 +323,9 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 		currentSet[source.Channel.Label] = true
 	}
 
+	// DEBUG: Log what we're comparing
+	fmt.Printf("DEBUG reconcileSources: desired=%v, current=%v\n", desired, currentSet)
+
 	// Attach missing sources
 	for _, label := range desired {
 		if !currentSet[label] {
@@ -338,9 +341,11 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 			continue
 		}
 		if !desiredSet[source] {
+			fmt.Printf("DEBUG: Detaching source %q from project %q\n", source, cp.Spec.Label)
 			if err := uc.DetachSource(ctx, cp.Spec.Label, source); err != nil {
 				return fmt.Errorf("detach source %q: %w", source, err)
 			}
+			fmt.Printf("DEBUG: Successfully detached source %q\n", source)
 		}
 	}
 
