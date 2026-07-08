@@ -260,12 +260,12 @@ func (r *SoftwareChannelReconciler) resolveParentChannel(ctx context.Context, sc
 	if sc.Spec.ParentChannelRef == nil {
 		return "", "", nil
 	}
-	var parent uyuniv1.SoftwareChannel
-	if err := r.Get(ctx, types.NamespacedName{Namespace: sc.Namespace, Name: sc.Spec.ParentChannelRef.Name}, &parent); err != nil {
-		if client.IgnoreNotFound(err) == nil {
-			return "", fmt.Sprintf("parent SoftwareChannel %q not found", sc.Spec.ParentChannelRef.Name), nil
-		}
+	parent, err := findSoftwareChannel(ctx, r.Client, sc.Namespace, sc.Spec.ParentChannelRef.Name)
+	if err != nil {
 		return "", "", err
+	}
+	if parent == nil {
+		return "", fmt.Sprintf("parent SoftwareChannel %q not found", sc.Spec.ParentChannelRef.Name), nil
 	}
 	if parent.Status.UyuniID == 0 {
 		return "", fmt.Sprintf("parent SoftwareChannel %q not yet realized in Uyuni", sc.Spec.ParentChannelRef.Name), nil

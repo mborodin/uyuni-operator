@@ -160,7 +160,18 @@ func resolveDirectChannelRef(ctx context.Context, c client.Client, namespace str
 // then falls back to a suffix match so callers can use the short name from a
 // BrandRegion claim (e.g. "opensuse-leap-16-0-x86-64") without knowing the
 // full generated prefix (e.g. "gmrc-pzcpz-opensuse-leap-16-0-x86-64").
+//
+// A "label:" prefix (e.g. "label:opensuse_leap16_0-x86_64") looks up by the
+// channel's Uyuni label (spec.label) instead of by Kubernetes object name.
+// This lets a ref point at a SoftwareChannel owned by a different claim
+// (different composite-name prefix, possibly even a different generated CR
+// name across reconciles) using the stable, human-meaningful Uyuni label
+// instead of the generated Kubernetes object name.
 func findSoftwareChannel(ctx context.Context, c client.Client, namespace, name string) (*uyuniv1.SoftwareChannel, error) {
+	if label, ok := strings.CutPrefix(name, "label:"); ok {
+		return findSoftwareChannelByLabel(ctx, c, namespace, label)
+	}
+
 	var sc uyuniv1.SoftwareChannel
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sc); err == nil {
 		return &sc, nil
@@ -174,6 +185,24 @@ func findSoftwareChannel(ctx context.Context, c client.Client, namespace, name s
 	suffix := "-" + name
 	for i := range list.Items {
 		if strings.HasSuffix(list.Items[i].Name, suffix) {
+			return &list.Items[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// findSoftwareChannelByLabel returns the SoftwareChannel CR in namespace whose
+// spec.label matches. Uyuni labels are effectively unique per organization —
+// the reconciler's ChannelLabelConflict check (see SoftwareChannelReconciler)
+// already prevents two CRs from claiming the same label — so at most one
+// match is expected.
+func findSoftwareChannelByLabel(ctx context.Context, c client.Client, namespace, label string) (*uyuniv1.SoftwareChannel, error) {
+	var list uyuniv1.SoftwareChannelList
+	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	for i := range list.Items {
+		if list.Items[i].Spec.Label == label {
 			return &list.Items[i], nil
 		}
 	}
