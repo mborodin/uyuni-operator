@@ -11,8 +11,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/jsonpath"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -745,7 +748,7 @@ func (r *SystemReconciler) reconcileCobblerSystem(ctx context.Context, sys *uyun
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cs, func() error {
 		cs.Spec.Mode = uyuniv1.CobblerModeCreate
 		cs.Spec.Name = cobblerName
-		cs.Spec.ProviderRef = r.cobblerProviderRef(ctx, sys)
+		cs.Spec.ProviderRef = cobblerProviderRefForOrg(ctx, r.Client, sys.Namespace, orgRef(sys.Spec.OrganizationRef))
 		cs.Spec.ProfileName = profileLabel
 		cs.Spec.Interfaces = ifaces
 		cs.Spec.AutoinstallMeta = vars
@@ -773,22 +776,6 @@ func (r *SystemReconciler) resolveOrgID(ctx context.Context, sys *uyuniv1.System
 		return 1
 	}
 	return org.Status.UyuniOrgID
-}
-
-// cobblerProviderRef resolves the UyuniProvider backing the system's org so the
-// spawned CobblerSystem targets the same Cobbler. Nil = default provider.
-func (r *SystemReconciler) cobblerProviderRef(ctx context.Context, sys *uyuniv1.System) *uyuniv1.LocalObjectRef {
-	if sys.Spec.OrganizationRef == nil {
-		return nil
-	}
-	var org uyuniv1.Organization
-	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.OrganizationRef.Name}, &org); err != nil {
-		return nil
-	}
-	if org.Spec.ProviderRef.Name == "" {
-		return nil
-	}
-	return &uyuniv1.LocalObjectRef{Name: org.Spec.ProviderRef.Name}
 }
 
 // resolveProxyHost returns the hostname of the proxy System referenced by
@@ -967,10 +954,21 @@ func (r *SystemReconciler) reconcileFormulas(ctx context.Context, uc uyuni.API, 
 		}
 	}
 
+	// Formula form data (including resolved valuesFrom references) is pushed only
+	// on a spec change or the apply-formula-values trigger; otherwise a changed
+	// reference value (e.g. a new image build's URL) surfaces as a
+	// FormulaValuesDrift condition rather than being applied silently.
+	applyData := sys.Generation != sys.Status.FormulaDataGeneration ||
+		sys.Annotations[uyuniv1.AnnApplyFormulaValues] == "true"
+	drift := false
+
 	for _, f := range sys.Spec.Formulas {
-		want, err := rawExtensionToMap(f.Values)
+		want, wait, err := r.resolveFormulaValues(ctx, sys, f)
 		if err != nil {
-			return "", fmt.Errorf("formula %q values: %w", f.Name, err)
+			return "", err
+		}
+		if wait != "" {
+			return wait, nil
 		}
 		if len(want) == 0 {
 			continue
@@ -979,15 +977,209 @@ func (r *SystemReconciler) reconcileFormulas(ctx context.Context, uc uyuni.API, 
 		if err != nil && !uyuni.IsNotFound(err) {
 			return "", err
 		}
-		if !mapSubset(want, got) {
+		if mapSubset(want, got) {
+			continue
+		}
+		if applyData {
 			if err := uc.SetServerFormulaData(ctx, sys.Status.UyuniServerID, f.Name, want); err != nil {
+				return "", err
+			}
+		} else {
+			drift = true
+		}
+	}
+
+	if applyData {
+		sys.Status.FormulaDataGeneration = sys.Generation
+		if _, ok := sys.Annotations[uyuniv1.AnnApplyFormulaValues]; ok {
+			delete(sys.Annotations, uyuniv1.AnnApplyFormulaValues)
+			if err := r.Update(ctx, sys); err != nil {
 				return "", err
 			}
 		}
 	}
+	if drift {
+		setCondition(&sys.Status.Conditions, condFormulaValuesDrift, metav1.ConditionTrue, sys.Generation,
+			"Drift", "resolved formula reference values differ from what was applied; set annotation "+uyuniv1.AnnApplyFormulaValues+`="true" to apply`)
+	} else {
+		setCondition(&sys.Status.Conditions, condFormulaValuesDrift, metav1.ConditionFalse, sys.Generation, "InSync", "")
+	}
 
 	sys.Status.ActiveFormulas = desired
 	return "", nil
+}
+
+// resolveFormulaValues builds a formula's effective form data: the static
+// Values merged with resolved ValuesFromSources (bulk) then ValuesFrom
+// (explicit, override). A non-empty wait string means a referenced Secret,
+// ConfigMap, or object field isn't available yet.
+func (r *SystemReconciler) resolveFormulaValues(ctx context.Context, sys *uyuniv1.System, f uyuniv1.FormulaAssignment) (map[string]any, string, error) {
+	data, err := rawExtensionToMap(f.Values)
+	if err != nil {
+		return nil, "", fmt.Errorf("formula %q values: %w", f.Name, err)
+	}
+	if data == nil {
+		data = map[string]any{}
+	}
+	for _, src := range f.ValuesFromSources {
+		m, wait, err := r.resolveFormulaBulkSource(ctx, sys.Namespace, src)
+		if err != nil || wait != "" {
+			return nil, wait, err
+		}
+		for k, v := range m {
+			setPath(data, joinPath(src.Path, k), v)
+		}
+	}
+	for _, vf := range f.ValuesFrom {
+		val, wait, err := r.resolveFormulaValueFrom(ctx, sys.Namespace, vf)
+		if err != nil || wait != "" {
+			return nil, wait, err
+		}
+		setPath(data, vf.Path, val)
+	}
+	return data, "", nil
+}
+
+func (r *SystemReconciler) resolveFormulaValueFrom(ctx context.Context, ns string, vf uyuniv1.FormulaValueFrom) (any, string, error) {
+	switch {
+	case vf.SecretKeyRef != nil:
+		var sec corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: vf.SecretKeyRef.Name}, &sec); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return nil, fmt.Sprintf("Secret %q not found (valuesFrom %q)", vf.SecretKeyRef.Name, vf.Path), nil
+			}
+			return nil, "", err
+		}
+		data, ok := sec.Data[vf.SecretKeyRef.Key]
+		if !ok {
+			return nil, fmt.Sprintf("key %q not in Secret %q", vf.SecretKeyRef.Key, vf.SecretKeyRef.Name), nil
+		}
+		return string(data), "", nil
+	case vf.ConfigMapKeyRef != nil:
+		var cm corev1.ConfigMap
+		if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: vf.ConfigMapKeyRef.Name}, &cm); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return nil, fmt.Sprintf("ConfigMap %q not found (valuesFrom %q)", vf.ConfigMapKeyRef.Name, vf.Path), nil
+			}
+			return nil, "", err
+		}
+		data, ok := cm.Data[vf.ConfigMapKeyRef.Key]
+		if !ok {
+			return nil, fmt.Sprintf("key %q not in ConfigMap %q", vf.ConfigMapKeyRef.Key, vf.ConfigMapKeyRef.Name), nil
+		}
+		return data, "", nil
+	case vf.ObjectFieldRef != nil:
+		return r.resolveObjectFieldRef(ctx, ns, vf.ObjectFieldRef)
+	}
+	return nil, "", nil
+}
+
+func (r *SystemReconciler) resolveFormulaBulkSource(ctx context.Context, ns string, src uyuniv1.FormulaValueSource) (map[string]any, string, error) {
+	out := map[string]any{}
+	switch {
+	case src.SecretRef != nil:
+		var sec corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: src.SecretRef.Name}, &sec); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return nil, fmt.Sprintf("Secret %q not found (valuesFromSources)", src.SecretRef.Name), nil
+			}
+			return nil, "", err
+		}
+		for k, v := range sec.Data {
+			out[k] = string(v)
+		}
+	case src.ConfigMapRef != nil:
+		var cm corev1.ConfigMap
+		if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: src.ConfigMapRef.Name}, &cm); err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return nil, fmt.Sprintf("ConfigMap %q not found (valuesFromSources)", src.ConfigMapRef.Name), nil
+			}
+			return nil, "", err
+		}
+		for k, v := range cm.Data {
+			out[k] = v
+		}
+	}
+	return out, "", nil
+}
+
+// resolveObjectFieldRef reads a uyuni.uyuni-project.org resource in the same
+// namespace and extracts ref.FieldPath (JSONPath). Only the uyuni group is
+// allowed — the operator does not read arbitrary cluster resources.
+func (r *SystemReconciler) resolveObjectFieldRef(ctx context.Context, ns string, ref *uyuniv1.ObjectFieldRef) (any, string, error) {
+	gv, err := schema.ParseGroupVersion(ref.APIVersion)
+	if err != nil {
+		return nil, "", fmt.Errorf("objectFieldRef apiVersion %q: %w", ref.APIVersion, err)
+	}
+	if gv.Group != uyuniv1.Group {
+		return nil, "", fmt.Errorf("objectFieldRef only supports the %s API group, got %q", uyuniv1.Group, gv.Group)
+	}
+	var obj unstructured.Unstructured
+	obj.SetGroupVersionKind(gv.WithKind(ref.Kind))
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: ref.Name}, &obj); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return nil, fmt.Sprintf("%s %q not found (objectFieldRef)", ref.Kind, ref.Name), nil
+		}
+		return nil, "", err
+	}
+	val, err := evalJSONPath(obj.Object, ref.FieldPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("objectFieldRef fieldPath %q on %s %q: %w", ref.FieldPath, ref.Kind, ref.Name, err)
+	}
+	if val == nil {
+		return nil, fmt.Sprintf("%s %q field %q is empty (not populated yet?)", ref.Kind, ref.Name, ref.FieldPath), nil
+	}
+	return val, "", nil
+}
+
+// evalJSONPath evaluates a JSONPath (without surrounding braces) against a
+// decoded object, returning a single value or a slice for multi-match.
+func evalJSONPath(obj map[string]any, path string) (any, error) {
+	jp := jsonpath.New("ref").AllowMissingKeys(true)
+	if err := jp.Parse("{" + path + "}"); err != nil {
+		return nil, err
+	}
+	results, err := jp.FindResults(obj)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 || len(results[0]) == 0 {
+		return nil, nil
+	}
+	if len(results[0]) == 1 {
+		return results[0][0].Interface(), nil
+	}
+	out := make([]any, 0, len(results[0]))
+	for _, v := range results[0] {
+		out = append(out, v.Interface())
+	}
+	return out, nil
+}
+
+// setPath sets value at a dot-separated path in a nested map, creating
+// intermediate maps as needed.
+func setPath(data map[string]any, path string, value any) {
+	parts := strings.Split(path, ".")
+	m := data
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			m[p] = value
+			return
+		}
+		next, ok := m[p].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			m[p] = next
+		}
+		m = next
+	}
+}
+
+func joinPath(prefix, key string) string {
+	if prefix == "" {
+		return key
+	}
+	return prefix + "." + key
 }
 
 // resolveProxyID resolves spec.proxyRef to the proxy System's Uyuni server id.

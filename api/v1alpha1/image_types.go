@@ -123,6 +123,7 @@ type ImageProfileSpec struct {
 type ImageBuildRecord struct {
 	BuildID     int          `json:"buildId,omitempty"`
 	Version     string       `json:"version,omitempty"`
+	Revision    int          `json:"revision,omitempty"`
 	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 	// +kubebuilder:validation:Enum=Queued;Running;Succeeded;Failed
@@ -130,6 +131,25 @@ type ImageBuildRecord struct {
 	FailureReason string `json:"failureReason,omitempty"`
 	// What initiated this build: "annotation", "onChange", "initial".
 	Trigger string `json:"trigger,omitempty"`
+	// Checksum is the built image's checksum.
+	Checksum string `json:"checksum,omitempty"`
+	// Files are the artifacts produced by a successful build (image, kernel,
+	// initrd, ...), each with a download URL. Reference them from a formula via
+	// e.g. status.lastBuild.files[?(@.type=='image')].url.
+	Files []ImageFile `json:"files,omitempty"`
+	// ImageURL is a convenience: the URL of the file whose type is "image" (the
+	// installable image tarball), or empty if none.
+	ImageURL string `json:"imageUrl,omitempty"`
+}
+
+// ImageFile is one artifact of a built image.
+type ImageFile struct {
+	// Name is the file's path within the image store.
+	Name string `json:"name,omitempty"`
+	// Type is the artifact kind: image, kernel, initrd, ...
+	Type string `json:"type,omitempty"`
+	// URL is the downloadable URL.
+	URL string `json:"url,omitempty"`
 }
 
 type ImageProfileStatus struct {
@@ -199,7 +219,19 @@ type ImageBuildStatus struct {
 
 	// BuildStatus is the current build state.
 	// +kubebuilder:validation:Enum=Scheduled;Running;Succeeded;Failed
-	BuildStatus        string             `json:"buildStatus,omitempty"`
+	BuildStatus string `json:"buildStatus,omitempty"`
+
+	// Files are the artifacts produced by this specific build (image, kernel,
+	// initrd, ...), each with a download URL. Because an ImageBuild is an
+	// immutable record of one build, referencing it (rather than the
+	// ImageProfile's mutable lastBuild) pins a specific version's artifacts.
+	Files []ImageFile `json:"files,omitempty"`
+	// ImageURL is the URL of the file whose type is "image" (the installable
+	// image tarball), or empty if none.
+	ImageURL string `json:"imageUrl,omitempty"`
+	// Checksum is the built image's checksum.
+	Checksum string `json:"checksum,omitempty"`
+
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }

@@ -1,0 +1,89 @@
+# End-to-end example: a saltboot formula whose config values are pulled from an
+# ImageProfile's build output, a ConfigMap, and a Secret.
+#
+# =============================================================================
+# IMPORTANT -- reference values are NOT applied automatically.
+#
+# When a referenced value changes on its own (e.g. the ImageProfile builds a new
+# image, so status.lastBuild.imageUrl changes) the operator does NOT push it to
+# Uyuni on the next reconcile -- silently rewriting a system's formula config
+# because a build happened elsewhere violates least surprise. The System instead
+# reports FormulaValuesDrift=True.
+#
+# To apply the new values, trigger it yourself -- edit the System spec, or:
+#   kubectl annotate system grmc-gq-store01 \
+#     uyuni.uyuni-project.org/apply-formula-values=true --overwrite
+# =============================================================================
+---
+# The ImageProfile that builds the OS image. On a successful build the operator
+# records the artifacts in status.lastBuild (files[], imageUrl, checksum, ...).
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ImageProfile
+metadata:
+  name: branchserver
+  namespace: nexa-platform
+spec:
+  label: branchserver
+  type: kiwi
+  activationKeyRef: { name: microos-branchserver }
+  url: "https://github.com/example/images#main:images/BranchServer"
+# status (populated by the operator after a build):
+#   status:
+#     lastBuild:
+#       status: Succeeded
+#       imageUrl: https://uyuni.../os-images/1/BranchServer_MicroOS-0.6.14-2/...install.tar
+#       files:
+#         - {name: ...install.tar, type: image,  url: https://uyuni.../...install.tar}
+#         - {name: ...kernel,      type: kernel, url: https://uyuni.../...kernel}
+#         - {name: ...initrd.xz,   type: initrd, url: https://uyuni.../...initrd.xz}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: store-cfg
+  namespace: nexa-platform
+data:
+  store_id: gq
+  vlans: "8:storehub:br0 10:imw:br0"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bootstrap
+  namespace: nexa-platform
+type: Opaque
+stringData:
+  token: "019f1cc2-e079-783b-87cc-0c2fdef23eed"
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: System
+metadata:
+  name: grmc-gq-store01
+  namespace: nexa-platform
+spec:
+  minionId: grmc-gq-store01
+  organizationRef: { name: pantheon-of-goods }
+  formulas:
+    - name: saltboot
+      values: # static form data
+        partitioning: {}
+      valuesFrom:
+        # download URL of the latest built image, from the ImageProfile status
+        - path: image_url
+          objectFieldRef:
+            apiVersion: uyuni.uyuni-project.org/v1alpha1
+            kind: ImageProfile
+            name: branchserver
+            fieldPath: status.lastBuild.imageUrl
+            # equivalently, filter the files list by type:
+            # fieldPath: status.lastBuild.files[?(@.type=='image')].url
+        # a value from a ConfigMap key
+        - path: store_id
+          configMapKeyRef: { name: store-cfg, key: store_id }
+        # a secret value
+        - path: bootstrap_token
+          secretKeyRef: { name: bootstrap, key: token }
+      valuesFromSources:
+        # merge every key of the ConfigMap under 'extra' (extra.store_id, extra.vlans)
+        - path: extra
+          configMapRef: { name: store-cfg }

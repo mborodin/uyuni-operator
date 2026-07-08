@@ -39,10 +39,10 @@ extraArgs: []
 resources:
   limits:
     cpu: 500m
-    memory: 128Mi
+    memory: 512Mi
   requests:
-    cpu: 10m
-    memory: 64Mi
+    cpu: 100m
+    memory: 256Mi
 
 # -- Node selector for the manager pod.
 nodeSelector: {}
@@ -67,6 +67,8 @@ webhook:
   # -- Enable admission webhooks. When disabled, ValidatingWebhookConfiguration,
   # MutatingWebhookConfiguration, and the webhook Service are not created.
   enabled: true
+  # -- Namespace where webhook service is deployed (typically same as operator namespace)
+  namespace: uyuni-operator-system
 
   certManager:
     # -- Use cert-manager to provision the webhook TLS certificate.

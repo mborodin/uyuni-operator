@@ -306,16 +306,58 @@ func chainOrderFromUyuni(envs []uyuni.ProjectEnvironmentInfo) []uyuni.ProjectEnv
 }
 
 func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject, desired []string) error {
-	// Source attachment is skipped if APIs are not available
-	// The spec.sourceRefs are documented but not required to be attached via API
-	// Attempt to list sources, but don't fail if the API is unavailable
-	_, err := uc.ListProjectSources(ctx, cp.Spec.Label)
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("reconciling sources", "projectLabel", cp.Spec.Label, "desiredSourceCount", len(desired), "desiredSources", desired)
+
+	// Get current sources from Uyuni
+	current, err := uc.ListProjectSources(ctx, cp.Spec.Label)
 	if err != nil {
-		// Log but continue - API may not be available in this Uyuni version
-		fmt.Printf("ListProjectSources API failed (may not be available): %v\n", err)
-		return nil
+		return fmt.Errorf("list sources: %w", err)
 	}
-	// If API succeeded, attachment logic would go here, but skipped for now
+	log.Info("fetched current sources from Uyuni", "projectLabel", cp.Spec.Label, "currentSourceCount", len(current))
+
+	// Build sets for comparison
+	desiredSet := make(map[string]bool)
+	for _, label := range desired {
+		desiredSet[label] = true
+	}
+
+	currentSet := make(map[string]bool)
+	var currentLabels []string
+	for _, source := range current {
+		currentSet[source.Channel.Label] = true
+		currentLabels = append(currentLabels, source.Channel.Label)
+	}
+	log.Info("source sets built", "projectLabel", cp.Spec.Label, "currentLabels", currentLabels)
+
+
+	// Attach missing sources (with position based on desired order)
+	for position, label := range desired {
+		if !currentSet[label] {
+			log.Info("attaching source to project", "source", label, "projectLabel", cp.Spec.Label, "position", position)
+			if err := uc.AttachSourceWithPosition(ctx, cp.Spec.Label, label, position); err != nil {
+				log.Error(err, "failed to attach source", "source", label, "projectLabel", cp.Spec.Label, "position", position)
+				return fmt.Errorf("attach source %q: %w", label, err)
+			}
+			log.Info("successfully attached source", "source", label, "projectLabel", cp.Spec.Label, "position", position)
+		}
+	}
+
+	// Detach removed sources
+	for source := range currentSet {
+		if source == "" {
+			continue
+		}
+		if !desiredSet[source] {
+			log.Info("detaching source from project", "source", source, "projectLabel", cp.Spec.Label)
+			if err := uc.DetachSource(ctx, cp.Spec.Label, source); err != nil {
+				log.Error(err, "failed to detach source", "source", source, "projectLabel", cp.Spec.Label)
+				return fmt.Errorf("detach source %q: %w", source, err)
+			}
+			log.Info("successfully detached source", "source", source, "projectLabel", cp.Spec.Label)
+		}
+	}
+
 	return nil
 }
 
@@ -499,6 +541,8 @@ func (r *ContentProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&uyuniv1.ContentProject{}).
 		Watches(&uyuniv1.SoftwareChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.projectsForChannel)).
+		Watches(&uyuniv1.Repository{},
+			handler.EnqueueRequestsFromMapFunc(r.projectsForRepository)).
 		Watches(&uyuniv1.ContentProjectPromotion{},
 			handler.EnqueueRequestsFromMapFunc(r.projectsForPromotion)).
 		Complete(r)
@@ -531,4 +575,20 @@ func (r *ContentProjectReconciler) projectsForPromotion(_ context.Context, obj c
 	return []reconcile.Request{{
 		NamespacedName: types.NamespacedName{Namespace: p.Namespace, Name: p.Spec.ProjectRef.Name},
 	}}
+}
+
+func (r *ContentProjectReconciler) projectsForRepository(ctx context.Context, obj client.Object) []reconcile.Request {
+	// When a Repository changes, trigger reconciliation of all ContentProjects in the namespace
+	// This ensures sourceRefs changes cascade to trigger ContentProject reconciliation
+	var list uyuniv1.ContentProjectList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var out []reconcile.Request
+	for _, cp := range list.Items {
+		out = append(out, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: cp.Namespace, Name: cp.Name},
+		})
+	}
+	return out
 }

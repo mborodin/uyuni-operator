@@ -2,7 +2,40 @@
 
 ## Unreleased
 
+### Fixed
+
+- **`baseChannelFrom`/`childChannelsFrom` with an empty `contentProjectRef` now
+  attach the channel directly.** Previously such refs were dropped, so an
+  ActivationKey (or System) that used `baseChannelFrom.sourceChannelLabel`
+  without a content project ended up with no channels. An empty
+  `contentProjectRef` now means "`sourceChannelLabel` is an existing Uyuni
+  channel label, use it directly" (a bare `{name: ""}` with no
+  `sourceChannelLabel` still means "no channel").
+
 ### Added
+
+- **Formula config values from other resources.**
+  `System.spec.formulas[].valuesFrom` sets specific paths in a formula's form
+  data from a `secretKeyRef`, `configMapKeyRef`, or `objectFieldRef` (a JSONPath
+  field of another `uyuni.uyuni-project.org` resource, same namespace only — the
+  operator never reads arbitrary cluster kinds). `valuesFromSources` bulk-merges
+  every key of a Secret/ConfigMap under a path (envFrom-style). **Reference
+  values are applied only on a spec change or the
+  `uyuni.uyuni-project.org/apply-formula-values` annotation** — a value that
+  changes on its own (e.g. a new image build) surfaces as a `FormulaValuesDrift`
+  condition instead of silently rewriting the system's config. See
+  `config/samples/formula-valuesfrom.yaml`.
+- **`ImageProfile.status.lastBuild` build artifacts.** A successful build now
+  records `files[]` (`{name, type: image|kernel|initrd, url}`), `imageUrl` (the
+  installable image's download URL), `checksum`, and `revision` — from
+  `image.getDetails` — so formulas can reference e.g.
+  `status.lastBuild.files[?(@.type=='image')].url`.
+- **`ImageBuild` controller registered + build artifacts.** The previously
+  dormant `ImageBuild` reconciler is now wired in (with its CRD in the
+  kustomization + chart). Each `ImageBuild` is an immutable record of one build
+  and records its own `status.files[]`/`imageUrl`/`checksum` on success — so you
+  can pin a specific version's artifacts by referencing that `ImageBuild` rather
+  than the ImageProfile's mutable `lastBuild`.
 
 - **Cobbler controller + CRDs (`CobblerDistro`, `CobblerProfile`,
   `CobblerSystem`).** The operator now talks to Cobbler's XMLRPC API directly

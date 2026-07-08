@@ -215,20 +215,22 @@ spec:
                 type: object
               baseChannelFrom:
                 description: |-
-                  ChannelFromProject references a channel produced by a ContentProject
-                  environment. Resolution is structural: the realized Uyuni channel label
-                  is {project.spec.label}-{environment}-{sourceChannelLabel}.
+                  ChannelFromProject references a software channel either directly or through a
+                  ContentProject environment.
 
-                  Verification at reconcile time additionally checks the channel exists in
-                  the project's status.environmentStates[*].derivedChannels, which catches
-                  the case where sourceChannelLabel names a channel that isn't actually a
-                  source of the project.
+                    - With contentProjectRef set: the realized Uyuni channel label is derived
+                      structurally as {project.spec.label}-{environment}-{sourceChannelLabel},
+                      and is additionally verified against the project's
+                      status.environmentStates[*].derivedChannels.
+                    - With contentProjectRef empty: sourceChannelLabel is used directly as an
+                      existing Uyuni channel label (no project derivation). Uyuni validates the
+                      label exists when the reconciler applies it.
                 properties:
                   contentProjectRef:
                     description: |-
-                      ContentProjectRef is optional. When its name is empty, no content
-                      project channel is attached and resolution is skipped (the resource
-                      reconciles without a project-derived channel) rather than erroring.
+                      ContentProjectRef is optional. When its name is empty, sourceChannelLabel
+                      is treated as a direct Uyuni channel label (see the type doc). A bare
+                      {name: ""} with no sourceChannelLabel means "no channel".
                     properties:
                       name:
                         type: string
@@ -242,8 +244,10 @@ spec:
                     type: string
                   sourceChannelLabel:
                     description: |-
-                      SourceChannelLabel is the channel label as it exists upstream of the
-                      project (i.e., what's attached as a source), not the derived label.
+                      SourceChannelLabel is, with contentProjectRef set, the channel label as it
+                      exists upstream of the project (what's attached as a source, not the
+                      derived label); with contentProjectRef empty, it is the direct Uyuni
+                      channel label to use as-is.
                     type: string
                 required:
                 - sourceChannelLabel
@@ -277,20 +281,22 @@ spec:
               childChannelsFrom:
                 items:
                   description: |-
-                    ChannelFromProject references a channel produced by a ContentProject
-                    environment. Resolution is structural: the realized Uyuni channel label
-                    is {project.spec.label}-{environment}-{sourceChannelLabel}.
+                    ChannelFromProject references a software channel either directly or through a
+                    ContentProject environment.
 
-                    Verification at reconcile time additionally checks the channel exists in
-                    the project's status.environmentStates[*].derivedChannels, which catches
-                    the case where sourceChannelLabel names a channel that isn't actually a
-                    source of the project.
+                      - With contentProjectRef set: the realized Uyuni channel label is derived
+                        structurally as {project.spec.label}-{environment}-{sourceChannelLabel},
+                        and is additionally verified against the project's
+                        status.environmentStates[*].derivedChannels.
+                      - With contentProjectRef empty: sourceChannelLabel is used directly as an
+                        existing Uyuni channel label (no project derivation). Uyuni validates the
+                        label exists when the reconciler applies it.
                   properties:
                     contentProjectRef:
                       description: |-
-                        ContentProjectRef is optional. When its name is empty, no content
-                        project channel is attached and resolution is skipped (the resource
-                        reconciles without a project-derived channel) rather than erroring.
+                        ContentProjectRef is optional. When its name is empty, sourceChannelLabel
+                        is treated as a direct Uyuni channel label (see the type doc). A bare
+                        {name: ""} with no sourceChannelLabel means "no channel".
                       properties:
                         name:
                           type: string
@@ -304,8 +310,10 @@ spec:
                       type: string
                     sourceChannelLabel:
                       description: |-
-                        SourceChannelLabel is the channel label as it exists upstream of the
-                        project (i.e., what's attached as a source), not the derived label.
+                        SourceChannelLabel is, with contentProjectRef set, the channel label as it
+                        exists upstream of the project (what's attached as a source, not the
+                        derived label); with contentProjectRef empty, it is the direct Uyuni
+                        channel label to use as-is.
                       type: string
                   required:
                   - sourceChannelLabel
@@ -387,10 +395,113 @@ spec:
                       type: string
                     values:
                       description: |-
-                        Values is the formula form data: arbitrary nested key/value configuration
-                        matching the formula's form definition.
+                        Values is the static formula form data: arbitrary nested key/value
+                        configuration matching the formula's form definition.
                       type: object
                       x-kubernetes-preserve-unknown-fields: true
+                    valuesFrom:
+                      description: |-
+                        ValuesFrom sets specific paths in the form data from resolved sources:
+                        a Secret/ConfigMap key or a field of another uyuni.uyuni-project.org
+                        resource (via JSONPath). Explicit entries override ValuesFromSources.
+                      items:
+                        description: |-
+                          FormulaValueFrom sets one path in a formula's form data from a source.
+                          Exactly one of the source fields must be set (webhook-enforced).
+                        properties:
+                          configMapKeyRef:
+                            description: ConfigMapKeyRef sources a string value from
+                              a ConfigMap key (same namespace).
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                          objectFieldRef:
+                            description: ObjectFieldRef sources a typed value from
+                              another uyuni resource's field.
+                            properties:
+                              apiVersion:
+                                description: APIVersion is the group/version, e.g.
+                                  "uyuni.uyuni-project.org/v1alpha1".
+                                type: string
+                              fieldPath:
+                                description: |-
+                                  FieldPath is a JSONPath into the object, e.g.
+                                  "status.lastBuild.files[?(@.type=='image')].url".
+                                type: string
+                              kind:
+                                description: Kind is the referenced resource kind,
+                                  e.g. "ImageProfile".
+                                type: string
+                              name:
+                                description: Name is the referenced object's name
+                                  in the same namespace.
+                                type: string
+                            required:
+                            - apiVersion
+                            - fieldPath
+                            - kind
+                            - name
+                            type: object
+                          path:
+                            description: |-
+                              Path is the dot-separated path into the form data to set, e.g.
+                              "image_url" or "network.dns".
+                            type: string
+                          secretKeyRef:
+                            description: SecretKeyRef sources a string value from
+                              a Secret key (same namespace).
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - path
+                        type: object
+                      type: array
+                    valuesFromSources:
+                      description: |-
+                        ValuesFromSources merges every key of a Secret/ConfigMap into the form
+                        data under a path (envFrom-style).
+                      items:
+                        description: |-
+                          FormulaValueSource merges all keys of a Secret or ConfigMap into the form data
+                          under Path. Exactly one of the source fields must be set (webhook-enforced).
+                        properties:
+                          configMapRef:
+                            description: ConfigMapRef merges all keys of a ConfigMap.
+                            properties:
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          path:
+                            description: |-
+                              Path is the parent path under which the source's keys are merged (each
+                              key becomes Path.<key>). Empty merges at the top level.
+                            type: string
+                          secretRef:
+                            description: SecretRef merges all keys of a Secret (values
+                              are strings).
+                            properties:
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        type: object
+                      type: array
                   required:
                   - name
                   type: object
@@ -579,6 +690,15 @@ spec:
                 items:
                   type: string
                 type: array
+              formulaDataGeneration:
+                description: |-
+                  FormulaDataGeneration is the spec generation at which formula form data
+                  (including resolved valuesFrom references) was last pushed to Uyuni. Used
+                  to avoid silently re-applying reference values that changed on their own
+                  (e.g. a new image build) — those surface as a FormulaValuesDrift condition
+                  and are only applied on a spec change or the apply-formula-values trigger.
+                format: int64
+                type: integer
               groupNames:
                 description: |-
                   GroupNames is the set of Uyuni group names the system was last placed in.

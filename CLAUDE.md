@@ -135,20 +135,19 @@ CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
 ### Implementation status (current repo state)
 
 - **API types**: all 22 Kinds above are declared in `api/v1alpha1/`.
-- **`cmd/main.go`**: present. Registers **19 reconcilers** (Organization,
+- **`cmd/main.go`**: present. Registers **20 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
-  AutoinstallProfile, ImageProfile, CustomInfoKey, CobblerSystem,
+  AutoinstallProfile, ImageProfile, ImageBuild, CustomInfoKey, CobblerSystem,
   CobblerDistro, CobblerProfile) and **14 webhooks**.
-- **Controllers defined but NOT registered in main.go**: `ImageBuild`.
-  (`ConfigFile` and `ImageStore` have types but no controller.)
+- **Types without a controller**: `ConfigFile` and `ImageStore`.
 - **Cobbler client (`internal/cobbler`)**: hand-rolled XMLRPC client against
   Uyuni's `/cobbler_api`, reusing `UyuniProvider` creds via `pool.Cobbler(...)`.
   Reads (get_*/find_*) are unauthenticated; writes (new/modify/save/remove) need
   a token from `login`, which requires cobbler's `redhat_management_permissive`
   setting enabled (the provider user must be `config_admin`/`org_admin`).
-- **CRDs**: 21 base files under `config/crd/bases/`, all included in
+- **CRDs**: 22 base files under `config/crd/bases/`, all included in
   `config/crd/kustomization.yaml`. ⚠️ Keep this aligned: `main.go` registering
   a controller for a Kind whose CRD is not installed makes the manager
   crash-loop (`no matches for kind ...` / `timed out waiting for cache to be
@@ -220,7 +219,7 @@ Canonical reason taxonomy:
 - `AdoptionTimedOut` — system never registered within `AdoptionTimeout`
 - `Reconciled` — happy path; the only `True` reason
 
-### 5. Conditions: Ready, UyuniDrift, BuildHost, PreProvisioned
+### 5. Conditions: Ready, UyuniDrift, BuildHost, PreProvisioned, FormulaValuesDrift
 
 - `Ready` — overall reconciliation state. The reasons above populate this.
 - `UyuniDrift` — `True` when an immutable field in Uyuni differs from spec.
@@ -232,6 +231,14 @@ Canonical reason taxonomy:
 - `PreProvisioned` (System only) — `True` between profile creation and first
   registration. Different from `Ready` because the system isn't actually
   managed yet.
+- `FormulaValuesDrift` (System only) — `True` when a `spec.formulas[].valuesFrom`
+  reference (Secret/ConfigMap key, or a `uyuni.uyuni-project.org` object field via
+  JSONPath) now resolves to a value different from what was last pushed to Uyuni.
+  By design the operator does **not** apply it automatically (a new image build
+  must not silently rewrite formula config); the customer applies it with a spec
+  change or the `uyuni.uyuni-project.org/apply-formula-values` annotation. Gated
+  by `status.formulaDataGeneration`. `objectFieldRef` is restricted to the
+  `uyuni.uyuni-project.org` group in the same namespace — never arbitrary kinds.
 
 ### 6. Owner refs do cascading
 

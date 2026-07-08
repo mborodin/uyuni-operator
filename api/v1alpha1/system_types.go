@@ -120,10 +120,47 @@ type FormulaAssignment struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
-	// Values is the formula form data: arbitrary nested key/value configuration
-	// matching the formula's form definition.
+	// Values is the static formula form data: arbitrary nested key/value
+	// configuration matching the formula's form definition.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Values runtime.RawExtension `json:"values,omitempty"`
+
+	// ValuesFrom sets specific paths in the form data from resolved sources:
+	// a Secret/ConfigMap key or a field of another uyuni.uyuni-project.org
+	// resource (via JSONPath). Explicit entries override ValuesFromSources.
+	ValuesFrom []FormulaValueFrom `json:"valuesFrom,omitempty"`
+
+	// ValuesFromSources merges every key of a Secret/ConfigMap into the form
+	// data under a path (envFrom-style).
+	ValuesFromSources []FormulaValueSource `json:"valuesFromSources,omitempty"`
+}
+
+// FormulaValueFrom sets one path in a formula's form data from a source.
+// Exactly one of the source fields must be set (webhook-enforced).
+type FormulaValueFrom struct {
+	// Path is the dot-separated path into the form data to set, e.g.
+	// "image_url" or "network.dns".
+	// +kubebuilder:validation:Required
+	Path string `json:"path"`
+
+	// SecretKeyRef sources a string value from a Secret key (same namespace).
+	SecretKeyRef *SecretKeyRef `json:"secretKeyRef,omitempty"`
+	// ConfigMapKeyRef sources a string value from a ConfigMap key (same namespace).
+	ConfigMapKeyRef *ConfigMapKeyRef `json:"configMapKeyRef,omitempty"`
+	// ObjectFieldRef sources a typed value from another uyuni resource's field.
+	ObjectFieldRef *ObjectFieldRef `json:"objectFieldRef,omitempty"`
+}
+
+// FormulaValueSource merges all keys of a Secret or ConfigMap into the form data
+// under Path. Exactly one of the source fields must be set (webhook-enforced).
+type FormulaValueSource struct {
+	// Path is the parent path under which the source's keys are merged (each
+	// key becomes Path.<key>). Empty merges at the top level.
+	Path string `json:"path,omitempty"`
+	// SecretRef merges all keys of a Secret (values are strings).
+	SecretRef *LocalObjectRef `json:"secretRef,omitempty"`
+	// ConfigMapRef merges all keys of a ConfigMap.
+	ConfigMapRef *LocalObjectRef `json:"configMapRef,omitempty"`
 }
 
 type SystemSpec struct {
@@ -225,6 +262,13 @@ type SystemStatus struct {
 
 	// ActiveFormulas is the set of Salt formulas last enabled on the system.
 	ActiveFormulas []string `json:"activeFormulas,omitempty"`
+
+	// FormulaDataGeneration is the spec generation at which formula form data
+	// (including resolved valuesFrom references) was last pushed to Uyuni. Used
+	// to avoid silently re-applying reference values that changed on their own
+	// (e.g. a new image build) — those surface as a FormulaValuesDrift condition
+	// and are only applied on a spec change or the apply-formula-values trigger.
+	FormulaDataGeneration int64 `json:"formulaDataGeneration,omitempty"`
 
 	// ProxyServerID is the Uyuni server ID of the proxy the system was last
 	// connected through (0 = direct to server).

@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -40,11 +41,6 @@ func (r *AutoinstallProfileReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.handleDeletion(ctx, &ap)
 	}
 
-	uc, err := r.Clients.ForOrganization(ctx, orgRef(ap.Spec.OrganizationRef), ap.Namespace)
-	if err != nil {
-		return r.fail(ctx, &ap, "OrganizationError", err)
-	}
-
 	if ensureFinalizer(&ap, apFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ap)
 	}
@@ -53,10 +49,16 @@ func (r *AutoinstallProfileReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	// External mode: observe an existing Cobbler-managed profile; never create,
-	// mutate, or delete it. Returns before any managed-path Uyuni write.
+	// External mode: the profile is Cobbler-only (no Uyuni KickstartData), so we
+	// observe it through an owned CobblerProfile over Cobbler XMLRPC and never
+	// touch the Uyuni JSON/kickstart API (which 403s for these).
 	if ap.Spec.Mode == "External" {
-		return r.reconcileExternal(ctx, uc, &ap)
+		return r.reconcileExternal(ctx, &ap)
+	}
+
+	uc, err := r.Clients.ForOrganization(ctx, orgRef(ap.Spec.OrganizationRef), ap.Namespace)
+	if err != nil {
+		return r.fail(ctx, &ap, "OrganizationError", err)
 	}
 
 	// Resolve distribution label from spec.distributionRef.
@@ -243,26 +245,31 @@ func (r *AutoinstallProfileReconciler) reconcileScripts(ctx context.Context, uc 
 // Uyuni, e.g. during a PXE/OS-image build). It never creates, mutates, or
 // deletes the profile — it only verifies existence and publishes the observed
 // tree label so Systems can provision against it via profileRef.
-func (r *AutoinstallProfileReconciler) reconcileExternal(ctx context.Context, uc uyuni.API, ap *uyuniv1.AutoinstallProfile) (ctrl.Result, error) {
-	prof, err := uc.GetProfile(ctx, ap.Spec.Label)
-	if uyuni.IsNotFound(err) {
-		setReady(&ap.Status.Conditions, ap.Generation, metav1.ConditionFalse,
-			"WaitingForProfile", fmt.Sprintf("external Cobbler profile %q not present in Uyuni yet", ap.Spec.Label))
-		_ = r.Status().Update(ctx, ap)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+// reconcileExternal observes a Cobbler-only profile by owning a CobblerProfile
+// (import mode) — the Cobbler XMLRPC read path — instead of the Uyuni kickstart
+// JSON API, which returns 403 for profiles that have no Uyuni KickstartData
+// (e.g. auto-created image/PXE profiles). The AutoinstallProfile becomes Ready
+// and publishes DistributionLabel once the CobblerProfile reports the distro.
+func (r *AutoinstallProfileReconciler) reconcileExternal(ctx context.Context, ap *uyuniv1.AutoinstallProfile) (ctrl.Result, error) {
+	cp := &uyuniv1.CobblerProfile{ObjectMeta: metav1.ObjectMeta{Name: ap.Name, Namespace: ap.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cp, func() error {
+		cp.Spec.Mode = uyuniv1.CobblerModeImport
+		cp.Spec.Name = ap.Spec.Label
+		cp.Spec.ProviderRef = cobblerProviderRefForOrg(ctx, r.Client, ap.Namespace, orgRef(ap.Spec.OrganizationRef))
+		return controllerutil.SetControllerReference(ap, cp, r.Scheme())
+	}); err != nil {
+		return r.fail(ctx, ap, "ResolveRefs", err)
 	}
-	if err != nil {
-		return r.fail(ctx, ap, "GetProfileFailed", err)
-	}
-	if prof.TreeLabel == "" {
-		setReady(&ap.Status.Conditions, ap.Generation, metav1.ConditionFalse,
-			"WaitingForProfile", fmt.Sprintf("external profile %q has no distribution (tree) yet", ap.Spec.Label))
-		_ = r.Status().Update(ctx, ap)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
+
 	ap.Status.External = true
-	ap.Status.DistributionLabel = prof.TreeLabel
 	ap.Status.ObservedGeneration = ap.Generation
+	if !cp.Status.Found {
+		setReady(&ap.Status.Conditions, ap.Generation, metav1.ConditionFalse,
+			"WaitingForProfile", fmt.Sprintf("external Cobbler profile %q not present yet", ap.Spec.Label))
+		_ = r.Status().Update(ctx, ap)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	ap.Status.DistributionLabel = cp.Status.DistroName
 	setReady(&ap.Status.Conditions, ap.Generation, metav1.ConditionTrue, "Observed", "")
 	if err := r.Status().Update(ctx, ap); err != nil {
 		return ctrl.Result{}, err

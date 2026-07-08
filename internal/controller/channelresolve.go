@@ -43,22 +43,30 @@ type channelRefs struct {
 func resolveChannelRefs(ctx context.Context, c client.Client, namespace string, refs channelRefs) (*channelResolution, error) {
 	out := &channelResolution{}
 
-	// A project ref with an empty contentProjectRef.name means "no channel from
-	// a content project is attached" — a legitimate state, not a
-	// misconfiguration. It arises because ChannelFromProject.ContentProjectRef
-	// is a value field, so populating baseChannelFrom at all (e.g. with only
-	// environment + sourceChannelLabel) leaves contentProjectRef as {name: ""}.
-	// Treat such refs as unset so the resource reconciles without a
-	// project-derived channel instead of failing on ContentProject "" not found.
+	// A ChannelFromProject with an empty contentProjectRef.name is a DIRECT
+	// channel reference: sourceChannelLabel names an existing Uyuni channel
+	// directly, rather than a content-project-derived one. (It arises naturally
+	// because ContentProjectRef is a value field, so setting baseChannelFrom with
+	// only a sourceChannelLabel leaves contentProjectRef as {name: ""}.) Resolve
+	// such refs to their label as-is; a bare {name: ""} with no sourceChannelLabel
+	// means "no channel" and is skipped. Uyuni validates the label exists when the
+	// reconciler applies it.
 	if refs.BaseChannelFrom != nil && refs.BaseChannelFrom.ContentProjectRef.Name == "" {
+		if refs.BaseChannelFrom.SourceChannelLabel != "" {
+			out.BaseChannelLabel = refs.BaseChannelFrom.SourceChannelLabel
+		}
 		refs.BaseChannelFrom = nil
 	}
 	if len(refs.ChildChannelsFrom) > 0 {
 		filtered := make([]uyuniv1.ChannelFromProject, 0, len(refs.ChildChannelsFrom))
 		for _, ref := range refs.ChildChannelsFrom {
-			if ref.ContentProjectRef.Name != "" {
-				filtered = append(filtered, ref)
+			if ref.ContentProjectRef.Name == "" {
+				if ref.SourceChannelLabel != "" {
+					out.ChildChannelLabels = append(out.ChildChannelLabels, ref.SourceChannelLabel)
+				}
+				continue
 			}
+			filtered = append(filtered, ref)
 		}
 		refs.ChildChannelsFrom = filtered
 	}

@@ -244,11 +244,41 @@ spec:
                 properties:
                   buildId:
                     type: integer
+                  checksum:
+                    description: Checksum is the built image's checksum.
+                    type: string
                   completedAt:
                     format: date-time
                     type: string
                   failureReason:
                     type: string
+                  files:
+                    description: |-
+                      Files are the artifacts produced by a successful build (image, kernel,
+                      initrd, ...), each with a download URL. Reference them from a formula via
+                      e.g. status.lastBuild.files[?(@.type=='image')].url.
+                    items:
+                      description: ImageFile is one artifact of a built image.
+                      properties:
+                        name:
+                          description: Name is the file's path within the image store.
+                          type: string
+                        type:
+                          description: 'Type is the artifact kind: image, kernel,
+                            initrd, ...'
+                          type: string
+                        url:
+                          description: URL is the downloadable URL.
+                          type: string
+                      type: object
+                    type: array
+                  imageUrl:
+                    description: |-
+                      ImageURL is a convenience: the URL of the file whose type is "image" (the
+                      installable image tarball), or empty if none.
+                    type: string
+                  revision:
+                    type: integer
                   startedAt:
                     format: date-time
                     type: string
