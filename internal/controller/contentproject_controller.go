@@ -306,11 +306,15 @@ func chainOrderFromUyuni(envs []uyuni.ProjectEnvironmentInfo) []uyuni.ProjectEnv
 }
 
 func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject, desired []string) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("reconciling sources", "projectLabel", cp.Spec.Label, "desiredSourceCount", len(desired), "desiredSources", desired)
+
 	// Get current sources from Uyuni
 	current, err := uc.ListProjectSources(ctx, cp.Spec.Label)
 	if err != nil {
 		return fmt.Errorf("list sources: %w", err)
 	}
+	log.Info("fetched current sources from Uyuni", "projectLabel", cp.Spec.Label, "currentSourceCount", len(current))
 
 	// Build sets for comparison
 	desiredSet := make(map[string]bool)
@@ -319,12 +323,13 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 	}
 
 	currentSet := make(map[string]bool)
+	var currentLabels []string
 	for _, source := range current {
 		currentSet[source.Channel.Label] = true
+		currentLabels = append(currentLabels, source.Channel.Label)
 	}
+	log.Info("source sets built", "projectLabel", cp.Spec.Label, "currentLabels", currentLabels)
 
-	// DEBUG: Log what we're comparing
-	fmt.Printf("DEBUG reconcileSources: desired=%v, current=%v\n", desired, currentSet)
 
 	// Attach missing sources
 	for _, label := range desired {
@@ -341,11 +346,12 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 			continue
 		}
 		if !desiredSet[source] {
-			fmt.Printf("DEBUG: Detaching source %q from project %q\n", source, cp.Spec.Label)
+			log.Info("detaching source from project", "source", source, "projectLabel", cp.Spec.Label)
 			if err := uc.DetachSource(ctx, cp.Spec.Label, source); err != nil {
+				log.Error(err, "failed to detach source", "source", source, "projectLabel", cp.Spec.Label)
 				return fmt.Errorf("detach source %q: %w", source, err)
 			}
-			fmt.Printf("DEBUG: Successfully detached source %q\n", source)
+			log.Info("successfully detached source", "source", source, "projectLabel", cp.Spec.Label)
 		}
 	}
 
