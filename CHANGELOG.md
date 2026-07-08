@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- **Manager crash-looped on startup under a slow/throttled API server.**
+  Default leader-election timings (`LeaseDuration: 15s`, `RenewDeadline: 10s`)
+  left no margin when ~20 controllers were syncing caches and renewing the
+  lease concurrently against an API server with multi-second request
+  latency: a missed renewal made controller-runtime conclude it lost
+  leadership and cancel the manager context mid-startup, surfacing as
+  `failed to wait for X caches to sync` for whichever controller happened to
+  still be syncing. `LeaseDuration`/`RenewDeadline`/`RetryPeriod` are now
+  60s/40s/10s.
 - **Image build / action polling no longer 403s.** `GetActionDetails` called
   `schedule.getScheduledActionDetails`, which does not exist in the Uyuni API —
   the request fell through to a web path returning an HTML/403 page, so every

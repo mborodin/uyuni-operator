@@ -53,12 +53,25 @@ func main() {
 	cfg.QPS = 999999     // Effectively unlimited sustained throughput
 	cfg.Burst = 999999   // Effectively unlimited burst capacity
 
+	// Leader election defaults (15s/10s/2s) assume a responsive API server.
+	// With ~20 controllers all syncing caches and renewing the lease against
+	// a slow/throttled API server, the default RenewDeadline can be missed,
+	// causing controller-runtime to conclude it lost leadership and cancel
+	// the manager context mid-startup (surfaces as "failed to wait for X
+	// caches to sync" even though nothing is actually wrong with X).
+	leaseDuration := 60 * time.Second
+	renewDeadline := 40 * time.Second
+	retryPeriod := 10 * time.Second
+
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "uyuni-operator.uyuni-project.org",
+		LeaseDuration:          &leaseDuration,
+		RenewDeadline:          &renewDeadline,
+		RetryPeriod:            &retryPeriod,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")
