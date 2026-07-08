@@ -146,6 +146,7 @@ type API interface {
 
 	ListProjectSources(ctx context.Context, projectLabel string) ([]ProjectSource, error)
 	AttachSource(ctx context.Context, projectLabel, channelLabel string) error
+	AttachSourceWithPosition(ctx context.Context, projectLabel, channelLabel string, position int) error
 	DetachSource(ctx context.Context, projectLabel, channelLabel string) error
 
 	ListProjectEnvironments(ctx context.Context, projectLabel string) ([]ProjectEnvironmentInfo, error)

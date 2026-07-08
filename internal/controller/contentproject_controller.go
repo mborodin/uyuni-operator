@@ -331,12 +331,15 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 	log.Info("source sets built", "projectLabel", cp.Spec.Label, "currentLabels", currentLabels)
 
 
-	// Attach missing sources
-	for _, label := range desired {
+	// Attach missing sources (with position based on desired order)
+	for position, label := range desired {
 		if !currentSet[label] {
-			if err := uc.AttachSource(ctx, cp.Spec.Label, label); err != nil {
+			log.Info("attaching source to project", "source", label, "projectLabel", cp.Spec.Label, "position", position)
+			if err := uc.AttachSourceWithPosition(ctx, cp.Spec.Label, label, position); err != nil {
+				log.Error(err, "failed to attach source", "source", label, "projectLabel", cp.Spec.Label, "position", position)
 				return fmt.Errorf("attach source %q: %w", label, err)
 			}
+			log.Info("successfully attached source", "source", label, "projectLabel", cp.Spec.Label, "position", position)
 		}
 	}
 

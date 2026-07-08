@@ -1655,21 +1655,44 @@ func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([
 }
 
 func (c *Client) AttachSource(ctx context.Context, projectLabel, channelLabel string) error {
+	return c.AttachSourceWithPosition(ctx, projectLabel, channelLabel, 0)
+}
+
+func (c *Client) AttachSourceWithPosition(ctx context.Context, projectLabel, channelLabel string, position int) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("AttachSourceWithPosition API call", "projectLabel", projectLabel, "channelLabel", channelLabel, "sourceType", "software", "position", position)
+
 	_, err := apiPost[any](c, "contentmanagement/attachSource", map[string]any{
-		"projectLabel": projectLabel,
-		"sourceType":   "software",
-		"sourceLabel":  channelLabel,
+		"projectLabel":   projectLabel,
+		"sourceType":     "software",
+		"sourceLabel":    channelLabel,
+		"sourcePosition": position,
 	})
-	return err
+
+	if err != nil {
+		log.Error(err, "AttachSourceWithPosition API call failed", "projectLabel", projectLabel, "channelLabel", channelLabel, "position", position)
+		return err
+	}
+	log.Info("AttachSourceWithPosition API call succeeded", "projectLabel", projectLabel, "channelLabel", channelLabel, "position", position)
+	return nil
 }
 
 func (c *Client) DetachSource(ctx context.Context, projectLabel, channelLabel string) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("DetachSource API call", "projectLabel", projectLabel, "channelLabel", channelLabel, "sourceType", "software")
+
 	_, err := apiPost[any](c, "contentmanagement/detachSource", map[string]any{
 		"projectLabel": projectLabel,
 		"sourceType":   "software",
 		"sourceLabel":  channelLabel,
 	})
-	return err
+
+	if err != nil {
+		log.Error(err, "DetachSource API call failed", "projectLabel", projectLabel, "channelLabel", channelLabel)
+		return err
+	}
+	log.Info("DetachSource API call succeeded", "projectLabel", projectLabel, "channelLabel", channelLabel)
+	return nil
 }
 
 func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel string) ([]ProjectEnvironmentInfo, error) {
