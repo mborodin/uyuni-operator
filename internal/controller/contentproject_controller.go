@@ -541,6 +541,8 @@ func (r *ContentProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&uyuniv1.ContentProject{}).
 		Watches(&uyuniv1.SoftwareChannel{},
 			handler.EnqueueRequestsFromMapFunc(r.projectsForChannel)).
+		Watches(&uyuniv1.Repository{},
+			handler.EnqueueRequestsFromMapFunc(r.projectsForRepository)).
 		Watches(&uyuniv1.ContentProjectPromotion{},
 			handler.EnqueueRequestsFromMapFunc(r.projectsForPromotion)).
 		Complete(r)
@@ -573,4 +575,20 @@ func (r *ContentProjectReconciler) projectsForPromotion(_ context.Context, obj c
 	return []reconcile.Request{{
 		NamespacedName: types.NamespacedName{Namespace: p.Namespace, Name: p.Spec.ProjectRef.Name},
 	}}
+}
+
+func (r *ContentProjectReconciler) projectsForRepository(ctx context.Context, obj client.Object) []reconcile.Request {
+	// When a Repository changes, trigger reconciliation of all ContentProjects in the namespace
+	// This ensures sourceRefs changes cascade to trigger ContentProject reconciliation
+	var list uyuniv1.ContentProjectList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var out []reconcile.Request
+	for _, cp := range list.Items {
+		out = append(out, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: cp.Namespace, Name: cp.Name},
+		})
+	}
+	return out
 }
