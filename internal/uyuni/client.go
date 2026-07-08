@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	uyuniapi "github.com/uyuni-project/uyuni-tools/shared/api"
 )
 
@@ -1638,6 +1639,14 @@ func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([
 	if err != nil {
 		return nil, err
 	}
+
+	// Debug: log the raw wire response to understand structure
+	log := ctrl.LoggerFrom(ctx)
+	log.V(1).Info("ListProjectSources wire response", "count", len(list))
+	for idx, item := range list {
+		log.V(1).Info("wire source item", "index", idx, "channel.id", item.Channel.ID, "channel.label", item.Channel.Label, "state", item.State)
+	}
+
 	out := make([]ProjectSource, len(list))
 	for i, s := range list {
 		out[i] = ProjectSource{
@@ -1646,6 +1655,12 @@ func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([
 		out[i].Channel.ID = s.Channel.ID
 		out[i].Channel.Label = s.Channel.Label
 	}
+
+	// Log parsed output
+	for idx, item := range out {
+		log.V(1).Info("parsed source", "index", idx, "id", item.Channel.ID, "label", item.Channel.Label, "state", item.State)
+	}
+
 	return out, nil
 }
 
