@@ -948,16 +948,6 @@ func (c *Client) ChangeProxy(ctx context.Context, serverIDs []int, proxyID int) 
 	})
 }
 
-// firstOrZero returns the first element of ids, or 0 when empty. The multi-sid
-// schedule APIs return an int array of action ids; callers that schedule a
-// single system take the first.
-func firstOrZero(ids []int) int {
-	if len(ids) > 0 {
-		return ids[0]
-	}
-	return 0
-}
-
 func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error) {
 	// The single-sid scheduleChangeChannels returns a bare int action id (not a
 	// struct), so unmarshalling into a {action_id} struct fails.
@@ -1935,14 +1925,19 @@ func (c *Client) DeleteImageStore(ctx context.Context, label string) error {
 }
 
 func (c *Client) CreateImageProfile(ctx context.Context, p ImageProfileDetails, customInfo map[string]string) error {
-	// image.profile.create(label, type, storeLabel, path, activationKey).
-	// It has no custom-info parameter; custom values are set separately below.
+	// image.profile.create(label, type, storeLabel, path, activationKey, kiwiOptions).
+	// kiwiOptions selects the create overload that accepts it (sent even when
+	// empty; the overload is matched by the presence of the param name). It is
+	// create-only — image.profile.setDetails has no kiwiOptions member, so it
+	// cannot be updated later. There is no custom-info parameter; custom values
+	// are set separately below.
 	if _, err := apiPost[any](c, "image/profile/create", map[string]any{
 		"label":         p.Label,
 		"type":          p.Type,
 		"storeLabel":    p.StoreLabel,
 		"path":          p.SourcePath,
 		"activationKey": p.ActivationKey,
+		"kiwiOptions":   p.KiwiOptions,
 	}); err != nil {
 		return err
 	}
@@ -2057,22 +2052,21 @@ func (c *Client) ListImagesForProfile(ctx context.Context, profileLabel string) 
 // Scheduled actions (tasks)
 // =============================================================================
 
+// The system.schedule* methods below all return a single bare int action id
+// (even the sids-array overloads: one action covers all listed systems), so
+// they decode into int. Only system.changeProxy returns an int array. Decoding
+// a bare number into []int fails with
+// "cannot unmarshal number into Go struct field APIResponse[[]int].Result".
 func (c *Client) ScheduleHighstate(ctx context.Context, serverIDs []int, earliest time.Time, test bool) (int, error) {
-	// The multi-sid scheduleApplyHighstate returns a bare int array of action
-	// ids, not a struct. We schedule one system, so return the first id.
-	ids, err := apiPost[[]int](c, "system/scheduleApplyHighstate", map[string]any{
+	return apiPost[int](c, "system/scheduleApplyHighstate", map[string]any{
 		"sids":               serverIDs,
 		"earliestOccurrence": earliest.Format(time.RFC3339),
 		"test":               test,
 	})
-	if err != nil {
-		return 0, err
-	}
-	return firstOrZero(ids), nil
 }
 
 func (c *Client) ScheduleRemoteCommand(ctx context.Context, serverIDs []int, earliest time.Time, command, user, group string, timeoutSeconds int) (int, error) {
-	ids, err := apiPost[[]int](c, "system/scheduleScriptRun", map[string]any{
+	return apiPost[int](c, "system/scheduleScriptRun", map[string]any{
 		"sids":                serverIDs,
 		"username":            user,
 		"groupname":           group,
@@ -2080,21 +2074,17 @@ func (c *Client) ScheduleRemoteCommand(ctx context.Context, serverIDs []int, ear
 		"script":              command,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
-	if err != nil {
-		return 0, err
-	}
-	return firstOrZero(ids), nil
 }
 
-func (c *Client) ScheduleReboot(ctx context.Context, serverIDs []int, earliest time.Time) ([]int, error) {
-	return apiPost[[]int](c, "system/scheduleReboot", map[string]any{
+func (c *Client) ScheduleReboot(ctx context.Context, serverIDs []int, earliest time.Time) (int, error) {
+	return apiPost[int](c, "system/scheduleReboot", map[string]any{
 		"sids":                serverIDs,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
 }
 
-func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) ([]int, error) {
-	return apiPost[[]int](c, "system/scheduleApplyErrata", map[string]any{
+func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) (int, error) {
+	return apiPost[int](c, "system/scheduleApplyErrata", map[string]any{
 		"sids":                serverIDs,
 		"errata_names":        advisoryNames,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
@@ -2102,14 +2092,10 @@ func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earl
 }
 
 func (c *Client) ScheduleApplyConfigChannels(ctx context.Context, serverIDs []int, earliest time.Time) (int, error) {
-	ids, err := apiPost[[]int](c, "system/scheduleApplyConfigChannel", map[string]any{
+	return apiPost[int](c, "system/scheduleApplyConfigChannel", map[string]any{
 		"sids":                serverIDs,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
-	if err != nil {
-		return 0, err
-	}
-	return firstOrZero(ids), nil
 }
 
 // GetActionDetails reports an action's overall status. The Uyuni schedule API

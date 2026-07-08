@@ -38,6 +38,12 @@ const (
 	// Requires spec.autoinstall to be set. Value must be exactly "true".
 	AnnReinstallNow = Group + "/reinstall-now"
 
+	// AnnBuildTrigger is set by the operator on an ImageBuild it creates from an
+	// ImageProfile, recording what initiated the build ("onChange" or
+	// "annotation"). Mirrored back into ImageProfile.status.lastBuild.trigger.
+	// Operator-managed, not user-facing.
+	AnnBuildTrigger = Group + "/build-trigger"
+
 	// AnnApplyFormulaValues on a System forces the operator to re-resolve
 	// formula valuesFrom references and push them to Uyuni, even without a spec
 	// change. Use it after a referenced value changes (e.g. a new image build)

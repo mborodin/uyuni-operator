@@ -126,6 +126,17 @@ spec:
                 required:
                 - repository
                 type: object
+              kiwiOptions:
+                description: |-
+                  KiwiOptions is a free-form string of extra kiwi build options passed to
+                  the OS image build, e.g. "--profile <name>" to select a profile from a
+                  kiwi description that defines several. Only meaningful for type: kiwi.
+
+                  Uyuni accepts kiwiOptions only at profile-creation time (image.profile.create);
+                  there is no API to update it on an existing profile. It is therefore
+                  immutable — the webhook rejects changes. To change it, recreate the
+                  ImageProfile.
+                type: string
               label:
                 description: Label is the Uyuni image profile label. Immutable after
                   creation.
@@ -174,6 +185,9 @@ spec:
             x-kubernetes-validations:
             - message: storeRef is required when type is dockerfile
               rule: self.type != 'dockerfile' || has(self.storeRef)
+            - message: kiwiOptions is only valid when type is kiwi
+              rule: '!has(self.kiwiOptions) || self.kiwiOptions == '''' || self.type
+                == ''kiwi'''
           status:
             properties:
               bootImage:
@@ -296,6 +310,10 @@ spec:
                   version:
                     type: string
                 type: object
+              lastBuildName:
+                description: LastBuildName is the name of the newest ImageBuild CR
+                  for this profile.
+                type: string
               observedGeneration:
                 format: int64
                 type: integer

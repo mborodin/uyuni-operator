@@ -7,10 +7,12 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -26,6 +28,7 @@ type ImageProfileReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imageprofiles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imageprofiles/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imageprofiles/finalizers,verbs=update
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imagebuilds,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imagestores,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=activationkeys,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch
@@ -89,6 +92,7 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			StoreLabel:    storeLabel,
 			ActivationKey: activationKey,
 			SourcePath:    sourceURL,
+			KiwiOptions:   ip.Spec.KiwiOptions,
 		}, ip.Spec.CustomInfo); createErr != nil {
 			return r.fail(ctx, &ip, "CreateFailed", createErr)
 		}
@@ -113,21 +117,18 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	ip.Status.UyuniID = current.ID
 
-	// Handle build triggers.
-	requeue, buildErr := r.handleBuildTriggers(ctx, uc, &ip)
-	if buildErr != nil {
+	// Handle build triggers: onChange/build-now materialize an owned ImageBuild
+	// CR, which does the actual scheduling, polling and artifact recording.
+	if buildErr := r.handleBuildTriggers(ctx, &ip); buildErr != nil {
 		return r.fail(ctx, &ip, "BuildTriggerFailed", buildErr)
 	}
 
-	// Poll in-progress build.
-	if ip.Status.LastBuild != nil &&
-		(ip.Status.LastBuild.Status == "Queued" || ip.Status.LastBuild.Status == "Running") {
-		pollErr := r.pollBuild(ctx, uc, &ip)
-		if pollErr != nil {
-			// Non-fatal: log but continue so we don't lose status updates.
-			ctrl.LoggerFrom(ctx).Error(pollErr, "polling build status")
-		}
-		requeue = 30 * time.Second
+	// Mirror the newest ImageBuild for this profile into status.lastBuild and
+	// capture the saltboot boot image on success.
+	requeue, mirrorErr := r.mirrorLatestBuild(ctx, uc, &ip)
+	if mirrorErr != nil {
+		// Non-fatal: log but continue so we don't lose the rest of the status.
+		ctrl.LoggerFrom(ctx).Error(mirrorErr, "mirroring latest build status")
 	}
 
 	ip.Status.ObservedGeneration = ip.Generation
@@ -223,110 +224,163 @@ func (r *ImageProfileReconciler) buildAuthenticatedURL(ctx context.Context, ip *
 	return injectBasicAuth(raw, username, password)
 }
 
-func (r *ImageProfileReconciler) handleBuildTriggers(ctx context.Context, uc uyuni.API, ip *uyuniv1.ImageProfile) (time.Duration, error) {
+// handleBuildTriggers materializes an owned ImageBuild CR when a build is
+// requested (build-now annotation or onChange). The ImageBuild controller does
+// the scheduling, polling and artifact recording; ImageProfile just declares
+// intent. Names are deterministic (build-now keyed by version, onChange by spec
+// generation) so a trigger creates exactly one ImageBuild and reruns are no-ops.
+func (r *ImageProfileReconciler) handleBuildTriggers(ctx context.Context, ip *uyuniv1.ImageProfile) error {
 	annBuildNow := ip.Annotations[uyuniv1.AnnBuildNow] == "true"
 	onChange := ip.Spec.BuildPolicy == "onChange" &&
 		(ip.Status.LastBuild == nil || ip.Status.ObservedGeneration < ip.Generation)
 
 	if !annBuildNow && !onChange {
-		return 0, nil
+		return nil
 	}
 
-	// Resolve build host.
+	// A build needs a build host. onChange without one is skipped silently; an
+	// explicit build-now surfaces the misconfiguration. The ImageBuild controller
+	// waits for the host to register, so we don't resolve it here.
 	if ip.Spec.BuildHostRef == nil {
 		if annBuildNow {
-			return 0, fmt.Errorf("spec.buildHostRef is required to trigger a build")
+			return fmt.Errorf("spec.buildHostRef is required to trigger a build")
 		}
-		return 0, nil // onChange without buildHost: skip silently
-	}
-	buildHostID, err := r.resolveBuildHostID(ctx, ip)
-	if err != nil {
-		return 0, err
-	}
-	if buildHostID == 0 {
-		return 30 * time.Second, nil // host not yet registered
+		return nil
 	}
 
 	version := ip.Annotations[uyuniv1.AnnBuildVersion]
-	if version == "" {
-		version = time.Now().UTC().Format("20060102-1504")
-	}
 
 	trigger := "onChange"
+	buildName := fmt.Sprintf("%s-gen%d", ip.Name, ip.Generation)
 	if annBuildNow {
 		trigger = "annotation"
+		v := version
+		if v == "" {
+			v = time.Now().UTC().Format("20060102-1504")
+		}
+		buildName = fmt.Sprintf("%s-%s", ip.Name, v)
 	}
 
-	actionID, err := uc.ScheduleImageBuild(ctx, ip.Spec.Label, version, buildHostID, time.Now())
-	if err != nil {
-		return 0, fmt.Errorf("scheduling image build: %w", err)
+	ib := &uyuniv1.ImageBuild{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        buildName,
+			Namespace:   ip.Namespace,
+			Annotations: map[string]string{uyuniv1.AnnBuildTrigger: trigger},
+		},
+		Spec: uyuniv1.ImageBuildSpec{
+			ProfileRef: uyuniv1.LocalObjectRef{Name: ip.Name},
+			Version:    version, // empty => ImageBuild auto-generates a version tag
+		},
 	}
-
-	now := metav1.Now()
-	ip.Status.LastBuild = &uyuniv1.ImageBuildRecord{
-		BuildID:   actionID,
-		Version:   version,
-		Status:    "Queued",
-		StartedAt: &now,
-		Trigger:   trigger,
+	if err := controllerutil.SetControllerReference(ip, ib, r.Scheme()); err != nil {
+		return err
 	}
+	if err := r.Create(ctx, ib); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("creating ImageBuild %q: %w", buildName, err)
+	}
+	ip.Status.LastBuildName = buildName
 
-	// Strip AnnBuildNow.
 	if annBuildNow {
 		patch := client.MergeFrom(ip.DeepCopy())
 		delete(ip.Annotations, uyuniv1.AnnBuildNow)
 		if err := r.Patch(ctx, ip, patch); err != nil {
-			return 0, fmt.Errorf("stripping build-now annotation: %w", err)
+			return fmt.Errorf("stripping build-now annotation: %w", err)
 		}
 	}
-	return 30 * time.Second, nil
+	return nil
 }
 
-func (r *ImageProfileReconciler) resolveBuildHostID(ctx context.Context, ip *uyuniv1.ImageProfile) (int, error) {
-	var sys uyuniv1.System
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ip.Namespace, Name: ip.Spec.BuildHostRef.Name}, &sys); err != nil {
-		if client.IgnoreNotFound(err) == nil {
-			return 0, nil
-		}
+// mirrorLatestBuild summarizes the newest ImageBuild referencing this profile
+// into status.lastBuild, and on success reads the saltboot boot image from the
+// image pillar (ImageProfile-specific data the ImageBuild does not record).
+func (r *ImageProfileReconciler) mirrorLatestBuild(ctx context.Context, uc uyuni.API, ip *uyuniv1.ImageProfile) (time.Duration, error) {
+	var builds uyuniv1.ImageBuildList
+	if err := r.List(ctx, &builds, client.InNamespace(ip.Namespace)); err != nil {
 		return 0, err
 	}
-	return sys.Status.UyuniServerID, nil
-}
+	var latest *uyuniv1.ImageBuild
+	for i := range builds.Items {
+		b := &builds.Items[i]
+		if b.Spec.ProfileRef.Name != ip.Name {
+			continue
+		}
+		if latest == nil || b.CreationTimestamp.After(latest.CreationTimestamp.Time) {
+			latest = b
+		}
+	}
+	if latest == nil {
+		return 0, nil
+	}
 
-func (r *ImageProfileReconciler) pollBuild(ctx context.Context, uc uyuni.API, ip *uyuniv1.ImageProfile) error {
-	if ip.Status.LastBuild == nil || ip.Status.LastBuild.BuildID == 0 {
-		return nil
+	status := mapBuildStatus(latest.Status.BuildStatus)
+	rec := &uyuniv1.ImageBuildRecord{
+		BuildID:   latest.Status.ActionID,
+		Version:   latest.Status.Version,
+		Status:    status,
+		Trigger:   latest.Annotations[uyuniv1.AnnBuildTrigger],
+		Checksum:  latest.Status.Checksum,
+		ImageURL:  latest.Status.ImageURL,
+		StartedAt: latest.CreationTimestamp.DeepCopy(),
 	}
-	action, err := uc.GetActionDetails(ctx, ip.Status.LastBuild.BuildID)
-	if err != nil {
-		return err
+	if latest.Status.ImageID != 0 {
+		rec.BuildID = latest.Status.ImageID
 	}
-	switch action.Status {
-	case "Completed":
-		ip.Status.LastBuild.Status = "Succeeded"
-		now := metav1.Now()
-		ip.Status.LastBuild.CompletedAt = &now
-		// Find the built image, record its ID, and capture the saltboot boot
-		// image (for PXE booting via a saltboot formula). The boot data is
-		// exposed only through the image pillar, not the kickstart API.
-		imgs, listErr := uc.ListImagesForProfile(ctx, ip.Spec.Label)
-		if listErr == nil {
+	if len(latest.Status.Files) > 0 {
+		rec.Files = make([]uyuniv1.ImageFile, len(latest.Status.Files))
+		copy(rec.Files, latest.Status.Files)
+	}
+	if status == "Succeeded" || status == "Failed" {
+		if c := findCondition(latest.Status.Conditions, "Ready"); c != nil {
+			t := c.LastTransitionTime
+			rec.CompletedAt = &t
+			if status == "Failed" {
+				rec.FailureReason = c.Message
+			}
+		}
+	}
+	ip.Status.LastBuild = rec
+	ip.Status.LastBuildName = latest.Name
+
+	if status == "Succeeded" && latest.Status.ImageID != 0 {
+		if imgs, err := uc.ListImagesForProfile(ctx, ip.Spec.Label); err == nil {
 			for _, img := range imgs {
-				if img.Version == ip.Status.LastBuild.Version {
-					ip.Status.LastBuild.BuildID = img.ID
-					ip.Status.BootImage = r.bootImageFromPillar(ctx, uc, img)
-					r.recordBuildFiles(ctx, uc, ip, img.ID)
+				if img.ID == latest.Status.ImageID {
+					if bi := r.bootImageFromPillar(ctx, uc, img); bi != "" {
+						ip.Status.BootImage = bi
+					}
 					break
 				}
 			}
 		}
+	}
+
+	if status == "Queued" || status == "Running" {
+		return 30 * time.Second, nil
+	}
+	return 0, nil
+}
+
+// mapBuildStatus maps an ImageBuild's status.buildStatus to the ImageBuildRecord
+// status vocabulary used on the ImageProfile.
+func mapBuildStatus(s string) string {
+	switch s {
+	case "Succeeded":
+		return "Succeeded"
 	case "Failed":
-		ip.Status.LastBuild.Status = "Failed"
-		now := metav1.Now()
-		ip.Status.LastBuild.CompletedAt = &now
-		ip.Status.LastBuild.FailureReason = action.Name
-	default:
-		ip.Status.LastBuild.Status = "Running"
+		return "Failed"
+	case "Running":
+		return "Running"
+	default: // "Scheduled" or empty
+		return "Queued"
+	}
+}
+
+// findCondition returns the condition of the given type, or nil.
+func findCondition(conds []metav1.Condition, condType string) *metav1.Condition {
+	for i := range conds {
+		if conds[i].Type == condType {
+			return &conds[i]
+		}
 	}
 	return nil
 }
@@ -353,28 +407,6 @@ func (r *ImageProfileReconciler) bootImageFromPillar(ctx context.Context, uc uyu
 	return ""
 }
 
-// recordBuildFiles fetches the built image's artifact files (image, kernel,
-// initrd, ...) and records them on status.lastBuild, so other resources can
-// reference e.g. status.lastBuild.files[?(@.type=='image')].url or
-// status.lastBuild.imageUrl.
-func (r *ImageProfileReconciler) recordBuildFiles(ctx context.Context, uc uyuni.API, ip *uyuniv1.ImageProfile, imageID int) {
-	d, err := uc.GetImageDetails(ctx, imageID)
-	if err != nil || d == nil {
-		return
-	}
-	ip.Status.LastBuild.Revision = d.Revision
-	ip.Status.LastBuild.Checksum = d.Checksum
-	ip.Status.LastBuild.ImageURL = ""
-	files := make([]uyuniv1.ImageFile, 0, len(d.Files))
-	for _, f := range d.Files {
-		files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
-		if f.Type == "image" {
-			ip.Status.LastBuild.ImageURL = f.URL
-		}
-	}
-	ip.Status.LastBuild.Files = files
-}
-
 func (r *ImageProfileReconciler) fail(ctx context.Context, ip *uyuniv1.ImageProfile, reason string, err error) (ctrl.Result, error) {
 	setReady(&ip.Status.Conditions, ip.Generation, metav1.ConditionFalse, reason, err.Error())
 	_ = r.Status().Update(ctx, ip)
@@ -388,7 +420,19 @@ func (r *ImageProfileReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.profilesForStore)).
 		Watches(&uyuniv1.ActivationKey{},
 			handler.EnqueueRequestsFromMapFunc(r.profilesForActivationKey)).
+		Watches(&uyuniv1.ImageBuild{},
+			handler.EnqueueRequestsFromMapFunc(r.profilesForBuild)).
 		Complete(r)
+}
+
+func (r *ImageProfileReconciler) profilesForBuild(ctx context.Context, obj client.Object) []reconcile.Request {
+	ib, ok := obj.(*uyuniv1.ImageBuild)
+	if !ok {
+		return nil
+	}
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Namespace: ib.Namespace, Name: ib.Spec.ProfileRef.Name},
+	}}
 }
 
 func (r *ImageProfileReconciler) profilesForStore(ctx context.Context, obj client.Object) []reconcile.Request {

@@ -180,6 +180,9 @@ type ImageProfileDetails struct {
 	SourcePath    string
 	SourceURL     string
 	SourceBranch  string
+	// KiwiOptions is free-form extra kiwi build options. Create-only in Uyuni
+	// (no setDetails member); not read back for drift.
+	KiwiOptions string
 }
 
 type ImageInfo struct {

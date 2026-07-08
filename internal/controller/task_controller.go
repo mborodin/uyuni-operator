@@ -198,9 +198,11 @@ func (r *TaskReconciler) scheduleByKind(ctx context.Context, uc uyuni.API, task 
 		if task.Spec.Reboot.DelaySeconds > 0 {
 			earliestReboot = r.Now().Add(time.Duration(task.Spec.Reboot.DelaySeconds) * time.Second)
 		}
-		return uc.ScheduleReboot(ctx, serverIDs, earliestReboot)
+		id, err := uc.ScheduleReboot(ctx, serverIDs, earliestReboot)
+		return []int{id}, err
 	case task.Spec.ApplyPatches != nil:
-		return uc.ScheduleApplyPatches(ctx, serverIDs, earliest, task.Spec.ApplyPatches.IncludeAdvisories)
+		id, err := uc.ScheduleApplyPatches(ctx, serverIDs, earliest, task.Spec.ApplyPatches.IncludeAdvisories)
+		return []int{id}, err
 	case task.Spec.ApplyConfigChannels != nil:
 		id, err := uc.ScheduleApplyConfigChannels(ctx, serverIDs, earliest)
 		return []int{id}, err

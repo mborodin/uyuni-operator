@@ -73,6 +73,7 @@ type GitSource struct {
 }
 
 // +kubebuilder:validation:XValidation:rule="self.type != 'dockerfile' || has(self.storeRef)",message="storeRef is required when type is dockerfile"
+// +kubebuilder:validation:XValidation:rule="!has(self.kiwiOptions) || self.kiwiOptions == '' || self.type == 'kiwi'",message="kiwiOptions is only valid when type is kiwi"
 type ImageProfileSpec struct {
 	// Label is the Uyuni image profile label. Immutable after creation.
 	// +kubebuilder:validation:Required
@@ -116,6 +117,17 @@ type ImageProfileSpec struct {
 	// BuildHostRef references the System CR to use as the build host.
 	BuildHostRef *LocalObjectRef `json:"buildHostRef,omitempty"`
 
+	// KiwiOptions is a free-form string of extra kiwi build options passed to
+	// the OS image build, e.g. "--profile <name>" to select a profile from a
+	// kiwi description that defines several. Only meaningful for type: kiwi.
+	//
+	// Uyuni accepts kiwiOptions only at profile-creation time (image.profile.create);
+	// there is no API to update it on an existing profile. It is therefore
+	// immutable — the webhook rejects changes. To change it, recreate the
+	// ImageProfile.
+	// +optional
+	KiwiOptions string `json:"kiwiOptions,omitempty"`
+
 	// +kubebuilder:validation:Required
 	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
@@ -153,8 +165,13 @@ type ImageFile struct {
 }
 
 type ImageProfileStatus struct {
-	UyuniID   int               `json:"uyuniId,omitempty"`
+	UyuniID int `json:"uyuniId,omitempty"`
+	// LastBuild summarizes the newest ImageBuild that references this profile.
+	// The build itself is a first-class ImageBuild CR (see LastBuildName);
+	// onChange/build-now triggers create one, owned by this profile.
 	LastBuild *ImageBuildRecord `json:"lastBuild,omitempty"`
+	// LastBuildName is the name of the newest ImageBuild CR for this profile.
+	LastBuildName string `json:"lastBuildName,omitempty"`
 	// BootImage is the saltboot boot image identifier of the last successful
 	// PXE/OS image build (read from the image pillar), e.g.
 	// "BranchServer_MicroOS-0.6.10-4". Reference it from a saltboot formula to

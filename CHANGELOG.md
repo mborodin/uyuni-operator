@@ -13,6 +13,16 @@
   `failed to wait for X caches to sync` for whichever controller happened to
   still be syncing. `LeaseDuration`/`RenewDeadline`/`RetryPeriod` are now
   60s/40s/10s.
+- **Registered systems no longer wedge with `unmarshal number into ... []int`.**
+  Every `system.schedule*` call (`scheduleApplyHighstate`, `scheduleScriptRun`,
+  `scheduleReboot`, `scheduleApplyErrata`, `scheduleApplyConfigChannel`) returns a
+  single bare int action id, but several were decoding into `[]int`. In
+  particular `ScheduleHighstate` runs on every reconcile of a System with
+  `spec.applyHighState: true` and its failure kept `status.phase` from ever
+  reaching `Reconciled`, so those systems retried forever. All schedule calls now
+  decode `int`; `ScheduleReboot`/`ScheduleApplyPatches` return `(int, error)` to
+  match. `changeProxy` remains an int array (the one method that truly returns
+  one).
 - **Image build / action polling no longer 403s.** `GetActionDetails` called
   `schedule.getScheduledActionDetails`, which does not exist in the Uyuni API —
   the request fell through to a web path returning an HTML/403 page, so every
@@ -34,8 +44,27 @@
   channel label, use it directly" (a bare `{name: ""}` with no
   `sourceChannelLabel` still means "no channel").
 
+### Changed
+
+- **ImageProfile-triggered builds now materialize an owned `ImageBuild` CR**
+  (CronJob→Job pattern). A `buildPolicy: onChange` change or the
+  `uyuni.uyuni-project.org/build-now` annotation used to schedule the build
+  directly and track it only in `status.lastBuild`; it now creates a first-class
+  `ImageBuild` (owned by the profile, GC'd with it) that does the scheduling,
+  polling and artifact recording. The name is deterministic — `<profile>-gen<N>`
+  for onChange, `<profile>-<version>` for build-now — so a trigger yields exactly
+  one build and reruns are no-ops. `ImageProfile.status.lastBuild` now mirrors the
+  newest referencing `ImageBuild`, and `status.lastBuildName` points at it. The
+  saltboot `status.bootImage` is still read from the image pillar on success.
+
 ### Added
 
+- **`ImageProfile.spec.kiwiOptions`** — a free-form string of extra kiwi build
+  options for `type: kiwi` OS images (e.g. `--profile <name>` to pick a profile
+  from a multi-profile kiwi description). Passed to `image.profile.create`. Uyuni
+  exposes no way to update it on an existing profile (`setDetails` has no such
+  member), so it is immutable — the webhook rejects changes and a CEL rule
+  restricts it to `type: kiwi`; recreate the ImageProfile to change it.
 - **Formula config values from other resources.**
   `System.spec.formulas[].valuesFrom` sets specific paths in a formula's form
   data from a `secretKeyRef`, `configMapKeyRef`, or `objectFieldRef` (a JSONPath
