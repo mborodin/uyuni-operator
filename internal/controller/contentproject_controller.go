@@ -256,7 +256,19 @@ func (r *ContentProjectReconciler) pendingOwnedDependents(ctx context.Context, c
 // --- resolve / reconcile helpers ---
 
 func (r *ContentProjectReconciler) resolveSources(ctx context.Context, cp *uyuniv1.ContentProject) (labels, missing []string, err error) {
-	for _, ref := range cp.Spec.SourceRefs {
+	// Collect channel refs from either channels (base+child) or sourceRefs
+	var refs []uyuniv1.LocalObjectRef
+
+	// Prefer channels configuration (base + child combined)
+	if cp.Spec.Channels != nil {
+		refs = append(refs, cp.Spec.Channels.BaseChannelRefs...)
+		refs = append(refs, cp.Spec.Channels.ChildChannelRefs...)
+	} else if len(cp.Spec.SourceRefs) > 0 {
+		// Fall back to sourceRefs if channels not configured
+		refs = cp.Spec.SourceRefs
+	}
+
+	for _, ref := range refs {
 		var sc uyuniv1.SoftwareChannel
 		if err := r.Get(ctx, types.NamespacedName{Namespace: cp.Namespace, Name: ref.Name}, &sc); err != nil {
 			if client.IgnoreNotFound(err) != nil {
