@@ -637,21 +637,12 @@ type wireImageInfo struct {
 	ProfileLabel string `json:"profile_label"`
 }
 
-type wireAction struct {
-	ID         int    `json:"id"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	Status     string `json:"status"`
-	StartedAt  string `json:"started_at"`
-	FinishedAt string `json:"finished_at"`
-}
-
-type wireActionResult struct {
-	ServerID int    `json:"server_id"`
-	ActionID int    `json:"action_id"`
-	Status   string `json:"status"`
-	Result   string `json:"result"`
-	ExitCode *int   `json:"exit_code"`
+// wireActionSystem is one entry from schedule.list{Completed,Failed,InProgress}Systems.
+type wireActionSystem struct {
+	ServerID    int    `json:"server_id"`
+	ServerName  string `json:"server_name"`
+	BaseChannel string `json:"base_channel"`
+	Message     string `json:"message"`
 }
 
 // =============================================================================
@@ -2121,36 +2112,64 @@ func (c *Client) ScheduleApplyConfigChannels(ctx context.Context, serverIDs []in
 	return firstOrZero(ids), nil
 }
 
+// GetActionDetails reports an action's overall status. The Uyuni schedule API
+// has no single-action getter (schedule.getScheduledActionDetails does not
+// exist — requesting it falls through to a web path that returns an HTML/403
+// page). Status is instead derived from the per-system status lists, which take
+// an integer actionId that must ride in a POST body, not a GET query string.
+// Our actions target a single system (e.g. the image build host), so the list a
+// system appears in unambiguously determines the action status.
 func (c *Client) GetActionDetails(ctx context.Context, actionID int) (*ScheduledAction, error) {
-	r, err := apiGet[wireAction](c, fmt.Sprintf("schedule/getScheduledActionDetails?action_id=%d", actionID))
+	failed, err := apiPost[[]wireActionSystem](c, "schedule/listFailedSystems", map[string]any{"actionId": actionID})
 	if err != nil {
 		return nil, asNotFound(err)
 	}
-	started, _ := time.Parse(time.RFC3339, r.StartedAt)
-	finished, _ := time.Parse(time.RFC3339, r.FinishedAt)
-	return &ScheduledAction{
-		ID:         r.ID,
-		Name:       r.Name,
-		Type:       r.Type,
-		Status:     r.Status,
-		StartedAt:  started,
-		FinishedAt: finished,
-	}, nil
+	if len(failed) > 0 {
+		return &ScheduledAction{ID: actionID, Status: "Failed", Name: failed[0].Message}, nil
+	}
+	inProgress, err := apiPost[[]wireActionSystem](c, "schedule/listInProgressSystems", map[string]any{"actionId": actionID})
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	if len(inProgress) > 0 {
+		return &ScheduledAction{ID: actionID, Status: "Running"}, nil
+	}
+	completed, err := apiPost[[]wireActionSystem](c, "schedule/listCompletedSystems", map[string]any{"actionId": actionID})
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	if len(completed) > 0 {
+		return &ScheduledAction{ID: actionID, Status: "Completed", Name: completed[0].Message}, nil
+	}
+	// Scheduled but not yet picked up by any minion; keep polling.
+	return &ScheduledAction{ID: actionID, Status: "Running"}, nil
 }
 
+// GetActionResults aggregates per-system results for an action. The schedule
+// API exposes no combined "results" call and no per-item status field — status
+// is implied by which list a system appears in. Params are int and go in a POST
+// body (a GET query string yields "No method exists"). ExitCode is not surfaced
+// by these lists; the message field carries any failure/execution detail.
 func (c *Client) GetActionResults(ctx context.Context, actionID int) ([]SystemActionResult, error) {
-	list, err := apiGet[[]wireActionResult](c, fmt.Sprintf("schedule/listCompletedSystems?action_id=%d", actionID))
-	if err != nil {
-		return nil, err
-	}
-	out := make([]SystemActionResult, len(list))
-	for i, ar := range list {
-		out[i] = SystemActionResult{
-			ServerID: ar.ServerID,
-			ActionID: ar.ActionID,
-			Status:   ar.Status,
-			Result:   ar.Result,
-			ExitCode: ar.ExitCode,
+	out := make([]SystemActionResult, 0)
+	for _, l := range []struct {
+		call, status string
+	}{
+		{"schedule/listCompletedSystems", "Succeeded"},
+		{"schedule/listFailedSystems", "Failed"},
+		{"schedule/listInProgressSystems", "Running"},
+	} {
+		list, err := apiPost[[]wireActionSystem](c, l.call, map[string]any{"actionId": actionID})
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range list {
+			out = append(out, SystemActionResult{
+				ServerID: s.ServerID,
+				ActionID: actionID,
+				Status:   l.status,
+				Result:   s.Message,
+			})
 		}
 	}
 	return out, nil
@@ -2158,7 +2177,7 @@ func (c *Client) GetActionResults(ctx context.Context, actionID int) ([]SystemAc
 
 func (c *Client) CancelAction(ctx context.Context, actionID int) error {
 	_, err := apiPost[any](c, "schedule/cancelActions", map[string]any{
-		"action_ids": []int{actionID},
+		"actionIds": []int{actionID},
 	})
 	return err
 }

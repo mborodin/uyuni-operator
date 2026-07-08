@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- **Image build / action polling no longer 403s.** `GetActionDetails` called
+  `schedule.getScheduledActionDetails`, which does not exist in the Uyuni API —
+  the request fell through to a web path returning an HTML/403 page, so every
+  image build (and Task) poll failed after scheduling. Action status is now
+  derived from `schedule.list{Failed,InProgress,Completed}Systems`, and the
+  latent same-class bugs in `GetActionResults` (invented `status`/`result`/
+  `exit_code` fields) and `CancelAction` (`action_ids` → `actionIds`) are fixed.
+  All three now POST the integer `actionId` in the request body (int params in a
+  GET query string yield "No method exists").
+- **Scheduling an image build no longer 400s** (`No method exists with the
+  matching parameters`). `image.scheduleImageBuild` now sends camelCase params
+  (`profileLabel`, `version`, `buildHostId`) plus the required
+  `earliestOccurrence`, and decodes the bare int action id it returns.
 - **`baseChannelFrom`/`childChannelsFrom` with an empty `contentProjectRef` now
   attach the channel directly.** Previously such refs were dropped, so an
   ActivationKey (or System) that used `baseChannelFrom.sourceChannelLabel`
