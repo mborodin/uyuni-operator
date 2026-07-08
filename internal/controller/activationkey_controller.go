@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -266,12 +267,12 @@ func (r *ActivationKeyReconciler) resolveOrgID(ctx context.Context, ak *uyuniv1.
 
 func (r *ActivationKeyReconciler) resolveSystemGroups(ctx context.Context, ak *uyuniv1.ActivationKey) (ids []int, wait string, err error) {
 	for _, ref := range ak.Spec.SystemGroupRefs {
-		var sg uyuniv1.SystemGroup
-		if err := r.Get(ctx, types.NamespacedName{Namespace: ak.Namespace, Name: ref.Name}, &sg); err != nil {
-			if client.IgnoreNotFound(err) == nil {
-				return nil, fmt.Sprintf("SystemGroup %q not found", ref.Name), nil
-			}
+		sg, err := findSystemGroup(ctx, r.Client, ak.Namespace, ref.Name)
+		if err != nil {
 			return nil, "", err
+		}
+		if sg == nil {
+			return nil, fmt.Sprintf("SystemGroup %q not found", ref.Name), nil
 		}
 		if sg.Status.UyuniID == 0 {
 			return nil, fmt.Sprintf("SystemGroup %q not yet realized", ref.Name), nil
@@ -348,7 +349,7 @@ func (r *ActivationKeyReconciler) activationKeysForSystemGroup(ctx context.Conte
 	var out []reconcile.Request
 	for _, ak := range list.Items {
 		for _, ref := range ak.Spec.SystemGroupRefs {
-			if ref.Name == obj.GetName() {
+			if ref.Name == obj.GetName() || strings.HasSuffix(obj.GetName(), "-"+ref.Name) {
 				out = append(out, reconcile.Request{
 					NamespacedName: types.NamespacedName{Namespace: ak.Namespace, Name: ak.Name},
 				})

@@ -217,6 +217,32 @@ func findSoftwareChannelByLabel(ctx context.Context, c client.Client, namespace,
 	return nil, nil
 }
 
+// findSystemGroup looks up a SystemGroup first by exact CR metadata.name, then
+// falls back to a suffix match — mirrors findSoftwareChannel, so a claim can
+// reference a SystemGroup owned by a different claim/composite via
+// "external:<short-name>" (e.g. "external:branchservers" matches
+// "gmrc-5vtl5-branchservers") without knowing the owning claim's generated
+// prefix.
+func findSystemGroup(ctx context.Context, c client.Client, namespace, name string) (*uyuniv1.SystemGroup, error) {
+	var sg uyuniv1.SystemGroup
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sg); err == nil {
+		return &sg, nil
+	} else if client.IgnoreNotFound(err) != nil {
+		return nil, err
+	}
+	var list uyuniv1.SystemGroupList
+	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	suffix := "-" + name
+	for i := range list.Items {
+		if strings.HasSuffix(list.Items[i].Name, suffix) {
+			return &list.Items[i], nil
+		}
+	}
+	return nil, nil
+}
+
 func resolveFromProject(ctx context.Context, c client.Client, namespace string, ref uyuniv1.ChannelFromProject) (label, waitDetail, hardError string, err error) {
 	var cp uyuniv1.ContentProject
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.ContentProjectRef.Name}, &cp); err != nil {
