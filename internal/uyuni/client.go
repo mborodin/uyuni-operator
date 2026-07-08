@@ -584,11 +584,10 @@ type wireProject struct {
 }
 
 type wireProjectSource struct {
-	Channel struct {
-		ID    int    `json:"id"`
-		Label string `json:"label"`
-	} `json:"channel"`
-	State string `json:"state"`
+	ContentProjectLabel string `json:"contentProjectLabel"`
+	Type                string `json:"type"`
+	State               string `json:"state"`
+	ChannelLabel        string `json:"channelLabel"`
 }
 
 type wireEnvironment struct {
@@ -1640,25 +1639,16 @@ func (c *Client) ListProjectSources(ctx context.Context, projectLabel string) ([
 		return nil, err
 	}
 
-	// Debug: log the raw wire response to understand structure
 	log := ctrl.LoggerFrom(ctx)
-	log.V(1).Info("ListProjectSources wire response", "count", len(list))
-	for idx, item := range list {
-		log.V(1).Info("wire source item", "index", idx, "channel.id", item.Channel.ID, "channel.label", item.Channel.Label, "state", item.State)
-	}
+	log.Info("ListProjectSources result", "count", len(list))
 
 	out := make([]ProjectSource, len(list))
 	for i, s := range list {
 		out[i] = ProjectSource{
 			State: s.State,
 		}
-		out[i].Channel.ID = s.Channel.ID
-		out[i].Channel.Label = s.Channel.Label
-	}
-
-	// Log parsed output
-	for idx, item := range out {
-		log.V(1).Info("parsed source", "index", idx, "id", item.Channel.ID, "label", item.Channel.Label, "state", item.State)
+		out[i].Channel.Label = s.ChannelLabel
+		log.Info("parsed source", "index", i, "channelLabel", s.ChannelLabel, "type", s.Type, "state", s.State)
 	}
 
 	return out, nil
