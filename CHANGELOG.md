@@ -158,6 +158,15 @@
 
 ### Added
 
+- **Structured formula config from ConfigMaps/Secrets.**
+  `System.spec.formulas[].valuesFrom[]` entries now take an optional
+  `format: string|yaml|json` (default `string`). With `yaml`/`json`, a
+  Secret/ConfigMap key's value is deserialized into structured form data (nested
+  maps/arrays) and placed at `path` — or, with an empty `path`, its top-level keys
+  are merged at the form-data root. This lets a whole structured formula config
+  live in one ConfigMap/Secret key. `format` is only valid with
+  `secretKeyRef`/`configMapKeyRef` (`objectFieldRef` values are already typed).
+  See `config/samples/formula-valuesfrom.yaml`.
 - **`ImageStore` is now reconciled.** The previously dormant `ImageStore` type has
   a controller: it creates/updates/deletes the store in Uyuni (registry or OS
   image), reading registry credentials from `spec.credentialsSecretRef`

@@ -70,24 +70,33 @@ func SystemFormulas(formulas []uyuniv1.FormulaAssignment, path *field.Path) fiel
 
 		for j, vf := range f.ValuesFrom {
 			vp := path.Index(i).Child("valuesFrom").Index(j)
-			if vf.Path == "" {
-				errs = append(errs, field.Required(vp.Child("path"), "path is required"))
-			}
+			hasSecret := vf.SecretKeyRef != nil
+			hasCM := vf.ConfigMapKeyRef != nil
+			hasObj := vf.ObjectFieldRef != nil
 			n := 0
-			if vf.SecretKeyRef != nil {
-				n++
-			}
-			if vf.ConfigMapKeyRef != nil {
-				n++
-			}
-			if vf.ObjectFieldRef != nil {
-				n++
+			for _, set := range []bool{hasSecret, hasCM, hasObj} {
+				if set {
+					n++
+				}
 			}
 			if n != 1 {
 				errs = append(errs, field.Invalid(vp, vf.Path,
 					"exactly one of secretKeyRef, configMapKeyRef or objectFieldRef must be set"))
 			}
-			if vf.ObjectFieldRef != nil {
+			// format applies only to string sources (Secret/ConfigMap keys);
+			// objectFieldRef values are already typed.
+			structured := vf.Format == "yaml" || vf.Format == "json"
+			if vf.Format != "" && vf.Format != "string" && !hasSecret && !hasCM {
+				errs = append(errs, field.Invalid(vp.Child("format"), vf.Format,
+					"format is only valid with secretKeyRef or configMapKeyRef"))
+			}
+			// path is required, except an empty path with format yaml|json merges
+			// the parsed structure at the form-data root.
+			if vf.Path == "" && !(structured && (hasSecret || hasCM)) {
+				errs = append(errs, field.Required(vp.Child("path"),
+					"path is required (an empty path is only allowed with format: yaml|json to merge at the root)"))
+			}
+			if hasObj {
 				errs = append(errs, objectFieldRefErrs(vf.ObjectFieldRef, vp.Child("objectFieldRef"))...)
 			}
 		}

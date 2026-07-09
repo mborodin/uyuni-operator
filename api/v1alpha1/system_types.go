@@ -149,6 +149,18 @@ type FormulaValueFrom struct {
 	ConfigMapKeyRef *ConfigMapKeyRef `json:"configMapKeyRef,omitempty"`
 	// ObjectFieldRef sources a typed value from another uyuni resource's field.
 	ObjectFieldRef *ObjectFieldRef `json:"objectFieldRef,omitempty"`
+
+	// Format controls how a Secret/ConfigMap string value is interpreted:
+	//   - "string" (default): the raw string is used as-is.
+	//   - "yaml" / "json": the value is deserialized into structured form data
+	//     (nested maps/arrays) and placed at Path — or, when Path is empty, its
+	//     top-level keys are merged into the formula's form data.
+	// Lets you keep a whole structured formula config in one ConfigMap/Secret key.
+	// Only valid with secretKeyRef/configMapKeyRef; objectFieldRef values are
+	// already typed.
+	// +kubebuilder:validation:Enum=string;yaml;json
+	// +optional
+	Format string `json:"format,omitempty"`
 }
 
 // FormulaValueSource merges all keys of a Secret or ConfigMap into the form data

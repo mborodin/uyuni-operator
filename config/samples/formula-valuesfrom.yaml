@@ -46,6 +46,22 @@ data:
   store_id: gq
   vlans: "8:storehub:br0 10:imw:br0"
 ---
+# A structured config blob (nested maps + a list) kept in one ConfigMap key.
+# With format: yaml the operator deserializes it into nested formula form data.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: branch-cfg
+  namespace: nexa-platform
+data:
+  config.yaml: |
+    store:
+      store_id: gq
+      timezone: Europe/Brussels
+    vlan:
+      - { id: 8,  name: storehub, interface: br0 }
+      - { id: 10, name: imw,      interface: br0 }
+---
 apiVersion: v1
 kind: Secret
 metadata:
@@ -83,6 +99,11 @@ spec:
         # a secret value
         - path: bootstrap_token
           secretKeyRef: { name: bootstrap, key: token }
+        # a whole structured config blob: deserialize the YAML and place the
+        # nested structure at 'branch_server' (use path: "" to merge at the root)
+        - path: branch_server
+          format: yaml
+          configMapKeyRef: { name: branch-cfg, key: config.yaml }
       valuesFromSources:
         # merge every key of the ConfigMap under 'extra' (extra.store_id, extra.vlans)
         - path: extra

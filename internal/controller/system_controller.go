@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	sigsyaml "sigs.k8s.io/yaml"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
 	"github.com/mborodin/uyuni-operator/internal/uyuni"
@@ -1048,9 +1049,46 @@ func (r *SystemReconciler) resolveFormulaValues(ctx context.Context, sys *uyuniv
 		if err != nil || wait != "" {
 			return nil, wait, err
 		}
+		if vf.Path == "" {
+			// Empty path merges a structured (yaml/json) value's top-level keys
+			// into the form data root; a scalar has nowhere to go.
+			m, ok := val.(map[string]any)
+			if !ok {
+				return nil, "", fmt.Errorf("formula %q valuesFrom with empty path requires a structured (map) value, got %T", f.Name, val)
+			}
+			for k, v := range m {
+				data[k] = v
+			}
+			continue
+		}
 		setPath(data, vf.Path, val)
 	}
 	return data, "", nil
+}
+
+// parseFormulaValue interprets a Secret/ConfigMap string value according to
+// format: "" or "string" returns the raw string; "yaml"/"json" deserialize it
+// into structured data (nested maps/arrays) with JSON-typed scalars, matching
+// how rawExtensionToMap decodes spec.values.
+func parseFormulaValue(raw, format string) (any, error) {
+	switch format {
+	case "", "string":
+		return raw, nil
+	case "yaml":
+		var v any
+		if err := sigsyaml.Unmarshal([]byte(raw), &v); err != nil {
+			return nil, err
+		}
+		return v, nil
+	case "json":
+		var v any
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return nil, err
+		}
+		return v, nil
+	default:
+		return nil, fmt.Errorf("unsupported format %q", format)
+	}
 }
 
 func (r *SystemReconciler) resolveFormulaValueFrom(ctx context.Context, ns string, vf uyuniv1.FormulaValueFrom) (any, string, error) {
@@ -1067,7 +1105,11 @@ func (r *SystemReconciler) resolveFormulaValueFrom(ctx context.Context, ns strin
 		if !ok {
 			return nil, fmt.Sprintf("key %q not in Secret %q", vf.SecretKeyRef.Key, vf.SecretKeyRef.Name), nil
 		}
-		return string(data), "", nil
+		val, err := parseFormulaValue(string(data), vf.Format)
+		if err != nil {
+			return nil, "", fmt.Errorf("valuesFrom %q: parsing Secret %q key %q as %s: %w", vf.Path, vf.SecretKeyRef.Name, vf.SecretKeyRef.Key, vf.Format, err)
+		}
+		return val, "", nil
 	case vf.ConfigMapKeyRef != nil:
 		var cm corev1.ConfigMap
 		if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: vf.ConfigMapKeyRef.Name}, &cm); err != nil {
@@ -1080,7 +1122,11 @@ func (r *SystemReconciler) resolveFormulaValueFrom(ctx context.Context, ns strin
 		if !ok {
 			return nil, fmt.Sprintf("key %q not in ConfigMap %q", vf.ConfigMapKeyRef.Key, vf.ConfigMapKeyRef.Name), nil
 		}
-		return data, "", nil
+		val, err := parseFormulaValue(data, vf.Format)
+		if err != nil {
+			return nil, "", fmt.Errorf("valuesFrom %q: parsing ConfigMap %q key %q as %s: %w", vf.Path, vf.ConfigMapKeyRef.Name, vf.ConfigMapKeyRef.Key, vf.Format, err)
+		}
+		return val, "", nil
 	case vf.ObjectFieldRef != nil:
 		return r.resolveObjectFieldRef(ctx, ns, vf.ObjectFieldRef)
 	}

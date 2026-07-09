@@ -311,3 +311,60 @@ func TestStrictBooleanAnnotations(t *testing.T) {
 		require.Len(t, errs, 1)
 	})
 }
+
+func TestSystemFormulas(t *testing.T) {
+	cmRef := &uyuniv1.ConfigMapKeyRef{Name: "cfg", Key: "config.yaml"}
+	objRef := &uyuniv1.ObjectFieldRef{
+		APIVersion: "uyuni.uyuni-project.org/v1alpha1", Kind: "ImageProfile",
+		Name: "p", FieldPath: "status.imageUrl",
+	}
+	cases := []struct {
+		name     string
+		vf       uyuniv1.FormulaValueFrom
+		wantErrs int
+		wantPath string
+	}{
+		{
+			name: "yaml configmap with path",
+			vf:   uyuniv1.FormulaValueFrom{Path: "branch", Format: "yaml", ConfigMapKeyRef: cmRef},
+		},
+		{
+			name: "yaml configmap empty path merges at root",
+			vf:   uyuniv1.FormulaValueFrom{Path: "", Format: "yaml", ConfigMapKeyRef: cmRef},
+		},
+		{
+			name:     "string source empty path is rejected",
+			vf:       uyuniv1.FormulaValueFrom{Path: "", ConfigMapKeyRef: cmRef},
+			wantErrs: 1,
+			wantPath: "spec.formulas[0].valuesFrom[0].path",
+		},
+		{
+			name:     "format with objectFieldRef is rejected",
+			vf:       uyuniv1.FormulaValueFrom{Path: "x", Format: "yaml", ObjectFieldRef: objRef},
+			wantErrs: 1,
+			wantPath: "spec.formulas[0].valuesFrom[0].format",
+		},
+		{
+			name:     "no source is rejected",
+			vf:       uyuniv1.FormulaValueFrom{Path: "x"},
+			wantErrs: 1,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := []uyuniv1.FormulaAssignment{{Name: "branch-server", ValuesFrom: []uyuniv1.FormulaValueFrom{tc.vf}}}
+			errs := validation.SystemFormulas(f, field.NewPath("spec.formulas"))
+			require.Len(t, errs, tc.wantErrs, "errors: %v", errs)
+			if tc.wantPath != "" {
+				found := false
+				for _, e := range errs {
+					if e.Field == tc.wantPath {
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "expected error at %q, got %v", tc.wantPath, errs)
+			}
+		})
+	}
+}

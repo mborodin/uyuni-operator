@@ -248,7 +248,10 @@ Standard condition types and their semantics:
   config); apply with a spec change or the
   `uyuni.uyuni-project.org/apply-formula-values` annotation. Gated by
   `status.formulaDataGeneration`; `objectFieldRef` is restricted to the
-  `uyuni.uyuni-project.org` group, same namespace.
+  `uyuni.uyuni-project.org` group, same namespace. A `valuesFrom` entry may set
+  `format: string|yaml|json` (default `string`) to deserialize a Secret/ConfigMap
+  string into structured form data at `path` (empty `path` + yaml/json merges at
+  the root); `format` is invalid with `objectFieldRef`.
 - `PackagesSynced` (SoftwareChannel only) — separate from `Ready` on purpose:
   a channel can be fully reconciled (exists in Uyuni, repos associated, sync
   schedule set) while genuinely having zero packages, e.g. because the

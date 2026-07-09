@@ -242,6 +242,10 @@ Canonical reason taxonomy:
   change or the `uyuni.uyuni-project.org/apply-formula-values` annotation. Gated
   by `status.formulaDataGeneration`. `objectFieldRef` is restricted to the
   `uyuni.uyuni-project.org` group in the same namespace — never arbitrary kinds.
+  A `valuesFrom` entry may set `format: string|yaml|json` (default `string`) to
+  deserialize a Secret/ConfigMap string value into structured (nested) form data
+  at `path` (empty `path` + yaml/json merges at the root); `format` is invalid
+  with `objectFieldRef` (already typed).
 - `PackagesSynced` (SoftwareChannel only) — separate from `Ready` on purpose:
   a channel can be fully reconciled (exists in Uyuni, repos associated, sync
   schedule set) while genuinely having zero packages, e.g. because the
