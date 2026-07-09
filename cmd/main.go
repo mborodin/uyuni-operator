@@ -235,8 +235,9 @@ func main() {
 	}
 
 	if err := (&controller.ImageBuildReconciler{
-		Client:  mgr.GetClient(),
-		Clients: clientPool,
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Clients:   clientPool,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ImageBuild")
 		os.Exit(1)

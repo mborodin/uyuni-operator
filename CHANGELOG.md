@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- **Formula `objectFieldRef.fieldPath` no longer fails with "unrecognized
+  identifier".** A downward-API-style path like `status.imageUrl` was wrapped as
+  `{status.imageUrl}`, but k8s jsonpath needs a leading dot (`{.status.imageUrl}`)
+  or it treats the first segment as an identifier. The evaluator now adds the
+  leading dot, so `fieldPath: status.imageUrl` works.
+- **ImageBuild no longer schedules a build twice in Uyuni.** A stale informer
+  cache let a second reconcile see `status.actionId == 0` (before the first
+  reconcile's status write had propagated) and call `image.scheduleImageBuild`
+  again — leaving an orphaned duplicate build. The reconciler now re-reads the
+  build straight from the API server (uncached) before scheduling and adopts an
+  already-recorded action id instead of scheduling again.
 - **`ImageProfile.spec.kiwiOptions` is now applied to existing profiles.** Uyuni
   accepts `kiwiOptions` only at `image.profile.create` (its `setDetails` has no
   such member and `getDetails` never returns it), so setting/adding it on a

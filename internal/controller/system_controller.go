@@ -1146,10 +1146,17 @@ func (r *SystemReconciler) resolveObjectFieldRef(ctx context.Context, ns string,
 }
 
 // evalJSONPath evaluates a JSONPath (without surrounding braces) against a
-// decoded object, returning a single value or a slice for multi-match.
+// decoded object, returning a single value or a slice for multi-match. The path
+// is written downward-API style (e.g. "status.imageUrl", no leading dot); k8s
+// jsonpath needs a leading "." inside the braces ("{.status.imageUrl}") or it
+// treats the first segment as an identifier ("unrecognized identifier status").
 func evalJSONPath(obj map[string]any, path string) (any, error) {
+	expr := path
+	if !strings.HasPrefix(expr, ".") && !strings.HasPrefix(expr, "[") {
+		expr = "." + expr
+	}
 	jp := jsonpath.New("ref").AllowMissingKeys(true)
-	if err := jp.Parse("{" + path + "}"); err != nil {
+	if err := jp.Parse("{" + expr + "}"); err != nil {
 		return nil, err
 	}
 	results, err := jp.FindResults(obj)

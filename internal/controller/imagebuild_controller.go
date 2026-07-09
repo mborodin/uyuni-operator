@@ -18,7 +18,12 @@ import (
 
 type ImageBuildReconciler struct {
 	client.Client
-	Clients uyuni.ClientPool
+	// APIReader is an uncached reader used to re-check the build's status
+	// straight from the API server before scheduling, closing the window where a
+	// stale informer cache would let a second reconcile schedule a duplicate
+	// build in Uyuni.
+	APIReader client.Reader
+	Clients   uyuni.ClientPool
 }
 
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imagebuilds,verbs=get;list;watch;create;update;patch;delete
@@ -114,6 +119,17 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// Schedule build if not yet scheduled.
 	if ib.Status.ActionID == 0 {
+		// Guard against a stale informer cache: a previous reconcile may have
+		// already scheduled this build and written status.actionId, but our cached
+		// read hasn't caught up. Re-read straight from the API server and adopt it
+		// rather than scheduling a duplicate build in Uyuni.
+		if r.APIReader != nil {
+			var fresh uyuniv1.ImageBuild
+			if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(&ib), &fresh); err == nil && fresh.Status.ActionID != 0 {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		}
+
 		version := ib.Spec.Version
 		if version == "" {
 			version = time.Now().UTC().Format("20060102-1504")
