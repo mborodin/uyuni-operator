@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **`ImageProfile.spec.kiwiOptions` is now applied to existing profiles.** Uyuni
+  accepts `kiwiOptions` only at `image.profile.create` (its `setDetails` has no
+  such member and `getDetails` never returns it), so setting/adding it on a
+  profile that already existed in Uyuni was silently ignored — `create` was never
+  called. The reconciler now recreates the profile when `spec.kiwiOptions` differs
+  from `status.appliedKiwiOptions`, applying the change exactly once. (Recreating
+  is safe: built images and `ImageBuild` CRs reference the profile by label, which
+  is preserved.)
 - **`SoftwareChannel.status.packageCount` was always zero.**
   `channel/software/getDetails` has no `package_count`/`last_synced` fields —
   they were never real API keys, so the wire struct silently decoded them as
@@ -139,6 +147,15 @@
 
 ### Added
 
+- **`ImageStore` is now reconciled.** The previously dormant `ImageStore` type has
+  a controller: it creates/updates/deletes the store in Uyuni (registry or OS
+  image), reading registry credentials from `spec.credentialsSecretRef`
+  (`username`/`password` keys). Fixed the client along the way — the API lives
+  under `image.store` (path `image/store/*`, not `imagestore/*`, which 403s),
+  `getDetails` returns `storetype` (not `store_type`) and no numeric id, and
+  `create`/`setDetails` take a credentials/details struct. `ImageProfile` now
+  gates on the store's `Ready` condition (image stores have no id) so a
+  dockerfile profile no longer waits forever for its store to "realize".
 - **`ImageProfile.spec.kiwiOptions`** — a free-form string of extra kiwi build
   options for `type: kiwi` OS images (e.g. `--profile <name>` to pick a profile
   from a multi-profile kiwi description). Passed to `image.profile.create`. Uyuni

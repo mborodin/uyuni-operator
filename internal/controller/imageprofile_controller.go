@@ -83,25 +83,52 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.fail(ctx, &ip, "BuildURLFailed", err)
 	}
 
-	// Ensure the Uyuni image profile exists and is up-to-date.
-	current, err := uc.GetImageProfile(ctx, ip.Spec.Label)
-	if uyuni.IsNotFound(err) {
-		if createErr := uc.CreateImageProfile(ctx, uyuni.ImageProfileDetails{
+	createProfile := func() error {
+		if err := uc.CreateImageProfile(ctx, uyuni.ImageProfileDetails{
 			Label:         ip.Spec.Label,
 			Type:          ip.Spec.Type,
 			StoreLabel:    storeLabel,
 			ActivationKey: activationKey,
 			SourcePath:    sourceURL,
 			KiwiOptions:   ip.Spec.KiwiOptions,
-		}, ip.Spec.CustomInfo); createErr != nil {
+		}, ip.Spec.CustomInfo); err != nil {
+			return err
+		}
+		ip.Status.AppliedKiwiOptions = ip.Spec.KiwiOptions
+		return nil
+	}
+
+	// Ensure the Uyuni image profile exists and is up-to-date. kiwiOptions is
+	// accepted only by image.profile.create (setDetails has no such member and
+	// getDetails never returns it), so a changed/new kiwiOptions on an existing
+	// profile can only be applied by recreating it — tracked via
+	// status.appliedKiwiOptions so we recreate exactly once per change.
+	current, err := uc.GetImageProfile(ctx, ip.Spec.Label)
+	created := false
+	switch {
+	case uyuni.IsNotFound(err):
+		if createErr := createProfile(); createErr != nil {
 			return r.fail(ctx, &ip, "CreateFailed", createErr)
 		}
+		created = true
+	case err != nil:
+		return ctrl.Result{}, err
+	case ip.Spec.KiwiOptions != ip.Status.AppliedKiwiOptions:
+		ctrl.LoggerFrom(ctx).Info("recreating image profile to apply kiwiOptions (create-only in Uyuni)",
+			"label", ip.Spec.Label, "kiwiOptions", ip.Spec.KiwiOptions)
+		if delErr := uc.DeleteImageProfile(ctx, ip.Spec.Label); delErr != nil && !uyuni.IsNotFound(delErr) {
+			return r.fail(ctx, &ip, "UpdateFailed", delErr)
+		}
+		if createErr := createProfile(); createErr != nil {
+			return r.fail(ctx, &ip, "CreateFailed", createErr)
+		}
+		created = true
+	}
+	if created {
 		current, err = uc.GetImageProfile(ctx, ip.Spec.Label)
 		if err != nil {
 			return r.fail(ctx, &ip, "GetAfterCreate", err)
 		}
-	} else if err != nil {
-		return ctrl.Result{}, err
 	}
 
 	// Update on readable drift (storeLabel/activationKey) or whenever the spec
@@ -186,7 +213,10 @@ func (r *ImageProfileReconciler) resolveStoreLabel(ctx context.Context, ip *uyun
 		}
 		return "", "", err
 	}
-	if store.Status.UyuniID == 0 {
+	// Image stores have no numeric id in the Uyuni API, so realization is tracked
+	// via the ImageStore's Ready condition (set True once its reconciler has
+	// ensured the store exists), not status.UyuniID.
+	if c := findCondition(store.Status.Conditions, "Ready"); c == nil || c.Status != metav1.ConditionTrue {
 		return "", fmt.Sprintf("ImageStore %q not yet realized in Uyuni", ip.Spec.StoreRef.Name), nil
 	}
 	return store.Spec.Label, "", nil

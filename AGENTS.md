@@ -135,17 +135,16 @@ Implementation status (current repo state):
 
 - **API types**: all 22 Kinds above are declared in `api/v1alpha1/`.
 
-- **`cmd/main.go`**: present. Registers **20 reconcilers** (Organization,
+- **`cmd/main.go`**: present. Registers **21 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
-  AutoinstallProfile, ImageProfile, ImageBuild, CustomInfoKey, CobblerSystem,
-  CobblerDistro, CobblerProfile) and **14 webhooks**. The Cobbler controllers
-  talk XMLRPC to Uyuni's `/cobbler_api` via `internal/cobbler` (reads unauth;
-  writes need cobbler `redhat_management_permissive` enabled).
+  AutoinstallProfile, ImageStore, ImageProfile, ImageBuild, CustomInfoKey,
+  CobblerSystem, CobblerDistro, CobblerProfile) and **14 webhooks**. The Cobbler
+  controllers talk XMLRPC to Uyuni's `/cobbler_api` via `internal/cobbler` (reads
+  unauth; writes need cobbler `redhat_management_permissive` enabled).
 
-- **Controllers defined but NOT registered in `main.go`**: `ImageBuild`.
-  (`ConfigFile` and `ImageStore` have types but no controller.)
+- **Types without a controller**: `ConfigFile`.
 
 - **CRDs**: 18 base files under `config/crd/bases/`, all included in
   `config/crd/kustomization.yaml`. ⚠️ Keep this aligned: `main.go` registering

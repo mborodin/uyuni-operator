@@ -629,11 +629,11 @@ type wireFilter struct {
 // hasCredentials, username}. There is no numeric id (realization is tracked via
 // the Ready condition, like image profiles).
 type wireImageStore struct {
-	Label         string `json:"label"`
-	URI           string `json:"uri"`
-	Type          string `json:"storetype"`
-	HasCredentials bool  `json:"hasCredentials"`
-	Username      string `json:"username"`
+	Label          string `json:"label"`
+	URI            string `json:"uri"`
+	Type           string `json:"storetype"`
+	HasCredentials bool   `json:"hasCredentials"`
+	Username       string `json:"username"`
 }
 
 type wireImageProfile struct {

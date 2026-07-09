@@ -90,12 +90,9 @@ func (v *ImageProfileValidator) ValidateUpdate(ctx context.Context, oldObj, newO
 	if old.Spec.Type != ip.Spec.Type {
 		return nil, apierrors.NewForbidden(gr, ip.Name, fmt.Errorf("spec.type is immutable"))
 	}
-	// Uyuni accepts kiwiOptions only at image.profile.create; there is no
-	// setDetails member for it, so it cannot be updated on an existing profile.
-	if old.Spec.KiwiOptions != ip.Spec.KiwiOptions {
-		return nil, apierrors.NewForbidden(gr, ip.Name,
-			fmt.Errorf("spec.kiwiOptions is immutable (Uyuni sets it only at profile creation); recreate the ImageProfile to change it"))
-	}
+	// kiwiOptions is intentionally mutable: Uyuni accepts it only at create time,
+	// so the reconciler applies a changed value by recreating the Uyuni profile
+	// (see status.appliedKiwiOptions).
 	return v.validateProfile(ctx, ip)
 }
 

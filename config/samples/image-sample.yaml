@@ -114,8 +114,8 @@ spec:
   url: https://github.com/example-org/kiwi-descriptions.git#main:sles15
 
   # Extra kiwi build options (type: kiwi only). Free-form; here we select a
-  # named profile from a kiwi description that defines several. Immutable in
-  # Uyuni (set only at create) — recreate the ImageProfile to change it.
+  # named profile from a kiwi description that defines several. Uyuni sets this
+  # only at create, so changing it makes the operator recreate the profile.
   kiwiOptions: "--profile StoreHub"
 
   buildPolicy: manual

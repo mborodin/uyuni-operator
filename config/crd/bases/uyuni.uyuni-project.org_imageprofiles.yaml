@@ -132,10 +132,10 @@ spec:
                   the OS image build, e.g. "--profile <name>" to select a profile from a
                   kiwi description that defines several. Only meaningful for type: kiwi.
 
-                  Uyuni accepts kiwiOptions only at profile-creation time (image.profile.create);
-                  there is no API to update it on an existing profile. It is therefore
-                  immutable — the webhook rejects changes. To change it, recreate the
-                  ImageProfile.
+                  Uyuni accepts kiwiOptions only at profile-creation time (image.profile.create
+                  — there is no setDetails member for it), so changing it recreates the Uyuni
+                  profile (the operator handles this; the profile label, and thus any builds,
+                  is preserved). See status.appliedKiwiOptions.
                 type: string
               label:
                 description: Label is the Uyuni image profile label. Immutable after
@@ -186,10 +186,16 @@ spec:
             - message: storeRef is required when type is dockerfile
               rule: self.type != 'dockerfile' || has(self.storeRef)
             - message: kiwiOptions is only valid when type is kiwi
-              rule: '!has(self.kiwiOptions) || self.kiwiOptions == '''' || self.type
+              rule: '!has(self.kiwiOptions) || size(self.kiwiOptions) == 0 || self.type
                 == ''kiwi'''
           status:
             properties:
+              appliedKiwiOptions:
+                description: |-
+                  AppliedKiwiOptions records the kiwiOptions value the operator last created
+                  the Uyuni profile with. Uyuni accepts kiwiOptions only at create time, so
+                  when spec.kiwiOptions differs from this the reconciler recreates the profile.
+                type: string
               bootImage:
                 description: |-
                   BootImage is the saltboot boot image identifier of the last successful

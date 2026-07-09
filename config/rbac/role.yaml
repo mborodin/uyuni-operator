@@ -28,6 +28,7 @@ rules:
   - custominfokeys
   - imagebuilds
   - imageprofiles
+  - imagestores
   - organizations
   - repositories
   - softwarechannels
@@ -57,6 +58,7 @@ rules:
   - custominfokeys/finalizers
   - imagebuilds/finalizers
   - imageprofiles/finalizers
+  - imagestores/finalizers
   - organizations/finalizers
   - repositories/finalizers
   - softwarechannels/finalizers
@@ -81,6 +83,7 @@ rules:
   - custominfokeys/status
   - imagebuilds/status
   - imageprofiles/status
+  - imagestores/status
   - organizations/status
   - repositories/status
   - softwarechannels/status

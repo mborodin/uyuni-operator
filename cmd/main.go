@@ -51,8 +51,8 @@ func main() {
 
 	// Disable rate limiting - let all 22 controllers reconcile without limits
 	cfg := ctrl.GetConfigOrDie()
-	cfg.QPS = 999999     // Effectively unlimited sustained throughput
-	cfg.Burst = 999999   // Effectively unlimited burst capacity
+	cfg.QPS = 999999   // Effectively unlimited sustained throughput
+	cfg.Burst = 999999 // Effectively unlimited burst capacity
 
 	// Leader election defaults (15s/10s/2s) assume a responsive API server.
 	// With ~20 controllers all syncing caches and renewing the lease against
@@ -207,6 +207,14 @@ func main() {
 		Clients: clientPool,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AutoinstallProfile")
+		os.Exit(1)
+	}
+
+	if err := (&controller.ImageStoreReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ImageStore")
 		os.Exit(1)
 	}
 

@@ -135,13 +135,13 @@ CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
 ### Implementation status (current repo state)
 
 - **API types**: all 22 Kinds above are declared in `api/v1alpha1/`.
-- **`cmd/main.go`**: present. Registers **20 reconcilers** (Organization,
+- **`cmd/main.go`**: present. Registers **21 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
-  AutoinstallProfile, ImageProfile, ImageBuild, CustomInfoKey, CobblerSystem,
-  CobblerDistro, CobblerProfile) and **14 webhooks**.
-- **Types without a controller**: `ConfigFile` and `ImageStore`.
+  AutoinstallProfile, ImageStore, ImageProfile, ImageBuild, CustomInfoKey,
+  CobblerSystem, CobblerDistro, CobblerProfile) and **14 webhooks**.
+- **Types without a controller**: `ConfigFile`.
 - **Cobbler client (`internal/cobbler`)**: hand-rolled XMLRPC client against
   Uyuni's `/cobbler_api`, reusing `UyuniProvider` creds via `pool.Cobbler(...)`.
   Reads (get_*/find_*) are unauthenticated; writes (new/modify/save/remove) need

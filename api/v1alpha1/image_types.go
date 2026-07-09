@@ -73,7 +73,7 @@ type GitSource struct {
 }
 
 // +kubebuilder:validation:XValidation:rule="self.type != 'dockerfile' || has(self.storeRef)",message="storeRef is required when type is dockerfile"
-// +kubebuilder:validation:XValidation:rule="!has(self.kiwiOptions) || self.kiwiOptions == '' || self.type == 'kiwi'",message="kiwiOptions is only valid when type is kiwi"
+// +kubebuilder:validation:XValidation:rule="!has(self.kiwiOptions) || size(self.kiwiOptions) == 0 || self.type == 'kiwi'",message="kiwiOptions is only valid when type is kiwi"
 type ImageProfileSpec struct {
 	// Label is the Uyuni image profile label. Immutable after creation.
 	// +kubebuilder:validation:Required
@@ -121,10 +121,10 @@ type ImageProfileSpec struct {
 	// the OS image build, e.g. "--profile <name>" to select a profile from a
 	// kiwi description that defines several. Only meaningful for type: kiwi.
 	//
-	// Uyuni accepts kiwiOptions only at profile-creation time (image.profile.create);
-	// there is no API to update it on an existing profile. It is therefore
-	// immutable — the webhook rejects changes. To change it, recreate the
-	// ImageProfile.
+	// Uyuni accepts kiwiOptions only at profile-creation time (image.profile.create
+	// — there is no setDetails member for it), so changing it recreates the Uyuni
+	// profile (the operator handles this; the profile label, and thus any builds,
+	// is preserved). See status.appliedKiwiOptions.
 	// +optional
 	KiwiOptions string `json:"kiwiOptions,omitempty"`
 
@@ -177,7 +177,11 @@ type ImageProfileStatus struct {
 	// "BranchServer_MicroOS-0.6.10-4". Reference it from a saltboot formula to
 	// PXE-boot systems with this image. Empty for non-bootable images (e.g.
 	// container images).
-	BootImage          string             `json:"bootImage,omitempty"`
+	BootImage string `json:"bootImage,omitempty"`
+	// AppliedKiwiOptions records the kiwiOptions value the operator last created
+	// the Uyuni profile with. Uyuni accepts kiwiOptions only at create time, so
+	// when spec.kiwiOptions differs from this the reconciler recreates the profile.
+	AppliedKiwiOptions string             `json:"appliedKiwiOptions,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
