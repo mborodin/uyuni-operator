@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- **Formula data reads no longer 403.** `formula.getSystemFormulaData` was called
+  via POST with a `sid` param; it is a read method (POST → HTTP 403) and its param
+  is `systemId`, not `sid` (`getFormulasByServerId` uses `sid` — hence the earlier
+  confusion). It now does `GET …?systemId=<id>&formulaName=<name>`, which restores
+  formula drift detection (`FormulaValuesDrift`). Verified against a live server.
 - **Formula `objectFieldRef.fieldPath` no longer fails with "unrecognized
   identifier".** A downward-API-style path like `status.imageUrl` was wrapped as
   `{status.imageUrl}`, but k8s jsonpath needs a leading dot (`{.status.imageUrl}`)

@@ -930,12 +930,12 @@ func (c *Client) SetServerFormulas(ctx context.Context, serverID int, formulas [
 }
 
 func (c *Client) GetServerFormulaData(ctx context.Context, serverID int, formula string) (map[string]any, error) {
-	// Must be a POST: the JSON API can't type-match `sid` (int) from a GET query
-	// string, so a GET returns "No method exists with the matching parameters".
-	return apiPost[map[string]any](c, "formula/getSystemFormulaData", map[string]any{
-		"sid":         serverID,
-		"formulaName": formula,
-	})
+	// Read method: GET only (a POST returns HTTP 403). Its params are systemId
+	// (NOT sid — the sibling getFormulasByServerId uses sid) and formulaName; the
+	// wrong param name is what returns "No method exists with the matching
+	// parameters", not the int-via-GET encoding. Verified against a live server.
+	return apiGet[map[string]any](c, fmt.Sprintf("formula/getSystemFormulaData?systemId=%d&formulaName=%s",
+		serverID, url.QueryEscape(formula)))
 }
 
 func (c *Client) SetServerFormulaData(ctx context.Context, serverID int, formula string, data map[string]any) error {
