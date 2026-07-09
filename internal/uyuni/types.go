@@ -73,8 +73,11 @@ type ChannelDetails struct {
 	GPGKeyID           string
 	GPGKeyFp           string
 	GPGCheck           bool
-	PackageCount       int
-	LastSynced         string
+	// SyncStatus is Uyuni's repo-sync task state for this channel (e.g. "R"
+	// while a sync is running; empty when idle). channel/software/getDetails
+	// carries no package count — GetChannelPackageCount is the source of
+	// truth for that.
+	SyncStatus string
 }
 
 type RepoDetails struct {

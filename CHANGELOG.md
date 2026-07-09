@@ -4,6 +4,21 @@
 
 ### Fixed
 
+- **`SoftwareChannel.status.packageCount` was always zero.**
+  `channel/software/getDetails` has no `package_count`/`last_synced` fields —
+  they were never real API keys, so the wire struct silently decoded them as
+  zero every time, regardless of actual sync state. Package count now comes
+  from `channel/software/listAllPackages` (`GetChannelPackageCount`). A new
+  `PackagesSynced` condition (separate from `Ready`, since a channel can be
+  fully reconciled with a broken repo URL) reports `NoRepositories` /
+  `SyncInProgress` / `Synced` / `NoPackages` so a bad repository URL surfaces
+  instead of silently leaving the channel empty.
+- **`Repository` reported `Ready` for unreachable URLs.** Nothing validated
+  `spec.url` was actually reachable — Uyuni accepts the repo config
+  unconditionally at creation and only fails much later, async, during the
+  channel's repo sync. `Repository` now does an http(s) reachability probe
+  (`URLUnreachable` reason) before setting `Ready`; `file://`/`uln://`/`ftp://`
+  aren't checked (unverifiable from the operator's pod) and always pass.
 - **Manager crash-looped on startup under a slow/throttled API server.**
   Default leader-election timings (`LeaseDuration: 15s`, `RenewDeadline: 10s`)
   left no margin when ~20 controllers were syncing caches and renewing the

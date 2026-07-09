@@ -71,6 +71,7 @@ type SoftwareChannelStatus struct {
 // +kubebuilder:printcolumn:name="Packages",type=integer,JSONPath=`.status.packageCount`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
 // +kubebuilder:printcolumn:name="Drift",type=string,JSONPath=`.status.conditions[?(@.type=='UyuniDrift')].status`
+// +kubebuilder:printcolumn:name="PackagesSynced",type=string,JSONPath=`.status.conditions[?(@.type=='PackagesSynced')].status`
 type SoftwareChannel struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

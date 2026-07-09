@@ -544,8 +544,11 @@ type wireChannel struct {
 	GPGKeyID           string `json:"gpg_key_id"`
 	GPGKeyFp           string `json:"gpg_key_fp"`
 	GPGCheck           bool   `json:"gpg_check"`
-	PackageCount       int    `json:"package_count"`
-	LastSynced         string `json:"last_synced"`
+	// channel/software/getDetails does not return a package count field —
+	// "package_count"/"last_synced" were never real API keys (always
+	// decoded as zero values). SyncStatus is the real field ("R" while a
+	// repo sync is running).
+	SyncStatus string `json:"sync_status"`
 }
 
 type wireRepo struct {
@@ -1286,6 +1289,18 @@ func (c *Client) GetChannel(ctx context.Context, label string) (*ChannelDetails,
 	return wireChannelToDetails(&r), nil
 }
 
+// GetChannelPackageCount returns the number of packages currently
+// associated with the channel in Uyuni. channel/software/getDetails
+// carries no package count, so this is the only source of truth for
+// "did the repo sync actually pull anything in."
+func (c *Client) GetChannelPackageCount(ctx context.Context, label string) (int, error) {
+	list, err := apiGet[[]json.RawMessage](c, "channel/software/listAllPackages?channelLabel="+url.QueryEscape(label))
+	if err != nil {
+		return 0, asNotFound(err)
+	}
+	return len(list), nil
+}
+
 func (c *Client) SetChannelDetails(ctx context.Context, id int, d ChannelDetails) error {
 	gpgCheck := "N"
 	if d.GPGCheck {
@@ -1423,8 +1438,7 @@ func wireChannelToDetails(w *wireChannel) *ChannelDetails {
 		GPGKeyID:           w.GPGKeyID,
 		GPGKeyFp:           w.GPGKeyFp,
 		GPGCheck:           w.GPGCheck,
-		PackageCount:       w.PackageCount,
-		LastSynced:         w.LastSynced,
+		SyncStatus:         w.SyncStatus,
 	}
 }
 

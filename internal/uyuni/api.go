@@ -122,6 +122,7 @@ type API interface {
 	DisassociateRepo(ctx context.Context, channelLabel, repoLabel string) error
 	SetRepoSyncSchedule(ctx context.Context, channelLabel, quartzCron string) error
 	SyncChannelNow(ctx context.Context, channelLabel string) error
+	GetChannelPackageCount(ctx context.Context, label string) (int, error)
 
 	CreateRepo(ctx context.Context, r RepoDetails, sslCa, sslCert, sslKey string) (*RepoDetails, error)
 	GetRepo(ctx context.Context, label string) (*RepoDetails, error)

@@ -18,6 +18,10 @@ import (
 type RepositoryReconciler struct {
 	client.Client
 	Clients uyuni.ClientPool
+
+	// URLChecker probes spec.URL for reachability before Ready is set to
+	// True. Defaults to checkRepoURLReachable; overridable in tests.
+	URLChecker func(ctx context.Context, rawURL string) error
 }
 
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=repositories,verbs=get;list;watch;create;update;patch;delete
@@ -100,6 +104,18 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	repo.Status.ObservedGeneration = repo.Generation
+
+	checker := r.URLChecker
+	if checker == nil {
+		checker = checkRepoURLReachable
+	}
+	if urlErr := checker(ctx, repo.Spec.URL); urlErr != nil {
+		setReady(&repo.Status.Conditions, repo.Generation, metav1.ConditionFalse,
+			"URLUnreachable", fmt.Sprintf("%s: %v", repo.Spec.URL, urlErr))
+		_ = r.Status().Update(ctx, &repo)
+		return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
+	}
+
 	setReady(&repo.Status.Conditions, repo.Generation, metav1.ConditionTrue, "Reconciled", "")
 	if err := r.Status().Update(ctx, &repo); err != nil {
 		return ctrl.Result{}, err

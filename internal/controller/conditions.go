@@ -14,6 +14,7 @@ const (
 	condPreProvisioned       = "PreProvisioned"
 	condAutoinstallScheduled = "AutoinstallScheduled"
 	condFormulaValuesDrift   = "FormulaValuesDrift"
+	condPackagesSynced       = "PackagesSynced"
 )
 
 // setCondition is the generic primitive. setReady and similar are thin
@@ -38,4 +39,17 @@ func setDrift(conds *[]metav1.Condition, observedGen int64, drifted bool, reason
 		status = metav1.ConditionTrue
 	}
 	setCondition(conds, condUyuniDrift, status, observedGen, reason, message)
+}
+
+// setPackagesSynced reports whether a SoftwareChannel's repo sync actually
+// pulled packages in — distinct from Ready, which only means "the operator
+// did what the spec asked" (channel exists, repos associated, schedule set).
+// A channel can be Ready=True with PackagesSynced=False if e.g. the
+// repository URL is wrong or unreachable.
+func setPackagesSynced(conds *[]metav1.Condition, observedGen int64, synced bool, reason, message string) {
+	status := metav1.ConditionFalse
+	if synced {
+		status = metav1.ConditionTrue
+	}
+	setCondition(conds, condPackagesSynced, status, observedGen, reason, message)
 }

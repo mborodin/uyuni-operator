@@ -226,7 +226,30 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	sc.Status.AssociatedRepos = desiredRepos
-	sc.Status.PackageCount = current.PackageCount
+
+	packageCount, pkgErr := uc.GetChannelPackageCount(ctx, sc.Spec.Label)
+	if pkgErr != nil {
+		return ctrl.Result{}, pkgErr
+	}
+	sc.Status.PackageCount = packageCount
+
+	// PackagesSynced is separate from Ready: a channel can be fully
+	// reconciled (exists in Uyuni, repos associated, schedule set) while
+	// still having zero packages because the repo URL is wrong or
+	// unreachable. Don't flag it while a sync is actively running, and
+	// don't flag it at all when no repos are configured (nothing to sync).
+	switch {
+	case len(desiredRepos) == 0:
+		setPackagesSynced(&sc.Status.Conditions, sc.Generation, true, "NoRepositories", "")
+	case current.SyncStatus == "R":
+		setPackagesSynced(&sc.Status.Conditions, sc.Generation, false, "SyncInProgress", "")
+	case packageCount > 0:
+		setPackagesSynced(&sc.Status.Conditions, sc.Generation, true, "Synced", "")
+	default:
+		setPackagesSynced(&sc.Status.Conditions, sc.Generation, false, "NoPackages",
+			"channel has associated repositories but zero packages after sync; check that the repository URLs are reachable and contain valid metadata")
+	}
+
 	sc.Status.ObservedGeneration = sc.Generation
 	setReady(&sc.Status.Conditions, sc.Generation, metav1.ConditionTrue, "Reconciled", "")
 	if err := r.Status().Update(ctx, &sc); err != nil {

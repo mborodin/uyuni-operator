@@ -217,9 +217,12 @@ Canonical reason taxonomy:
 - `PromotionInFlight` — delete blocked by active promotion
 - `DuplicateDefault` — `UyuniProvider` invariant violation
 - `AdoptionTimedOut` — system never registered within `AdoptionTimeout`
+- `URLUnreachable` (Repository only) — `spec.url` failed an http(s)
+  reachability probe; blocks `Ready`. `file://`/`uln://`/`ftp://` are
+  unverifiable and always pass the probe.
 - `Reconciled` — happy path; the only `True` reason
 
-### 5. Conditions: Ready, UyuniDrift, BuildHost, PreProvisioned, FormulaValuesDrift
+### 5. Conditions: Ready, UyuniDrift, BuildHost, PreProvisioned, FormulaValuesDrift, PackagesSynced
 
 - `Ready` — overall reconciliation state. The reasons above populate this.
 - `UyuniDrift` — `True` when an immutable field in Uyuni differs from spec.
@@ -239,6 +242,16 @@ Canonical reason taxonomy:
   change or the `uyuni.uyuni-project.org/apply-formula-values` annotation. Gated
   by `status.formulaDataGeneration`. `objectFieldRef` is restricted to the
   `uyuni.uyuni-project.org` group in the same namespace — never arbitrary kinds.
+- `PackagesSynced` (SoftwareChannel only) — separate from `Ready` on purpose:
+  a channel can be fully reconciled (exists in Uyuni, repos associated, sync
+  schedule set) while genuinely having zero packages, e.g. because the
+  repository URL 404s. Reasons: `NoRepositories` (nothing to sync — trivially
+  `True`), `SyncInProgress` (Uyuni-side `sync_status: "R"` — not yet
+  conclusive), `Synced` (`status.packageCount > 0`), `NoPackages` (a sync
+  completed but nothing landed — check the referenced `Repository` URLs).
+  `status.packageCount` comes from `channel/software/listAllPackages`;
+  `channel/software/getDetails` has no package-count field despite the wire
+  type once assuming it did.
 
 ### 6. Owner refs do cascading
 
