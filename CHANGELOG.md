@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- **Assigning formulas no longer 400s with "No method exists".**
+  `formula.setFormulasOfServer` takes `systemId`, not `sid` (the docs say `sid`,
+  but the live API rejects it — same doc inconsistency as `getSystemFormulaData`).
+  Note the sibling `getFormulasByServerId` genuinely does use `sid`. Verified live.
 - **Formulas are now applied to pre-created/bootstrap systems.** The reconcile's
   "still bootstrap-entitled" gate returned before `reconcileFormulas`, so a
   pre-created System (e.g. a retail/saltboot branch server) never got its formula

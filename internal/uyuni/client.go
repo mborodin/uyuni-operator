@@ -922,8 +922,11 @@ func (c *Client) SetServerFormulas(ctx context.Context, serverID int, formulas [
 	if len(formulas) == 0 {
 		return nil
 	}
+	// setFormulasOfServer takes systemId, NOT sid — despite the docs saying sid
+	// (the docs are wrong here, as they are for getSystemFormulaData). A sid param
+	// returns "No method exists with the matching parameters". Verified live.
 	_, err := apiPost[any](c, "formula/setFormulasOfServer", map[string]any{
-		"sid":      serverID,
+		"systemId": serverID,
 		"formulas": formulas,
 	})
 	return err
