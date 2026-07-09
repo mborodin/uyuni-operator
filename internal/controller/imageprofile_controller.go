@@ -342,7 +342,7 @@ func (r *ImageProfileReconciler) mirrorLatestBuild(ctx context.Context, uc uyuni
 	ip.Status.LastBuildName = latest.Name
 
 	if status == "Succeeded" && latest.Status.ImageID != 0 {
-		if imgs, err := uc.ListImagesForProfile(ctx, ip.Spec.Label); err == nil {
+		if imgs, err := uc.ListImages(ctx); err == nil {
 			for _, img := range imgs {
 				if img.ID == latest.Status.ImageID {
 					if bi := r.bootImageFromPillar(ctx, uc, img); bi != "" {

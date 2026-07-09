@@ -511,17 +511,23 @@ type wireSystemGroup struct {
 	SystemCount int    `json:"system_count"`
 }
 
+// wireActivationKey mirrors activationkey.getDetails. Despite the XML-RPC docs
+// documenting snake_case members, the HTTP/JSON API serializes this struct in
+// camelCase (confirmed against a live 2025.10 server: {"key":...,
+// "childChannelLabels":[...]}). Using the documented snake_case tags silently
+// parsed empty base/child channels, which made the reconciler re-add channels
+// that were already present (Uyuni then rejected the add as "Invalid channel").
 type wireActivationKey struct {
 	Key              string   `json:"key"`
 	Description      string   `json:"description"`
-	BaseChannelLabel string   `json:"base_channel_label"`
-	ChildChannels    []string `json:"child_channel_labels"`
-	ConfigChannels   []string `json:"config_channel_labels"`
+	BaseChannelLabel string   `json:"baseChannelLabel"`
+	ChildChannels    []string `json:"childChannelLabels"`
+	ConfigChannels   []string `json:"configChannelLabels"`
 	Entitlements     []string `json:"entitlements"`
-	UsageLimit       int      `json:"usage_limit"`
-	UniversalDefault bool     `json:"universal_default"`
+	UsageLimit       int      `json:"usageLimit"`
+	UniversalDefault bool     `json:"universalDefault"`
 	Disabled         bool     `json:"disabled"`
-	ContactMethod    string   `json:"contact_method"`
+	ContactMethod    string   `json:"contactMethod"`
 	ServerGroupIDs   []int    `json:"serverGroupIds"`
 }
 
@@ -629,12 +635,10 @@ type wireImageProfile struct {
 }
 
 type wireImageInfo struct {
-	ID           int    `json:"id"`
-	Name         string `json:"name"`
-	Version      string `json:"version"`
-	Revision     int    `json:"revision"`
-	BuildStatus  string `json:"build_status"`
-	ProfileLabel string `json:"profile_label"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Revision int    `json:"revision"`
 }
 
 // wireActionSystem is one entry from schedule.list{Completed,Failed,InProgress}Systems.
@@ -2029,20 +2033,23 @@ func (c *Client) GetImageDetails(ctx context.Context, imageID int) (*ImageDetail
 	return d, nil
 }
 
-func (c *Client) ListImagesForProfile(ctx context.Context, profileLabel string) ([]ImageInfo, error) {
-	list, err := apiGet[[]wireImageInfo](c, "image/listImages?profile_label="+url.QueryEscape(profileLabel))
+// ListImages returns all images visible to the user. image.listImages takes
+// only a session key — there is no per-profile filter (passing profile_label
+// yields "No method exists"), and the returned structs carry no build status or
+// profile label. Callers match by version and use GetImageDetails for
+// buildStatus/files.
+func (c *Client) ListImages(ctx context.Context) ([]ImageInfo, error) {
+	list, err := apiGet[[]wireImageInfo](c, "image/listImages")
 	if err != nil {
 		return nil, err
 	}
 	out := make([]ImageInfo, len(list))
 	for i, img := range list {
 		out[i] = ImageInfo{
-			ID:           img.ID,
-			Name:         img.Name,
-			Version:      img.Version,
-			Revision:     img.Revision,
-			BuildStatus:  img.BuildStatus,
-			ProfileLabel: img.ProfileLabel,
+			ID:       img.ID,
+			Name:     img.Name,
+			Version:  img.Version,
+			Revision: img.Revision,
 		}
 	}
 	return out, nil

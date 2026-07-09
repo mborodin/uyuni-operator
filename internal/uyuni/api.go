@@ -195,7 +195,7 @@ type API interface {
 	UpdateImageProfile(ctx context.Context, label string, details map[string]any) error
 	DeleteImageProfile(ctx context.Context, label string) error
 	ScheduleImageBuild(ctx context.Context, profileLabel, version string, buildHostID int, earliest time.Time) (int, error)
-	ListImagesForProfile(ctx context.Context, profileLabel string) ([]ImageInfo, error)
+	ListImages(ctx context.Context) ([]ImageInfo, error)
 	// GetImagePillar returns the Salt pillar for a built image, which exposes the
 	// saltboot boot data (boot_images) for PXE/OS images.
 	GetImagePillar(ctx context.Context, imageID int) (map[string]any, error)

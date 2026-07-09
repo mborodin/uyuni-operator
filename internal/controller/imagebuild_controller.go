@@ -129,8 +129,8 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	// Poll existing action.
-	requeue, pollErr := r.pollAction(ctx, uc, &ib, profile.Spec.Label)
+	// Poll existing build.
+	requeue, pollErr := r.pollAction(ctx, uc, &ib)
 	if pollErr != nil {
 		return r.fail(ctx, &ib, "PollFailed", pollErr)
 	}
@@ -169,51 +169,54 @@ func (r *ImageBuildReconciler) resolveBuildHostID(ctx context.Context, namespace
 	return sys.Status.UyuniServerID, nil
 }
 
-// pollAction reports build progress from the image namespace (image.listImages
-// buildStatus) rather than the schedule namespace. The schedule.list*Systems
-// calls require Uyuni roles the build user may lack (403), and the image's own
-// buildStatus is the authoritative "is the image built?" signal anyway. Uyuni
-// buildStatus is one of: queued, picked up, completed, failed. The image record
-// exists (with the scheduled version) as soon as the build is queued, so we
-// match it by version.
-func (r *ImageBuildReconciler) pollAction(ctx context.Context, uc uyuni.API, ib *uyuniv1.ImageBuild, profileLabel string) (time.Duration, error) {
-	imgs, err := uc.ListImagesForProfile(ctx, profileLabel)
+// pollAction reports build progress from the image namespace rather than the
+// schedule namespace. The schedule.list*Systems calls require Uyuni roles the
+// build user may lack (403); the image's own buildStatus is the authoritative
+// "is it built?" signal. image.listImages carries no build status and no
+// per-profile filter, so we list all images, match this build by version (the
+// image record exists with the scheduled version as soon as it is queued), then
+// read buildStatus + files from image.getDetails. Uyuni buildStatus is one of:
+// queued, picked up, completed, failed.
+func (r *ImageBuildReconciler) pollAction(ctx context.Context, uc uyuni.API, ib *uyuniv1.ImageBuild) (time.Duration, error) {
+	imgs, err := uc.ListImages(ctx)
 	if err != nil {
 		return 0, err
 	}
-	var img *uyuni.ImageInfo
-	for i := range imgs {
-		if imgs[i].Version == ib.Status.Version {
-			img = &imgs[i]
+	imageID := 0
+	for _, img := range imgs {
+		if img.Version == ib.Status.Version {
+			imageID = img.ID
 			break
 		}
 	}
-	if img == nil {
+	if imageID == 0 {
 		// Image record not visible yet; keep waiting for the build to register.
 		ib.Status.BuildStatus = "Running"
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Building", "Waiting for build to start")
 		return 30 * time.Second, nil
 	}
-	ib.Status.ImageID = img.ID
+	ib.Status.ImageID = imageID
 
-	switch img.BuildStatus {
+	d, err := uc.GetImageDetails(ctx, imageID)
+	if err != nil {
+		return 0, err
+	}
+	switch d.BuildStatus {
 	case "completed":
 		ib.Status.BuildStatus = "Succeeded"
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionTrue, "Succeeded", "")
 		// Record the artifact files so this immutable build record pins the
 		// version's downloadable files.
-		if d, derr := uc.GetImageDetails(ctx, img.ID); derr == nil && d != nil {
-			ib.Status.Checksum = d.Checksum
-			ib.Status.ImageURL = ""
-			files := make([]uyuniv1.ImageFile, 0, len(d.Files))
-			for _, f := range d.Files {
-				files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
-				if f.Type == "image" {
-					ib.Status.ImageURL = f.URL
-				}
+		ib.Status.Checksum = d.Checksum
+		ib.Status.ImageURL = ""
+		files := make([]uyuniv1.ImageFile, 0, len(d.Files))
+		for _, f := range d.Files {
+			files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
+			if f.Type == "image" {
+				ib.Status.ImageURL = f.URL
 			}
-			ib.Status.Files = files
 		}
+		ib.Status.Files = files
 		return 10 * time.Minute, nil
 	case "failed":
 		ib.Status.BuildStatus = "Failed"

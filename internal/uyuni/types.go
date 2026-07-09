@@ -186,12 +186,10 @@ type ImageProfileDetails struct {
 }
 
 type ImageInfo struct {
-	ID           int
-	Name         string
-	Version      string
-	Revision     int
-	BuildStatus  string
-	ProfileLabel string
+	ID       int
+	Name     string
+	Version  string
+	Revision int
 }
 
 // ImageDetails is a built image's metadata plus its artifact files.

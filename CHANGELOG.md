@@ -13,14 +13,26 @@
   `failed to wait for X caches to sync` for whichever controller happened to
   still be syncing. `LeaseDuration`/`RenewDeadline`/`RetryPeriod` are now
   60s/40s/10s.
+- **ActivationKey no longer fails with "Invalid channel" re-adding existing
+  channels.** `activationkey.getDetails` is serialized in camelCase by the
+  HTTP/JSON API (`childChannelLabels`, `baseChannelLabel`, …), but the wire
+  struct used the documented snake_case tags, so the operator parsed empty
+  base/child channels — then tried to add child channels that were already
+  present, which Uyuni rejects as "Invalid channel" (children need a base
+  channel and were already attached). The wire struct now matches the actual
+  camelCase response, so current channels are read correctly and the base is set
+  via `setDetails` before children are diffed.
 - **ImageBuild polls the image namespace, not the schedule namespace.** Build
-  progress is now read from `image.listImages` `buildStatus`
-  (queued/picked up/completed/failed) instead of `schedule.list*Systems`, which
-  requires Uyuni roles the image-build user often lacks (`403 access denied
-  calling schedule/listFailedSystems`). The image's own buildStatus is the
-  authoritative "is it built?" signal. Cancel-on-delete is now best-effort so a
-  403 there can't wedge CR cleanup. (Note: `Task` and `System` autoinstall status
-  still use the schedule namespace and need those roles.)
+  progress was polled via `schedule.list*Systems`, which requires Uyuni roles the
+  image-build user often lacks (`403 access denied calling
+  schedule/listFailedSystems`). The image's own `buildStatus`
+  (queued/picked up/completed/failed) is the authoritative "is it built?" signal.
+  Since `image.listImages` takes only a session key (no `profile_label` filter —
+  passing it returns 400 "No method exists") and carries no build status, the
+  poll lists all images, matches this build by version, and reads
+  `buildStatus`/files from `image.getDetails`. Cancel-on-delete is now
+  best-effort so a 403 there can't wedge CR cleanup. (Note: `Task` and `System`
+  autoinstall status still use the schedule namespace and need those roles.)
 - **ImageBuild no longer waits forever with `ImageProfile … not yet realized in
   Uyuni`.** The gate checked `ImageProfile.status.uyuniId`, but image profiles
   have no numeric id in the Uyuni API (`image.profile.getDetails` returns none),
