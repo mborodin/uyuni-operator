@@ -65,6 +65,11 @@ type API interface {
 
 	ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error)
 
+	// GetSubscribedBaseChannel / ListSubscribedChildChannels read the system's
+	// current channel subscriptions (system.getDetails does not include them).
+	GetSubscribedBaseChannel(ctx context.Context, serverID int) (string, error)
+	ListSubscribedChildChannels(ctx context.Context, serverID int) ([]string, error)
+
 	// SetBaseChannel and SetChildChannels perform an immediate (unscheduled)
 	// channel subscription. Used for systems with no current base channel —
 	// system.scheduleChangeChannels requires an existing subscription to
@@ -189,7 +194,7 @@ type API interface {
 	// Image stores / profiles
 	CreateImageStore(ctx context.Context, label, storeType, uri, user, pass string) error
 	GetImageStore(ctx context.Context, label string) (*ImageStoreDetails, error)
-	UpdateImageStore(ctx context.Context, label, uri string) error
+	UpdateImageStore(ctx context.Context, label, uri, user, pass string) error
 	DeleteImageStore(ctx context.Context, label string) error
 	CreateImageProfile(ctx context.Context, p ImageProfileDetails, customInfo map[string]string) error
 	GetImageProfile(ctx context.Context, label string) (*ImageProfileDetails, error)

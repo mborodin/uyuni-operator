@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	ctrl "sigs.k8s.io/controller-runtime"
 	uyuniapi "github.com/uyuni-project/uyuni-tools/shared/api"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // Client is a concrete uyuni.API backed by the Uyuni REST JSON API at
@@ -491,10 +491,14 @@ func asNotFound(err error) error {
 
 // --- internal wire types (REST JSON shapes) ---
 
+// wireSystem mirrors system.getDetails, which serializes in snake_case (verified
+// against a live server: minion_id, profile_name, contact_method, …). Note it
+// does NOT return channel labels — those come from separate calls — so the
+// channel fields here stay empty and must not be relied on for drift.
 type wireSystem struct {
 	ID                 int      `json:"id"`
-	Name               string   `json:"name"`
-	MinionID           string   `json:"minionid"`
+	Name               string   `json:"profile_name"`
+	MinionID           string   `json:"minion_id"`
 	Hostname           string   `json:"hostname"`
 	Description        string   `json:"description"`
 	ContactMethod      string   `json:"contact_method"`
@@ -621,11 +625,15 @@ type wireFilter struct {
 	} `json:"criteria"`
 }
 
+// wireImageStore mirrors image.store.getDetails: {label, uri, storetype,
+// hasCredentials, username}. There is no numeric id (realization is tracked via
+// the Ready condition, like image profiles).
 type wireImageStore struct {
-	ID    int    `json:"id"`
-	Label string `json:"label"`
-	URI   string `json:"uri"`
-	Type  string `json:"store_type"`
+	Label         string `json:"label"`
+	URI           string `json:"uri"`
+	Type          string `json:"storetype"`
+	HasCredentials bool  `json:"hasCredentials"`
+	Username      string `json:"username"`
 }
 
 type wireImageProfile struct {
@@ -964,6 +972,34 @@ func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base 
 		"child_channels":      children,
 		"earliest_occurrence": earliest.Format(time.RFC3339),
 	})
+}
+
+// GetSubscribedBaseChannel returns the label of the system's current base
+// channel, or "" if it has none. system.getDetails does not include channel
+// subscriptions, so they must be read via these dedicated calls (both GET).
+func (c *Client) GetSubscribedBaseChannel(ctx context.Context, serverID int) (string, error) {
+	r, err := apiGet[wireChannel](c, fmt.Sprintf("system/getSubscribedBaseChannel?sid=%d", serverID))
+	if err != nil {
+		if IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return r.Label, nil
+}
+
+// ListSubscribedChildChannels returns the labels of the system's subscribed
+// child channels.
+func (c *Client) ListSubscribedChildChannels(ctx context.Context, serverID int) ([]string, error) {
+	list, err := apiGet[[]wireChannel](c, fmt.Sprintf("system/listSubscribedChildChannels?sid=%d", serverID))
+	if err != nil {
+		return nil, err
+	}
+	labels := make([]string, 0, len(list))
+	for _, ch := range list {
+		labels = append(labels, ch.Label)
+	}
+	return labels, nil
 }
 
 func (c *Client) SetBaseChannel(ctx context.Context, serverID int, label string) error {
@@ -1903,40 +1939,51 @@ func wireFiltersToDetails(list []wireFilter) []FilterDetails {
 // Image stores / profiles
 // =============================================================================
 
+// The image store API lives under the image.store namespace (path
+// image/store/*), NOT imagestore/* (which 404s/403s). image.store.create takes
+// (label, uri, storeType, credentials{username,password}?); setDetails takes a
+// details struct {uri, username, password} (storeType is immutable); getDetails
+// returns {label, uri, storetype, hasCredentials, username} and no numeric id.
 func (c *Client) CreateImageStore(ctx context.Context, label, storeType, uri, user, pass string) error {
-	_, err := apiPost[any](c, "imagestore/create", map[string]any{
-		"label":      label,
-		"store_type": storeType,
-		"uri":        uri,
-		"username":   user,
-		"password":   pass,
-	})
+	params := map[string]any{
+		"label":     label,
+		"uri":       uri,
+		"storeType": storeType,
+	}
+	if user != "" || pass != "" {
+		params["credentials"] = map[string]any{"username": user, "password": pass}
+	}
+	_, err := apiPost[any](c, "image/store/create", params)
 	return err
 }
 
 func (c *Client) GetImageStore(ctx context.Context, label string) (*ImageStoreDetails, error) {
-	r, err := apiGet[wireImageStore](c, "imagestore/getDetails?label="+url.QueryEscape(label))
+	r, err := apiGet[wireImageStore](c, "image/store/getDetails?label="+url.QueryEscape(label))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
 	return &ImageStoreDetails{
-		ID:    r.ID,
 		Label: r.Label,
 		URI:   r.URI,
 		Type:  r.Type,
 	}, nil
 }
 
-func (c *Client) UpdateImageStore(ctx context.Context, label, uri string) error {
-	_, err := apiPost[any](c, "imagestore/update", map[string]any{
-		"label": label,
-		"uri":   uri,
+func (c *Client) UpdateImageStore(ctx context.Context, label, uri, user, pass string) error {
+	details := map[string]any{"uri": uri}
+	if user != "" || pass != "" {
+		details["username"] = user
+		details["password"] = pass
+	}
+	_, err := apiPost[any](c, "image/store/setDetails", map[string]any{
+		"label":   label,
+		"details": details,
 	})
 	return err
 }
 
 func (c *Client) DeleteImageStore(ctx context.Context, label string) error {
-	_, err := apiPost[any](c, "imagestore/delete", map[string]any{
+	_, err := apiPost[any](c, "image/store/delete", map[string]any{
 		"label": label,
 	})
 	return asNotFound(err)
@@ -2121,27 +2168,28 @@ func (c *Client) ScheduleApplyConfigChannels(ctx context.Context, serverIDs []in
 
 // GetActionDetails reports an action's overall status. The Uyuni schedule API
 // has no single-action getter (schedule.getScheduledActionDetails does not
-// exist — requesting it falls through to a web path that returns an HTML/403
-// page). Status is instead derived from the per-system status lists, which take
-// an integer actionId that must ride in a POST body, not a GET query string.
-// Our actions target a single system (e.g. the image build host), so the list a
-// system appears in unambiguously determines the action status.
+// exist). Status is derived from the per-system status lists. These are
+// read-only methods and MUST be called via GET with the integer actionId as a
+// query parameter — a POST to them returns HTTP 403 (Uyuni routes @ReadOnly API
+// methods to GET only; POSTing one lands on a web path that serves a 403 page,
+// which is not a permission problem). Our actions target a single system (e.g.
+// the image build host), so the list a system appears in determines the status.
 func (c *Client) GetActionDetails(ctx context.Context, actionID int) (*ScheduledAction, error) {
-	failed, err := apiPost[[]wireActionSystem](c, "schedule/listFailedSystems", map[string]any{"actionId": actionID})
+	failed, err := apiGet[[]wireActionSystem](c, fmt.Sprintf("schedule/listFailedSystems?actionId=%d", actionID))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
 	if len(failed) > 0 {
 		return &ScheduledAction{ID: actionID, Status: "Failed", Name: failed[0].Message}, nil
 	}
-	inProgress, err := apiPost[[]wireActionSystem](c, "schedule/listInProgressSystems", map[string]any{"actionId": actionID})
+	inProgress, err := apiGet[[]wireActionSystem](c, fmt.Sprintf("schedule/listInProgressSystems?actionId=%d", actionID))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
 	if len(inProgress) > 0 {
 		return &ScheduledAction{ID: actionID, Status: "Running"}, nil
 	}
-	completed, err := apiPost[[]wireActionSystem](c, "schedule/listCompletedSystems", map[string]any{"actionId": actionID})
+	completed, err := apiGet[[]wireActionSystem](c, fmt.Sprintf("schedule/listCompletedSystems?actionId=%d", actionID))
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -2152,11 +2200,11 @@ func (c *Client) GetActionDetails(ctx context.Context, actionID int) (*Scheduled
 	return &ScheduledAction{ID: actionID, Status: "Running"}, nil
 }
 
-// GetActionResults aggregates per-system results for an action. The schedule
-// API exposes no combined "results" call and no per-item status field — status
-// is implied by which list a system appears in. Params are int and go in a POST
-// body (a GET query string yields "No method exists"). ExitCode is not surfaced
-// by these lists; the message field carries any failure/execution detail.
+// GetActionResults aggregates per-system results for an action. The schedule API
+// exposes no combined "results" call and no per-item status field — status is
+// implied by which list a system appears in. These are read-only methods called
+// via GET (POST returns 403; see GetActionDetails). ExitCode is not surfaced by
+// these lists; the message field carries any failure/execution detail.
 func (c *Client) GetActionResults(ctx context.Context, actionID int) ([]SystemActionResult, error) {
 	out := make([]SystemActionResult, 0)
 	for _, l := range []struct {
@@ -2166,7 +2214,7 @@ func (c *Client) GetActionResults(ctx context.Context, actionID int) ([]SystemAc
 		{"schedule/listFailedSystems", "Failed"},
 		{"schedule/listInProgressSystems", "Running"},
 	} {
-		list, err := apiPost[[]wireActionSystem](c, l.call, map[string]any{"actionId": actionID})
+		list, err := apiGet[[]wireActionSystem](c, fmt.Sprintf("%s?actionId=%d", l.call, actionID))
 		if err != nil {
 			return nil, err
 		}

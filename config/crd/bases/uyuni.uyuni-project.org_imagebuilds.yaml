@@ -18,9 +18,15 @@ spec:
     - jsonPath: .spec.profileRef.name
       name: Profile
       type: string
+    - jsonPath: .status.name
+      name: Image
+      type: string
     - jsonPath: .status.version
       name: Version
       type: string
+    - jsonPath: .status.revision
+      name: Rev
+      type: integer
     - jsonPath: .status.buildStatus
       name: Status
       type: string
@@ -73,6 +79,16 @@ spec:
                 required:
                 - name
                 type: object
+              timeoutMinutes:
+                description: |-
+                  TimeoutMinutes fails the build if it has not completed within this many
+                  minutes. This is a backstop: Uyuni's image API surfaces only
+                  successfully-built images (a failed or aborted build never appears in
+                  image.listImages), and the schedule API that would report the action's
+                  failure requires roles the build user often lacks — so without a timeout a
+                  failed build would poll forever. Defaults to 120.
+                minimum: 1
+                type: integer
               version:
                 description: |-
                   Version is the image tag to apply to this build.
@@ -85,6 +101,14 @@ spec:
             properties:
               actionId:
                 description: ActionID is the Uyuni action ID returned by ScheduleImageBuild.
+                type: integer
+              baselineImageId:
+                description: |-
+                  BaselineImageID is the highest Uyuni image id that existed when this build
+                  was scheduled. The build's own image record is the first one created above
+                  it, letting us identify this build's image without a per-profile filter
+                  (image.listImages has none) or relying on the version (kiwi sets the built
+                  image's version, not the tag we pass).
                 type: integer
               buildStatus:
                 description: BuildStatus is the current build state.
@@ -183,9 +207,21 @@ spec:
                   ImageURL is the URL of the file whose type is "image" (the installable
                   image tarball), or empty if none.
                 type: string
+              name:
+                description: Name is the built image's name (image.getDetails), as
+                  shown in the Uyuni UI.
+                type: string
               observedGeneration:
                 format: int64
                 type: integer
+              revision:
+                description: Revision is the built image's revision number (image.getDetails).
+                type: integer
+              startedAt:
+                description: StartedAt is when the build was scheduled. Used for the
+                  timeout backstop.
+                format: date-time
+                type: string
               version:
                 description: Version records the version string actually used when
                   the build was scheduled.

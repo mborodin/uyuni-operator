@@ -46,17 +46,47 @@
   channel and were already attached). The wire struct now matches the actual
   camelCase response, so current channels are read correctly and the base is set
   via `setDetails` before children are diffed.
-- **ImageBuild polls the image namespace, not the schedule namespace.** Build
-  progress was polled via `schedule.list*Systems`, which requires Uyuni roles the
-  image-build user often lacks (`403 access denied calling
-  schedule/listFailedSystems`). The image's own `buildStatus`
-  (queued/picked up/completed/failed) is the authoritative "is it built?" signal.
-  Since `image.listImages` takes only a session key (no `profile_label` filter —
-  passing it returns 400 "No method exists") and carries no build status, the
-  poll lists all images, matches this build by version, and reads
-  `buildStatus`/files from `image.getDetails`. Cancel-on-delete is now
-  best-effort so a 403 there can't wedge CR cleanup. (Note: `Task` and `System`
-  autoinstall status still use the schedule namespace and need those roles.)
+- **System channel drift is now read correctly.** `system.getDetails` returns no
+  channel subscriptions, so the reconciler's `current.baseChannelLabel` /
+  `childChannelLabels` were always empty — it re-issued `setBaseChannel` /
+  `setChildChannels` on every reconcile and the `scheduleChangeChannels` path was
+  dead. The current channels are now read via `system.getSubscribedBaseChannel` +
+  `system.listSubscribedChildChannels`, so channels are only changed on real
+  drift. (Audited all `getDetails` wire structs against live responses while here;
+  `Organization`, `SoftwareChannel`, `ConfigurationChannel`, and `SystemGroup`
+  parse correctly.)
+- **System identity no longer shows false `minionId` drift.** `system.getDetails`
+  returns `minion_id` (snake_case), but the wire struct read `minionid`, so
+  `current.MinionID` was always empty and every registered System with a
+  `spec.minionID` was flagged as drifted (`minionId in Uyuni () differs from
+  spec …`). Fixed the tag (and `name` → `profile_name`).
+- **ImageProfile no longer calls `setDetails` on every reconcile.**
+  `image.profile.getDetails` doesn't return the source `path`, so comparing it
+  always reported drift. Path changes are now re-applied on a spec-generation
+  change instead, and the readable fields (storeLabel/activationKey) still drive
+  drift detection.
+- **Action-status reads use GET, not POST (fixes the schedule `403`).** The Uyuni
+  HTTP API routes `@ReadOnly` methods to GET only; POSTing `schedule.list*Systems`
+  returns HTTP 403 (a web 403 page, *not* a permission problem — reproduced with a
+  full admin user). `GetActionDetails`/`GetActionResults` now call
+  `schedule.list{Failed,InProgress,Completed}Systems` via GET with the integer
+  `actionId` as a query parameter. This also unblocks `Task` run status and
+  `System` autoinstall status, which use the same calls.
+- **ImageBuild detects failures via the build action, and records real image
+  info.** Detection now polls the build *action* (`GetActionDetails`, GET), which
+  reports `Failed`/`Completed` even when the build fails before any image record
+  exists (e.g. the build host minion is down) — the case that previously left the
+  build stuck. It no longer matches images by the tag we pass: for kiwi, the built
+  image's `version` is the kiwi version (e.g. `0.1.3`), not that tag, and
+  in-progress/failed builds appear only as `"Building profile: …"` with no
+  version. Instead the build's own image record is identified by capturing the
+  highest image id at schedule time (`status.baselineImageId`) and taking the
+  first one created above it. On success it records the image `name`, `version`
+  (the real kiwi version), `revision`, and uploaded `files`, surfaced as
+  `Image`/`Version`/`Rev` print columns. The status/condition mismatch is gone
+  (`Scheduled` before an image record appears, `Running` after), and
+  `spec.timeoutMinutes` (default 120) remains only as a backstop for a build the
+  action never reports as finished. Cancel-on-delete is best-effort.
 - **ImageBuild no longer waits forever with `ImageProfile … not yet realized in
   Uyuni`.** The gate checked `ImageProfile.status.uyuniId`, but image profiles
   have no numeric id in the Uyuni API (`image.profile.getDetails` returns none),

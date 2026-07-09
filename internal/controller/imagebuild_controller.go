@@ -92,11 +92,19 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	// AnnBuildNow triggers a re-schedule by clearing the current actionID.
+	// AnnBuildNow triggers a re-schedule by clearing the current actionID and
+	// the prior build's recorded result (so the timeout clock restarts too).
 	if ib.Annotations[uyuniv1.AnnBuildNow] == "true" {
 		ib.Status.ActionID = 0
 		ib.Status.BuildStatus = ""
 		ib.Status.ImageID = 0
+		ib.Status.BaselineImageID = 0
+		ib.Status.Name = ""
+		ib.Status.Revision = 0
+		ib.Status.Checksum = ""
+		ib.Status.ImageURL = ""
+		ib.Status.Files = nil
+		ib.Status.StartedAt = nil
 		patch := client.MergeFrom(ib.DeepCopy())
 		delete(ib.Annotations, uyuniv1.AnnBuildNow)
 		if err := r.Patch(ctx, &ib, patch); err != nil {
@@ -114,12 +122,17 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if ib.Spec.Earliest != nil {
 			earliest = ib.Spec.Earliest.Time
 		}
+		// Snapshot the highest existing image id so we can later identify the
+		// image this build creates (the first one above the baseline).
+		ib.Status.BaselineImageID = maxImageID(ctx, uc)
 		actionID, err := uc.ScheduleImageBuild(ctx, profile.Spec.Label, version, buildHostID, earliest)
 		if err != nil {
 			return r.fail(ctx, &ib, "ScheduleFailed", fmt.Errorf("scheduling image build: %w", err))
 		}
+		now := metav1.Now()
 		ib.Status.ActionID = actionID
 		ib.Status.Version = version
+		ib.Status.StartedAt = &now
 		ib.Status.BuildStatus = "Scheduled"
 		ib.Status.ObservedGeneration = ib.Generation
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Building", "Build scheduled")
@@ -169,64 +182,127 @@ func (r *ImageBuildReconciler) resolveBuildHostID(ctx context.Context, namespace
 	return sys.Status.UyuniServerID, nil
 }
 
-// pollAction reports build progress from the image namespace rather than the
-// schedule namespace. The schedule.list*Systems calls require Uyuni roles the
-// build user may lack (403); the image's own buildStatus is the authoritative
-// "is it built?" signal. image.listImages carries no build status and no
-// per-profile filter, so we list all images, match this build by version (the
-// image record exists with the scheduled version as soon as it is queued), then
-// read buildStatus + files from image.getDetails. Uyuni buildStatus is one of:
-// queued, picked up, completed, failed.
-func (r *ImageBuildReconciler) pollAction(ctx context.Context, uc uyuni.API, ib *uyuniv1.ImageBuild) (time.Duration, error) {
-	imgs, err := uc.ListImages(ctx)
-	if err != nil {
-		return 0, err
-	}
-	imageID := 0
-	for _, img := range imgs {
-		if img.Version == ib.Status.Version {
-			imageID = img.ID
-			break
-		}
-	}
-	if imageID == 0 {
-		// Image record not visible yet; keep waiting for the build to register.
-		ib.Status.BuildStatus = "Running"
-		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Building", "Waiting for build to start")
-		return 30 * time.Second, nil
-	}
-	ib.Status.ImageID = imageID
+// defaultBuildTimeoutMinutes is the fallback build timeout when spec.timeoutMinutes
+// is unset. See pollAction for why a timeout backstop is kept.
+const defaultBuildTimeoutMinutes = 120
 
-	d, err := uc.GetImageDetails(ctx, imageID)
+// pollAction reports build progress from the build *action* (schedule namespace,
+// GET). This is the authoritative signal: it reports Completed/Failed even for a
+// build that fails before an image record is ever created (e.g. the build host
+// minion is down), which is invisible to the image API. image.listImages surfaces
+// only successfully-built images and its version is the kiwi version (not the tag
+// we pass), so it can't be used to detect status or match a build.
+//
+// For a completed build we enrich status with the built image's name, version
+// (from kiwi), revision, and uploaded files, found via the image id captured just
+// above the baseline recorded at schedule time.
+func (r *ImageBuildReconciler) pollAction(ctx context.Context, uc uyuni.API, ib *uyuniv1.ImageBuild) (time.Duration, error) {
+	action, err := uc.GetActionDetails(ctx, ib.Status.ActionID)
 	if err != nil {
 		return 0, err
 	}
-	switch d.BuildStatus {
-	case "completed":
-		ib.Status.BuildStatus = "Succeeded"
-		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionTrue, "Succeeded", "")
-		// Record the artifact files so this immutable build record pins the
-		// version's downloadable files.
-		ib.Status.Checksum = d.Checksum
-		ib.Status.ImageURL = ""
-		files := make([]uyuniv1.ImageFile, 0, len(d.Files))
-		for _, f := range d.Files {
-			files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
-			if f.Type == "image" {
-				ib.Status.ImageURL = f.URL
+
+	// Best-effort: locate this build's image record (the first image created
+	// above the schedule-time baseline) so we can report its details. A build
+	// that fails early never creates one, so ImageID stays 0 and we rely solely
+	// on the action status.
+	if ib.Status.ImageID == 0 {
+		if imgs, listErr := uc.ListImages(ctx); listErr == nil {
+			best := 0
+			for _, img := range imgs {
+				if img.ID > ib.Status.BaselineImageID && (best == 0 || img.ID < best) {
+					best = img.ID
+				}
 			}
+			ib.Status.ImageID = best
 		}
-		ib.Status.Files = files
+	}
+
+	switch action.Status {
+	case "Completed":
+		ib.Status.BuildStatus = "Succeeded"
+		r.recordImageDetails(ctx, uc, ib)
+		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionTrue, "Succeeded", "")
 		return 10 * time.Minute, nil
-	case "failed":
+	case "Failed":
 		ib.Status.BuildStatus = "Failed"
-		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Failed", "image build failed")
+		msg := action.Name
+		if msg == "" {
+			msg = "image build failed"
+		}
+		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Failed", msg)
 		return 10 * time.Minute, nil
-	default: // queued, picked up
+	}
+
+	// Non-terminal. Timeout backstop for a build the action never reports as
+	// finished (e.g. stuck "picked up"). Falls back to the CR creation time for
+	// builds scheduled before startedAt was recorded.
+	timeout := time.Duration(defaultBuildTimeoutMinutes) * time.Minute
+	if ib.Spec.TimeoutMinutes > 0 {
+		timeout = time.Duration(ib.Spec.TimeoutMinutes) * time.Minute
+	}
+	start := ib.CreationTimestamp.Time
+	if ib.Status.StartedAt != nil {
+		start = ib.Status.StartedAt.Time
+	}
+	if !start.IsZero() && time.Since(start) > timeout {
+		ib.Status.BuildStatus = "Failed"
+		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "BuildTimeout",
+			fmt.Sprintf("build action (id %d) did not finish within %s — check the build host", ib.Status.ActionID, timeout))
+		return 10 * time.Minute, nil
+	}
+
+	if ib.Status.ImageID == 0 {
+		ib.Status.BuildStatus = "Scheduled"
+		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Building", "Waiting for build to start")
+	} else {
 		ib.Status.BuildStatus = "Running"
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Building", "Build is running")
-		return 30 * time.Second, nil
 	}
+	return 30 * time.Second, nil
+}
+
+// recordImageDetails fills in the built image's name, version, revision, checksum
+// and uploaded files from image.getDetails. Best-effort: a build whose image
+// record we could not identify (ImageID == 0) still reports Succeeded.
+func (r *ImageBuildReconciler) recordImageDetails(ctx context.Context, uc uyuni.API, ib *uyuniv1.ImageBuild) {
+	if ib.Status.ImageID == 0 {
+		return
+	}
+	d, err := uc.GetImageDetails(ctx, ib.Status.ImageID)
+	if err != nil || d == nil {
+		return
+	}
+	ib.Status.Name = d.Name
+	if d.Version != "" {
+		ib.Status.Version = d.Version
+	}
+	ib.Status.Revision = d.Revision
+	ib.Status.Checksum = d.Checksum
+	ib.Status.ImageURL = ""
+	files := make([]uyuniv1.ImageFile, 0, len(d.Files))
+	for _, f := range d.Files {
+		files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
+		if f.Type == "image" {
+			ib.Status.ImageURL = f.URL
+		}
+	}
+	ib.Status.Files = files
+}
+
+// maxImageID returns the highest image id currently known to Uyuni, or 0.
+func maxImageID(ctx context.Context, uc uyuni.API) int {
+	imgs, err := uc.ListImages(ctx)
+	if err != nil {
+		return 0
+	}
+	max := 0
+	for _, img := range imgs {
+		if img.ID > max {
+			max = img.ID
+		}
+	}
+	return max
 }
 
 func (r *ImageBuildReconciler) fail(ctx context.Context, ib *uyuniv1.ImageBuild, reason string, err error) (ctrl.Result, error) {

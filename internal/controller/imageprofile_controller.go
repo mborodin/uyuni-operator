@@ -104,7 +104,10 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	if profileNeedsUpdate(current, storeLabel, activationKey, sourceURL) {
+	// Update on readable drift (storeLabel/activationKey) or whenever the spec
+	// changed (path isn't returned by getDetails, so a generation bump is how we
+	// re-apply a changed source path).
+	if profileNeedsUpdate(current, storeLabel, activationKey) || ip.Status.ObservedGeneration < ip.Generation {
 		updatePayload := map[string]any{
 			"storeLabel":    storeLabel,
 			"activationKey": activationKey,
@@ -316,6 +319,7 @@ func (r *ImageProfileReconciler) mirrorLatestBuild(ctx context.Context, uc uyuni
 	rec := &uyuniv1.ImageBuildRecord{
 		BuildID:   latest.Status.ActionID,
 		Version:   latest.Status.Version,
+		Revision:  latest.Status.Revision,
 		Status:    status,
 		Trigger:   latest.Annotations[uyuniv1.AnnBuildTrigger],
 		Checksum:  latest.Status.Checksum,
@@ -494,8 +498,13 @@ func injectBasicAuth(rawURL, username, password string) (string, error) {
 	return u.String(), nil
 }
 
-func profileNeedsUpdate(current *uyuni.ImageProfileDetails, storeLabel, activationKey, sourcePath string) bool {
+// profileNeedsUpdate reports whether the mutable, *readable* fields of a Uyuni
+// image profile differ from spec. image.profile.getDetails does not return the
+// source path, so path drift can't be detected here — path changes are re-applied
+// via the generation check at the call site instead. Comparing the unreadable
+// path (always empty in `current`) is what made the operator call setDetails on
+// every reconcile.
+func profileNeedsUpdate(current *uyuni.ImageProfileDetails, storeLabel, activationKey string) bool {
 	return current.StoreLabel != storeLabel ||
-		current.ActivationKey != activationKey ||
-		current.SourcePath != sourcePath
+		current.ActivationKey != activationKey
 }

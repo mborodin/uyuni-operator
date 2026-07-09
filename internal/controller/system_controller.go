@@ -363,6 +363,19 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 	sys.Status.BaseChannelLabel = res.BaseChannelLabel
 	sys.Status.ChildChannelLabels = res.ChildChannelLabels
 
+	// system.getDetails does not return channel subscriptions, so read the
+	// system's actual current channels here. Without this current.BaseChannelLabel
+	// is always empty, making the reconciler re-issue Set{Base,Child}Channels on
+	// every pass and never detect real drift. On error (e.g. a bootstrap system
+	// with no base yet) leave them empty and fall through to the direct-subscribe
+	// path below.
+	if base, err := uc.GetSubscribedBaseChannel(ctx, sys.Status.UyuniServerID); err == nil {
+		current.BaseChannelLabel = base
+	}
+	if children, err := uc.ListSubscribedChildChannels(ctx, sys.Status.UyuniServerID); err == nil {
+		current.ChildChannelLabels = children
+	}
+
 	if current.BaseChannelLabel == "" {
 		// No current subscription (e.g. freshly registered "Bootstrap" system) —
 		// scheduleChangeChannels has nothing to schedule a change against and

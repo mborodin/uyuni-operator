@@ -222,17 +222,44 @@ type ImageBuildSpec struct {
 
 	// Earliest is the optional earliest time at which Uyuni will start the build action.
 	Earliest *metav1.Time `json:"earliest,omitempty"`
+
+	// TimeoutMinutes fails the build if it has not completed within this many
+	// minutes. This is a backstop: Uyuni's image API surfaces only
+	// successfully-built images (a failed or aborted build never appears in
+	// image.listImages), and the schedule API that would report the action's
+	// failure requires roles the build user often lacks — so without a timeout a
+	// failed build would poll forever. Defaults to 120.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	TimeoutMinutes int `json:"timeoutMinutes,omitempty"`
 }
 
 type ImageBuildStatus struct {
 	// ActionID is the Uyuni action ID returned by ScheduleImageBuild.
 	ActionID int `json:"actionId,omitempty"`
 
-	// ImageID is the Uyuni image record ID after the build completes successfully.
+	// ImageID is the Uyuni image record ID for this build (captured once the
+	// build creates its image record; used to read the built image's details).
 	ImageID int `json:"imageId,omitempty"`
+
+	// BaselineImageID is the highest Uyuni image id that existed when this build
+	// was scheduled. The build's own image record is the first one created above
+	// it, letting us identify this build's image without a per-profile filter
+	// (image.listImages has none) or relying on the version (kiwi sets the built
+	// image's version, not the tag we pass).
+	BaselineImageID int `json:"baselineImageId,omitempty"`
+
+	// Name is the built image's name (image.getDetails), as shown in the Uyuni UI.
+	Name string `json:"name,omitempty"`
 
 	// Version records the version string actually used when the build was scheduled.
 	Version string `json:"version,omitempty"`
+
+	// Revision is the built image's revision number (image.getDetails).
+	Revision int `json:"revision,omitempty"`
+
+	// StartedAt is when the build was scheduled. Used for the timeout backstop.
+	StartedAt *metav1.Time `json:"startedAt,omitempty"`
 
 	// BuildStatus is the current build state.
 	// +kubebuilder:validation:Enum=Scheduled;Running;Succeeded;Failed
@@ -256,7 +283,9 @@ type ImageBuildStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Profile",type=string,JSONPath=`.spec.profileRef.name`
+// +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.status.name`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
+// +kubebuilder:printcolumn:name="Rev",type=integer,JSONPath=`.status.revision`
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.buildStatus`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
 type ImageBuild struct {
