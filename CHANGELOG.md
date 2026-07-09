@@ -13,6 +13,14 @@
   `failed to wait for X caches to sync` for whichever controller happened to
   still be syncing. `LeaseDuration`/`RenewDeadline`/`RetryPeriod` are now
   60s/40s/10s.
+- **ImageBuild polls the image namespace, not the schedule namespace.** Build
+  progress is now read from `image.listImages` `buildStatus`
+  (queued/picked up/completed/failed) instead of `schedule.list*Systems`, which
+  requires Uyuni roles the image-build user often lacks (`403 access denied
+  calling schedule/listFailedSystems`). The image's own buildStatus is the
+  authoritative "is it built?" signal. Cancel-on-delete is now best-effort so a
+  403 there can't wedge CR cleanup. (Note: `Task` and `System` autoinstall status
+  still use the schedule namespace and need those roles.)
 - **ImageBuild no longer waits forever with `ImageProfile … not yet realized in
   Uyuni`.** The gate checked `ImageProfile.status.uyuniId`, but image profiles
   have no numeric id in the Uyuni API (`image.profile.getDetails` returns none),

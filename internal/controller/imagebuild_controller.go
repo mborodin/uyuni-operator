@@ -147,8 +147,11 @@ func (r *ImageBuildReconciler) handleDeletion(ctx context.Context, uc uyuni.API,
 		return ctrl.Result{}, nil
 	}
 	if ib.Status.ActionID != 0 && ib.Status.BuildStatus == "Running" {
+		// Best-effort cancel via the schedule namespace: the build user may lack
+		// the role to cancel actions (403). Don't block CR cleanup on it — the
+		// build finishing on its own is harmless.
 		if err := uc.CancelAction(ctx, ib.Status.ActionID); err != nil && !uyuni.IsNotFound(err) {
-			return ctrl.Result{}, err
+			ctrl.LoggerFrom(ctx).Error(err, "cancelling image build action (continuing with deletion)")
 		}
 	}
 	removeFinalizer(ib, ibFinalizer)
@@ -166,44 +169,57 @@ func (r *ImageBuildReconciler) resolveBuildHostID(ctx context.Context, namespace
 	return sys.Status.UyuniServerID, nil
 }
 
+// pollAction reports build progress from the image namespace (image.listImages
+// buildStatus) rather than the schedule namespace. The schedule.list*Systems
+// calls require Uyuni roles the build user may lack (403), and the image's own
+// buildStatus is the authoritative "is the image built?" signal anyway. Uyuni
+// buildStatus is one of: queued, picked up, completed, failed. The image record
+// exists (with the scheduled version) as soon as the build is queued, so we
+// match it by version.
 func (r *ImageBuildReconciler) pollAction(ctx context.Context, uc uyuni.API, ib *uyuniv1.ImageBuild, profileLabel string) (time.Duration, error) {
-	action, err := uc.GetActionDetails(ctx, ib.Status.ActionID)
+	imgs, err := uc.ListImagesForProfile(ctx, profileLabel)
 	if err != nil {
 		return 0, err
 	}
-	switch action.Status {
-	case "Completed":
+	var img *uyuni.ImageInfo
+	for i := range imgs {
+		if imgs[i].Version == ib.Status.Version {
+			img = &imgs[i]
+			break
+		}
+	}
+	if img == nil {
+		// Image record not visible yet; keep waiting for the build to register.
+		ib.Status.BuildStatus = "Running"
+		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Building", "Waiting for build to start")
+		return 30 * time.Second, nil
+	}
+	ib.Status.ImageID = img.ID
+
+	switch img.BuildStatus {
+	case "completed":
 		ib.Status.BuildStatus = "Succeeded"
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionTrue, "Succeeded", "")
-		// Try to find the resulting image ID and record its artifact files, so
-		// this immutable build record pins the version's downloadable files.
-		imgs, listErr := uc.ListImagesForProfile(ctx, profileLabel)
-		if listErr == nil {
-			for _, img := range imgs {
-				if img.Version == ib.Status.Version {
-					ib.Status.ImageID = img.ID
-					if d, derr := uc.GetImageDetails(ctx, img.ID); derr == nil && d != nil {
-						ib.Status.Checksum = d.Checksum
-						ib.Status.ImageURL = ""
-						files := make([]uyuniv1.ImageFile, 0, len(d.Files))
-						for _, f := range d.Files {
-							files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
-							if f.Type == "image" {
-								ib.Status.ImageURL = f.URL
-							}
-						}
-						ib.Status.Files = files
-					}
-					break
+		// Record the artifact files so this immutable build record pins the
+		// version's downloadable files.
+		if d, derr := uc.GetImageDetails(ctx, img.ID); derr == nil && d != nil {
+			ib.Status.Checksum = d.Checksum
+			ib.Status.ImageURL = ""
+			files := make([]uyuniv1.ImageFile, 0, len(d.Files))
+			for _, f := range d.Files {
+				files = append(files, uyuniv1.ImageFile{Name: f.Name, Type: f.Type, URL: f.URL})
+				if f.Type == "image" {
+					ib.Status.ImageURL = f.URL
 				}
 			}
+			ib.Status.Files = files
 		}
 		return 10 * time.Minute, nil
-	case "Failed":
+	case "failed":
 		ib.Status.BuildStatus = "Failed"
-		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Failed", action.Name)
+		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Failed", "image build failed")
 		return 10 * time.Minute, nil
-	default:
+	default: // queued, picked up
 		ib.Status.BuildStatus = "Running"
 		setReady(&ib.Status.Conditions, ib.Generation, metav1.ConditionFalse, "Building", "Build is running")
 		return 30 * time.Second, nil
