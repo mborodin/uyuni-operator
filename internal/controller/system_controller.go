@@ -412,8 +412,21 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 					sys.Status.GroupNames = desiredGroups
 				}
 			}
+			// Salt formulas are applied before registration too: setSystemFormulaData
+			// writes pillar data (not a scheduled action that needs a live minion),
+			// and a retail/saltboot system needs its formula data (boot image URL,
+			// store config, ...) in place *before* it PXE-boots. Channels and add-ons
+			// still wait for registration below.
+			formulaWait, err := r.reconcileFormulas(ctx, uc, sys)
+			if err != nil {
+				return r.fail(ctx, sys, "UpdateFailed", err)
+			}
+			msg := "system has not completed registration yet (still on bootstrap base entitlement); software channels are applied after registration"
+			if formulaWait != "" {
+				msg = formulaWait
+			}
 			setReady(&sys.Status.Conditions, sys.Generation, metav1.ConditionFalse,
-				"WaitingForBaseEntitlement", "system has not completed registration yet (still on bootstrap base entitlement); cannot subscribe to software channels")
+				"WaitingForBaseEntitlement", msg)
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, r.Status().Update(ctx, sys)
 		}
 		if res.BaseChannelLabel != "" && res.BaseChannelLabel != current.BaseChannelLabel {

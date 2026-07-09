@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **Formulas are now applied to pre-created/bootstrap systems.** The reconcile's
+  "still bootstrap-entitled" gate returned before `reconcileFormulas`, so a
+  pre-created System (e.g. a retail/saltboot branch server) never got its formula
+  data until it fully registered — too late, since saltboot needs the data (boot
+  image URL, store config) to PXE-boot. Formula data is set via
+  `setSystemFormulaData` (pillar data, not a scheduled action needing a live
+  minion), so it is now pushed in the pre-registration path alongside group
+  membership; software channels and add-ons still wait for registration.
 - **Formula data reads no longer 403.** `formula.getSystemFormulaData` was called
   via POST with a `sid` param; it is a read method (POST → HTTP 403) and its param
   is `systemId`, not `sid` (`getFormulasByServerId` uses `sid` — hence the earlier
