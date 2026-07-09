@@ -11,6 +11,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -63,6 +64,14 @@ func main() {
 	renewDeadline := 90 * time.Second
 	retryPeriod := 15 * time.Second
 
+	// controller-runtime's per-controller CacheSyncTimeout (default 2m) is
+	// independent of leader election entirely — each controller's
+	// WaitForCacheSync races this deadline on startup. Against this API
+	// server's multi-second request latency, 22 informers syncing
+	// concurrently routinely blow through 2m, aborting the whole manager
+	// startup even with leader election disabled.
+	cacheSyncTimeout := 10 * time.Minute
+
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
@@ -72,6 +81,9 @@ func main() {
 		LeaseDuration:          &leaseDuration,
 		RenewDeadline:          &renewDeadline,
 		RetryPeriod:            &retryPeriod,
+		Controller: ctrlconfig.Controller{
+			CacheSyncTimeout: cacheSyncTimeout,
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")

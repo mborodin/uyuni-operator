@@ -19,15 +19,24 @@
   channel's repo sync. `Repository` now does an http(s) reachability probe
   (`URLUnreachable` reason) before setting `Ready`; `file://`/`uln://`/`ftp://`
   aren't checked (unverifiable from the operator's pod) and always pass.
-- **Manager crash-looped on startup under a slow/throttled API server.**
-  Default leader-election timings (`LeaseDuration: 15s`, `RenewDeadline: 10s`)
-  left no margin when ~20 controllers were syncing caches and renewing the
-  lease concurrently against an API server with multi-second request
-  latency: a missed renewal made controller-runtime conclude it lost
-  leadership and cancel the manager context mid-startup, surfacing as
-  `failed to wait for X caches to sync` for whichever controller happened to
-  still be syncing. `LeaseDuration`/`RenewDeadline`/`RetryPeriod` are now
-  60s/40s/10s.
+- **Manager crash-looped on startup under a slow/throttled API server.** Two
+  independent timeouts were both too tight for a cluster with multi-second
+  API request latency and 22 informers starting concurrently:
+  - Default leader-election timings (`LeaseDuration: 15s`, `RenewDeadline:
+    10s`) left no margin for a missed lease renewal, which made
+    controller-runtime conclude it lost leadership and cancel the manager
+    context mid-startup. `LeaseDuration`/`RenewDeadline`/`RetryPeriod` are now
+    120s/90s/15s. (Deployments running a single replica should instead set
+    `leaderElect: false` in the Helm chart values — leader election exists to
+    coordinate multiple replicas and is pure overhead, and pure risk, with
+    only one.)
+  - controller-runtime's per-controller `CacheSyncTimeout` (default 2m) is
+    **independent of leader election** and was the deeper cause: each
+    controller's own `WaitForCacheSync` raced this 2m deadline regardless of
+    leadership state, so the crash persisted even with leader election
+    disabled entirely. Both surfaced identically: `failed to wait for X
+    caches to sync` for whichever controller was still syncing when the
+    deadline hit. `CacheSyncTimeout` is now 10m.
 - **ActivationKey no longer fails with "Invalid channel" re-adding existing
   channels.** `activationkey.getDetails` is serialized in camelCase by the
   HTTP/JSON API (`childChannelLabels`, `baseChannelLabel`, …), but the wire
