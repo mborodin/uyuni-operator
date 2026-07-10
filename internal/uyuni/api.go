@@ -166,6 +166,8 @@ type API interface {
 	RemoveFilter(ctx context.Context, id int) error
 	AttachFilter(ctx context.Context, projectLabel string, id int) error
 	DetachFilter(ctx context.Context, projectLabel string, id int) error
+	ListProjectFilters(ctx context.Context, projectLabel string) ([]ProjectFilterInfo, error)
+	ListFilterCriteria(ctx context.Context) ([]FilterCriteriaOption, error)
 
 	BuildProject(ctx context.Context, projectLabel, message string) error
 	PromoteProject(ctx context.Context, projectLabel, envLabel string) error

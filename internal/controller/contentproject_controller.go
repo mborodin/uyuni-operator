@@ -342,7 +342,6 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 	}
 	log.Info("source sets built", "projectLabel", cp.Spec.Label, "currentLabels", currentLabels)
 
-
 	// Attach missing sources (with position based on desired order)
 	for position, label := range desired {
 		if !currentSet[label] {

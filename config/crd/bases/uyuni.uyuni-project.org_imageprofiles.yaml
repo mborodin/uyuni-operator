@@ -261,6 +261,10 @@ spec:
                   type: object
                 type: array
               lastBuild:
+                description: |-
+                  LastBuild summarizes the newest ImageBuild that references this profile.
+                  The build itself is a first-class ImageBuild CR (see LastBuildName);
+                  onChange/build-now triggers create one, owned by this profile.
                 properties:
                   buildId:
                     type: integer

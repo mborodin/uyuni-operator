@@ -53,7 +53,7 @@ type ProjectBuildPolicy struct {
 }
 
 type ChannelConfig struct {
-	BaseChannelRefs []LocalObjectRef `json:"baseChannelRefs,omitempty"`
+	BaseChannelRefs  []LocalObjectRef `json:"baseChannelRefs,omitempty"`
 	ChildChannelRefs []LocalObjectRef `json:"childChannelRefs,omitempty"`
 }
 

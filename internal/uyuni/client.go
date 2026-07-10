@@ -1891,6 +1891,22 @@ func (c *Client) DetachFilter(ctx context.Context, projectLabel string, id int) 
 	return err
 }
 
+func (c *Client) ListProjectFilters(ctx context.Context, projectLabel string) ([]ProjectFilterInfo, error) {
+	list, err := apiGet[[]ProjectFilterInfo](c, "contentmanagement/listProjectFilters?projectLabel="+url.QueryEscape(projectLabel))
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (c *Client) ListFilterCriteria(ctx context.Context) ([]FilterCriteriaOption, error) {
+	result, err := apiGet[[]FilterCriteriaOption](c, "contentmanagement/listFilterCriteria")
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (c *Client) BuildProject(ctx context.Context, projectLabel, message string) error {
 	_, err := apiPost[any](c, "contentmanagement/buildProject", map[string]any{
 		"projectLabel": projectLabel,

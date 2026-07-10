@@ -165,6 +165,19 @@ type FilterDetails struct {
 	Criteria   FilterCriteriaWire
 }
 
+// ProjectFilterInfo represents a filter attached to a project
+type ProjectFilterInfo struct {
+	State  string        `json:"state"`
+	Filter FilterDetails `json:"filter"`
+}
+
+// FilterCriteriaOption represents a valid filter criteria combination
+type FilterCriteriaOption struct {
+	Type    string `json:"type"`
+	Matcher string `json:"matcher"`
+	Field   string `json:"field"`
+}
+
 // --- Image stores / profiles ---
 
 type ImageStoreDetails struct {

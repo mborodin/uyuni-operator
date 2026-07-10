@@ -27,6 +27,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='UyuniDrift')].status
       name: Drift
       type: string
+    - jsonPath: .status.conditions[?(@.type=='PackagesSynced')].status
+      name: PackagesSynced
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:

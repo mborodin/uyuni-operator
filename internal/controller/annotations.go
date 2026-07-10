@@ -7,12 +7,12 @@ import "sigs.k8s.io/controller-runtime/pkg/client"
 // via migrateAnnotations so live CRs are upgraded transparently.
 // Remove after the post-v0.x migration window.
 var legacyAnnotationMap = map[string]string{
-	"uyuni.io/force-delete":   "uyuni.uyuni-project.org/force-delete",
-	"uyuni.io/rerun":          "uyuni.uyuni-project.org/rerun",
-	"uyuni.io/build-now":      "uyuni.uyuni-project.org/build-now",
-	"uyuni.io/sync-now":       "uyuni.uyuni-project.org/sync-now",
-	"uyuni.io/build-version":  "uyuni.uyuni-project.org/build-version",
-	"uyuni.io/reinstall-now":  "uyuni.uyuni-project.org/reinstall-now",
+	"uyuni.io/force-delete":  "uyuni.uyuni-project.org/force-delete",
+	"uyuni.io/rerun":         "uyuni.uyuni-project.org/rerun",
+	"uyuni.io/build-now":     "uyuni.uyuni-project.org/build-now",
+	"uyuni.io/sync-now":      "uyuni.uyuni-project.org/sync-now",
+	"uyuni.io/build-version": "uyuni.uyuni-project.org/build-version",
+	"uyuni.io/reinstall-now": "uyuni.uyuni-project.org/reinstall-now",
 }
 
 // migrateAnnotations promotes any legacy uyuni.io/* annotations to their

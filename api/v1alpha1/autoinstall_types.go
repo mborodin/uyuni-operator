@@ -176,22 +176,22 @@ type AutoinstallProfileSpec struct {
 }
 
 type AutoinstallProfileStatus struct {
-	Conditions         []metav1.Condition   `json:"conditions,omitempty"`
-	ObservedGeneration int64                `json:"observedGeneration,omitempty"`
+	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	// ScriptIDs tracks Uyuni-assigned script IDs keyed by script Name.
-	ScriptIDs          []ProfileScriptStatus `json:"scriptIds,omitempty"`
+	ScriptIDs []ProfileScriptStatus `json:"scriptIds,omitempty"`
 	// ChildChannelLabels is the realized list of child channel labels.
-	ChildChannelLabels []string             `json:"childChannelLabels,omitempty"`
+	ChildChannelLabels []string `json:"childChannelLabels,omitempty"`
 	// DistributionLabel is the resolved Cobbler tree label. In Managed mode it is
 	// resolved from spec.distributionRef; in External mode it is the observed
 	// profile's tree_label.
-	DistributionLabel  string               `json:"distributionLabel,omitempty"`
+	DistributionLabel string `json:"distributionLabel,omitempty"`
 	// External is true when the realized profile is observed (External mode),
 	// not managed by the operator.
-	External           bool                 `json:"external,omitempty"`
+	External bool `json:"external,omitempty"`
 	// ContentsHash is the SHA-256 hex digest of spec.kickstartContents.
 	// Used to detect changes and avoid re-importing an identical file.
-	ContentsHash       string               `json:"contentsHash,omitempty"`
+	ContentsHash string `json:"contentsHash,omitempty"`
 }
 
 // +kubebuilder:object:root=true

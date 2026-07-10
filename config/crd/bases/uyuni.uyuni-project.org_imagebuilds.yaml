@@ -199,8 +199,9 @@ spec:
                   type: object
                 type: array
               imageId:
-                description: ImageID is the Uyuni image record ID after the build
-                  completes successfully.
+                description: |-
+                  ImageID is the Uyuni image record ID for this build (captured once the
+                  build creates its image record; used to read the built image's details).
                 type: integer
               imageUrl:
                 description: |-
