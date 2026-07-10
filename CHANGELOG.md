@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **The Cobbler system record now carries the system hostname.** A pre-created
+  System's `spec.hostname` was only used for the Cobbler record *name*; the record
+  itself had an empty `hostname` and no interface `dns_name`, so Cobbler couldn't
+  resolve it. `reconcileCobblerSystem` now sets the Cobbler system `hostname` and
+  marks the first NIC as the management interface with its `dns_name` = the
+  hostname. Added `CobblerSystem.spec.hostname` and `interfaces[].management`.
 - **Assigning formulas no longer 400s with "No method exists".**
   `formula.setFormulasOfServer` takes `systemId`, not `sid` (the docs say `sid`,
   but the live API rejects it — same doc inconsistency as `getSystemFormulaData`).

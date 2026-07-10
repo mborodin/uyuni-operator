@@ -83,6 +83,12 @@ spec:
     - name: saltboot
       values: # static form data
         partitioning: {}
+      # NOTE on paths: form data must match the formula's form.yml exactly. If the
+      # form's top level is a namespace (a key with `$type: namespace`, e.g.
+      # `branch_server:` — note it can differ from the hyphenated formula NAME),
+      # every path must be nested under it, e.g. `branch_server.storehub.image_url`.
+      # Otherwise Uyuni rejects the write with "<key> : doesn't exist in definition".
+      # Paths are dot-separated (branch_server.vlans), never colon-separated.
       valuesFrom:
         # download URL of the latest built image, from the ImageProfile status
         - path: image_url

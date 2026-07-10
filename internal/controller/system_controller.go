@@ -763,18 +763,26 @@ func (r *SystemReconciler) reconcileCobblerSystem(ctx context.Context, sys *uyun
 
 	cobblerName := fmt.Sprintf("%s:%d", sys.Spec.Hostname, r.resolveOrgID(ctx, sys))
 	ifaces := make([]uyuniv1.CobblerInterface, 0, len(sys.Spec.Network))
-	for _, n := range sys.Spec.Network {
-		ifaces = append(ifaces, uyuniv1.CobblerInterface{
+	for i, n := range sys.Spec.Network {
+		ci := uyuniv1.CobblerInterface{
 			Name:       n.Name,
 			MACAddress: n.MACAddress,
 			IPAddress:  n.IPAddress,
-		})
+		}
+		// The first NIC is the primary/management interface: it carries the
+		// system hostname as its dns_name so Cobbler resolves the record.
+		if i == 0 {
+			ci.DNSName = sys.Spec.Hostname
+			ci.Management = true
+		}
+		ifaces = append(ifaces, ci)
 	}
 
 	cs := &uyuniv1.CobblerSystem{ObjectMeta: metav1.ObjectMeta{Name: sys.Name, Namespace: sys.Namespace}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, cs, func() error {
 		cs.Spec.Mode = uyuniv1.CobblerModeCreate
 		cs.Spec.Name = cobblerName
+		cs.Spec.Hostname = sys.Spec.Hostname
 		cs.Spec.ProviderRef = cobblerProviderRefForOrg(ctx, r.Client, sys.Namespace, orgRef(sys.Spec.OrganizationRef))
 		cs.Spec.ProfileName = profileLabel
 		cs.Spec.Interfaces = ifaces

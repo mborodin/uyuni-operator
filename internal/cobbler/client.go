@@ -128,15 +128,17 @@ func (c *Client) getItem(ctx context.Context, method, name string) (map[string]a
 
 // SystemInterface is one network interface of a cobbler system record.
 type SystemInterface struct {
-	Name    string
-	MAC     string
-	IP      string
-	DNSName string
+	Name       string
+	MAC        string
+	IP         string
+	DNSName    string
+	Management bool // primary/management interface (Cobbler management=true)
 }
 
 // SystemSpec is the desired state of a cobbler system record.
 type SystemSpec struct {
 	Name            string
+	Hostname        string // system hostname/FQDN; "" leaves it unset
 	Profile         string
 	Netboot         bool
 	AutoinstallMeta map[string]string
@@ -173,6 +175,11 @@ func (c *Client) upsertSystem(ctx context.Context, s SystemSpec) (string, error)
 	if err := set("profile", s.Profile); err != nil {
 		return "", err
 	}
+	if s.Hostname != "" {
+		if err := set("hostname", s.Hostname); err != nil {
+			return "", err
+		}
+	}
 	if err := set("netboot_enabled", s.Netboot); err != nil {
 		return "", err
 	}
@@ -204,6 +211,9 @@ func (c *Client) upsertSystem(ctx context.Context, s SystemSpec) (string, error)
 			}
 			if nic.DNSName != "" {
 				iface["dnsname-"+nic.Name] = nic.DNSName
+			}
+			if nic.Management {
+				iface["management-"+nic.Name] = true
 			}
 		}
 		if err := set("modify_interface", iface); err != nil {

@@ -126,10 +126,11 @@ func (r *CobblerSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	netboot := cs.Spec.NetbootEnabled == nil || *cs.Spec.NetbootEnabled
 	ifaces := make([]cobbler.SystemInterface, 0, len(cs.Spec.Interfaces))
 	for _, n := range cs.Spec.Interfaces {
-		ifaces = append(ifaces, cobbler.SystemInterface{Name: n.Name, MAC: n.MACAddress, IP: n.IPAddress, DNSName: n.DNSName})
+		ifaces = append(ifaces, cobbler.SystemInterface{Name: n.Name, MAC: n.MACAddress, IP: n.IPAddress, DNSName: n.DNSName, Management: n.Management})
 	}
 	uid, err := cc.UpsertSystem(ctx, cobbler.SystemSpec{
 		Name:            cs.Spec.Name,
+		Hostname:        cs.Spec.Hostname,
 		Profile:         profile,
 		Netboot:         netboot,
 		AutoinstallMeta: cs.Spec.AutoinstallMeta,

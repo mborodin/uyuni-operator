@@ -147,6 +147,9 @@ type CobblerInterface struct {
 	MACAddress string `json:"macAddress,omitempty"`
 	IPAddress  string `json:"ipAddress,omitempty"`
 	DNSName    string `json:"dnsName,omitempty"`
+	// Management marks this as the primary/management interface (Cobbler
+	// management=true) — the one whose dns_name becomes the system hostname.
+	Management bool `json:"management,omitempty"`
 }
 
 type CobblerSystemSpec struct {
@@ -154,6 +157,9 @@ type CobblerSystemSpec struct {
 	// Immutable after creation.
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
+
+	// Hostname is the system's hostname/FQDN set on the Cobbler record. Create mode.
+	Hostname string `json:"hostname,omitempty"`
 
 	// +kubebuilder:default=import
 	Mode CobblerMode `json:"mode,omitempty"`
