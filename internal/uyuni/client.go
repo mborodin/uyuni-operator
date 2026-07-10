@@ -1870,7 +1870,7 @@ func (c *Client) UpdateFilter(ctx context.Context, id int, name, rule string, cr
 
 func (c *Client) RemoveFilter(ctx context.Context, id int) error {
 	_, err := apiPost[any](c, "contentmanagement/removeFilter", map[string]any{
-		"id": id,
+		"filterId": id,
 	})
 	return asNotFound(err)
 }
