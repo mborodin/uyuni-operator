@@ -390,7 +390,7 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 	desiredNames := map[string]bool{}
 
 	for _, f := range cp.Spec.Filters {
-		fullName := cp.Spec.Label + "-" + f.Name
+		fullName := f.Name
 		desiredNames[fullName] = true
 		desired := uyuni.FilterCriteriaWire{
 			Field: f.Criteria.Field, Matcher: f.Criteria.Matcher, Value: f.Criteria.Value,
