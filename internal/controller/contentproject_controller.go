@@ -438,54 +438,28 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 }
 
 func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) error {
-	// Skip environment state refresh if API is not available
-	// Environment management is delegated to ClmEnvironment CRD
-	envs, err := uc.ListProjectEnvironments(ctx, cp.Spec.Label)
-	if err != nil {
-		// Log but continue - API may not be available in this Uyuni version
-		fmt.Printf("ListProjectEnvironments API failed (may not be available): %v\n", err)
-		cp.Status.BuildStatus = "Idle"
+	// List ClmEnvironment CRs for this project (source of truth in Kubernetes)
+	var envList uyuniv1.ClmEnvironmentList
+	if err := r.List(ctx, &envList, client.InNamespace(cp.Namespace),
+		client.MatchingFields{"spec.projectRef.name": cp.Name}); err != nil {
+		fmt.Printf("Failed to list ClmEnvironments for project %q: %v\n", cp.Spec.Label, err)
 		cp.Status.EnvironmentStates = []uyuniv1.EnvironmentState{}
+		cp.Status.BuildStatus = "Idle"
 		return nil
 	}
-	states := make([]uyuniv1.EnvironmentState, 0, len(envs))
-	anyBuilding := false
-	anyFailed := false
-	for _, e := range envs {
-		s := uyuniv1.EnvironmentState{Label: e.Label, Name: e.Name, BuiltVersion: e.Version}
-		if e.Version > 0 {
-			if old := findEnvState(cp.Status.EnvironmentStates, e.Label); old != nil &&
-				old.BuiltVersion == e.Version && old.BuiltAt != nil {
-				s.BuiltAt = old.BuiltAt
-			} else {
-				now := metav1.NewTime(r.Now())
-				s.BuiltAt = &now
-			}
-			s.DerivedChannels = deriveChannelLabels(cp.Spec.Label, e.Label, cp.Status.AttachedSources)
-		}
-		switch e.Status {
-		case "BUILDING", "GENERATING_REPODATA", "NEW":
-			anyBuilding = true
-		case "FAILED":
-			anyFailed = true
+
+	states := make([]uyuniv1.EnvironmentState, 0, len(envList.Items))
+	for _, env := range envList.Items {
+		s := uyuniv1.EnvironmentState{
+			Label: env.Spec.Id,
+			Name:  env.Spec.Name,
 		}
 		states = append(states, s)
 	}
+
 	cp.Status.EnvironmentStates = states
-	oldBuildStatus := cp.Status.BuildStatus
-	switch {
-	case anyBuilding:
-		cp.Status.BuildStatus = "Building"
-	case anyFailed:
-		cp.Status.BuildStatus = "Failed"
-	default:
-		cp.Status.BuildStatus = "Idle"
-	}
-	if oldBuildStatus != cp.Status.BuildStatus {
-		fmt.Printf("Project %q build status changed: %s → %s\n", cp.Spec.Label, oldBuildStatus, cp.Status.BuildStatus)
-	}
-	fmt.Printf("Project %q environments: %d total, anyBuilding=%v, anyFailed=%v, status=%s\n",
-		cp.Spec.Label, len(states), anyBuilding, anyFailed, cp.Status.BuildStatus)
+	fmt.Printf("Project %q: found %d ClmEnvironments in Kubernetes\n", cp.Spec.Label, len(states))
+	cp.Status.BuildStatus = "Idle"
 	return nil
 }
 
