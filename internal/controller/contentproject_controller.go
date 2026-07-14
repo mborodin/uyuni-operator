@@ -126,9 +126,12 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if msg == "" {
 			msg = "automated build by uyuni-operator: " + reason
 		}
+		fmt.Printf("Triggering build for project %q (reason: %s)\n", cp.Spec.Label, reason)
 		if err := uc.BuildProject(ctx, cp.Spec.Label, msg); err != nil {
+			fmt.Printf("Build failed for project %q: %v\n", cp.Spec.Label, err)
 			return r.fail(ctx, &cp, "BuildFailed", err)
 		}
+		fmt.Printf("Build triggered successfully for project %q\n", cp.Spec.Label)
 		now := metav1.NewTime(r.Now())
 		cp.Status.LastBuildStartedAt = &now
 		cp.Status.BuildStatus = "Building"
@@ -469,6 +472,7 @@ func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context,
 		states = append(states, s)
 	}
 	cp.Status.EnvironmentStates = states
+	oldBuildStatus := cp.Status.BuildStatus
 	switch {
 	case anyBuilding:
 		cp.Status.BuildStatus = "Building"
@@ -477,6 +481,11 @@ func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context,
 	default:
 		cp.Status.BuildStatus = "Idle"
 	}
+	if oldBuildStatus != cp.Status.BuildStatus {
+		fmt.Printf("Project %q build status changed: %s → %s\n", cp.Spec.Label, oldBuildStatus, cp.Status.BuildStatus)
+	}
+	fmt.Printf("Project %q environments: %d total, anyBuilding=%v, anyFailed=%v, status=%s\n",
+		cp.Spec.Label, len(states), anyBuilding, anyFailed, cp.Status.BuildStatus)
 	return nil
 }
 
