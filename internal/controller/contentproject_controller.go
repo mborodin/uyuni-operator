@@ -148,6 +148,11 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		setReady(&cp.Status.Conditions, cp.Generation, metav1.ConditionTrue, "Reconciled", "")
 	}
 	if err := r.Status().Update(ctx, &cp); err != nil {
+		// Handle conflict (object modified by another reconcile) gracefully
+		if strings.Contains(err.Error(), "has been modified") {
+			fmt.Printf("Status update conflict for project %q, requeuing: %v\n", cp.Spec.Label, err)
+			return ctrl.Result{Requeue: true}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -440,21 +445,23 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) error {
 	// List ClmEnvironment CRs for this project (source of truth in Kubernetes)
 	var envList uyuniv1.ClmEnvironmentList
-	if err := r.List(ctx, &envList, client.InNamespace(cp.Namespace),
-		client.MatchingFields{"spec.projectRef.name": cp.Name}); err != nil {
+	if err := r.List(ctx, &envList, client.InNamespace(cp.Namespace)); err != nil {
 		fmt.Printf("Failed to list ClmEnvironments for project %q: %v\n", cp.Spec.Label, err)
 		cp.Status.EnvironmentStates = []uyuniv1.EnvironmentState{}
 		cp.Status.BuildStatus = "Idle"
 		return nil
 	}
 
-	states := make([]uyuniv1.EnvironmentState, 0, len(envList.Items))
+	// Filter to only environments for this project
+	states := make([]uyuniv1.EnvironmentState, 0)
 	for _, env := range envList.Items {
-		s := uyuniv1.EnvironmentState{
-			Label: env.Spec.Id,
-			Name:  env.Spec.Name,
+		if env.Spec.ProjectRef.Name == cp.Name {
+			s := uyuniv1.EnvironmentState{
+				Label: env.Spec.Id,
+				Name:  env.Spec.Name,
+			}
+			states = append(states, s)
 		}
-		states = append(states, s)
 	}
 
 	cp.Status.EnvironmentStates = states
