@@ -112,7 +112,8 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	cp.Status.AttachedSources = append([]string(nil), desiredSources...)
 
 	// 5. Filters.
-	if err := r.reconcileFilters(ctx, uc, &cp); err != nil {
+	filtersChanged, err := r.reconcileFilters(ctx, uc, &cp)
+	if err != nil {
 		return r.fail(ctx, &cp, "FilterReconcileFailed", err)
 	}
 
@@ -120,7 +121,7 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.refreshEnvironmentStates(ctx, uc, &cp); err != nil {
 		return ctrl.Result{}, err
 	}
-	if reason := r.shouldBuild(&cp, desiredSources); reason != "" {
+	if reason := r.shouldBuild(&cp, desiredSources, filtersChanged); reason != "" {
 		msg := cp.Spec.Build.Message
 		if msg == "" {
 			msg = "automated build by uyuni-operator: " + reason
@@ -372,12 +373,12 @@ func (r *ContentProjectReconciler) reconcileSources(ctx context.Context, uc uyun
 	return nil
 }
 
-func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) error {
+func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) (bool, error) {
 	all, err := uc.ListFilters(ctx)
 	if err != nil {
 		// Log but continue if filter API is not available
 		fmt.Printf("ListFilters API failed (may not be available): %v\n", err)
-		return nil
+		return false, nil
 	}
 	allByName := map[string]uyuni.FilterDetails{}
 	for _, f := range all {
@@ -388,6 +389,7 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 		cp.Status.FilterIDs = map[string]int{}
 	}
 	desiredNames := map[string]bool{}
+	filtersChanged := false
 
 	for _, f := range cp.Spec.Filters {
 		fullName := f.Name
@@ -399,8 +401,9 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 		if existing, ok := allByName[fullName]; ok {
 			if existing.Rule != f.Rule || existing.Criteria != desired {
 				if err := uc.UpdateFilter(ctx, existing.ID, fullName, f.Rule, desired); err != nil {
-					return fmt.Errorf("update filter %q: %w", fullName, err)
+					return false, fmt.Errorf("update filter %q: %w", fullName, err)
 				}
+				filtersChanged = true
 			}
 			cp.Status.FilterIDs[fullName] = existing.ID
 			continue
@@ -408,12 +411,13 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 
 		created, err := uc.CreateFilter(ctx, fullName, f.Type, f.Rule, desired)
 		if err != nil {
-			return fmt.Errorf("create filter %q: %w", fullName, err)
+			return false, fmt.Errorf("create filter %q: %w", fullName, err)
 		}
 		if err := uc.AttachFilter(ctx, cp.Spec.Label, created.ID); err != nil {
-			return fmt.Errorf("attach filter %q: %w", fullName, err)
+			return false, fmt.Errorf("attach filter %q: %w", fullName, err)
 		}
 		cp.Status.FilterIDs[fullName] = created.ID
+		filtersChanged = true
 	}
 
 	for name, id := range cp.Status.FilterIDs {
@@ -422,11 +426,12 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 		}
 		_ = uc.DetachFilter(ctx, cp.Spec.Label, id)
 		if err := uc.RemoveFilter(ctx, id); err != nil && !uyuni.IsNotFound(err) {
-			return fmt.Errorf("remove filter %q: %w", name, err)
+			return false, fmt.Errorf("remove filter %q: %w", name, err)
 		}
 		delete(cp.Status.FilterIDs, name)
+		filtersChanged = true
 	}
-	return nil
+	return filtersChanged, nil
 }
 
 func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context, uc uyuni.API, cp *uyuniv1.ContentProject) error {
@@ -477,9 +482,12 @@ func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context,
 
 // --- build decision ---
 
-func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sources []string) string {
+func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sources []string, filtersChanged bool) string {
 	if cp.Status.BuildStatus == "Building" {
 		return ""
+	}
+	if filtersChanged {
+		return "filters-changed"
 	}
 	if cp.Spec.Build.AutoBuildSources {
 		fp := fingerprintSources(sources)
