@@ -74,21 +74,23 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// List all environments in project to check if predecessor exists
 		envs, err := uc.ListProjectEnvironments(ctx, project.Spec.Label)
 		if err != nil {
-			fmt.Printf("ListProjectEnvironments API error for %s: %v\n", project.Spec.Label, err)
-			return r.fail(ctx, &env, "WaitingForPredecessor", fmt.Errorf("cannot list environments to check predecessor %q", env.Spec.Predecessor))
-		}
-
-		predecessorExists := false
-		for _, e := range envs {
-			if e.Label == env.Spec.Predecessor {
-				predecessorExists = true
-				break
+			// If API fails, log but proceed (API might be temporarily unavailable)
+			// Uyuni will reject if predecessor doesn't exist
+			fmt.Printf("ListProjectEnvironments API error for %s (proceeding anyway): %v\n", project.Spec.Label, err)
+		} else {
+			// Only block if we successfully got the list and predecessor is NOT in it
+			predecessorExists := false
+			for _, e := range envs {
+				if e.Label == env.Spec.Predecessor {
+					predecessorExists = true
+					break
+				}
 			}
-		}
 
-		if !predecessorExists {
-			fmt.Printf("Predecessor environment %q not found for %s - requeuing\n", env.Spec.Predecessor, env.Spec.Id)
-			return r.fail(ctx, &env, "WaitingForPredecessor", fmt.Errorf("predecessor environment %q does not exist yet", env.Spec.Predecessor))
+			if !predecessorExists {
+				fmt.Printf("Predecessor environment %q not found for %s - waiting for creation\n", env.Spec.Predecessor, env.Spec.Id)
+				return r.fail(ctx, &env, "WaitingForPredecessor", fmt.Errorf("predecessor environment %q does not exist yet", env.Spec.Predecessor))
+			}
 		}
 	}
 
