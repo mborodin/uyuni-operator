@@ -69,6 +69,29 @@ func (r *ClmEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.fail(ctx, &env, "ProjectNotReady", fmt.Errorf("parent ContentProject is not ready in Uyuni - cannot create environment"))
 	}
 
+	// If this environment has a predecessor, check if it's already created in Uyuni
+	if env.Spec.Predecessor != "" {
+		// List all environments in project to check if predecessor exists
+		envs, err := uc.ListProjectEnvironments(ctx, project.Spec.Label)
+		if err != nil {
+			fmt.Printf("ListProjectEnvironments API error for %s: %v\n", project.Spec.Label, err)
+			return r.fail(ctx, &env, "WaitingForPredecessor", fmt.Errorf("cannot list environments to check predecessor %q", env.Spec.Predecessor))
+		}
+
+		predecessorExists := false
+		for _, e := range envs {
+			if e.Label == env.Spec.Predecessor {
+				predecessorExists = true
+				break
+			}
+		}
+
+		if !predecessorExists {
+			fmt.Printf("Predecessor environment %q not found for %s - requeuing\n", env.Spec.Predecessor, env.Spec.Id)
+			return r.fail(ctx, &env, "WaitingForPredecessor", fmt.Errorf("predecessor environment %q does not exist yet", env.Spec.Predecessor))
+		}
+	}
+
 	// Try to create environment in Uyuni (idempotent - Uyuni handles duplicate)
 	createErr := uc.CreateEnvironment(ctx, project.Spec.Label, env.Spec.Id, env.Spec.Name, env.Spec.Description, env.Spec.Predecessor)
 	if createErr != nil {
