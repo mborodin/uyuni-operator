@@ -485,6 +485,19 @@ func (r *ContentProjectReconciler) isProjectReady(cp *uyuniv1.ContentProject) bo
 	return true
 }
 
+func (r *ContentProjectReconciler) areFiltersReady(cp *uyuniv1.ContentProject) bool {
+	// Filters are ready if all spec filters have been created in Uyuni (have IDs)
+	if len(cp.Spec.Filters) == 0 {
+		return true // No filters defined = ready
+	}
+	if len(cp.Status.FilterIDs) != len(cp.Spec.Filters) {
+		fmt.Printf("Project %q not ready: %d/%d filters created in Uyuni\n",
+			cp.Spec.Label, len(cp.Status.FilterIDs), len(cp.Spec.Filters))
+		return false
+	}
+	return true
+}
+
 func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sources []string, filtersChanged bool) string {
 	if cp.Status.BuildStatus == "Building" {
 		return ""
@@ -492,7 +505,11 @@ func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sourc
 	if filtersChanged {
 		// Only trigger build on filter changes if project is fully ready
 		if !r.isProjectReady(cp) {
-			fmt.Printf("Project %q: filters changed but waiting for project to be ready\n", cp.Spec.Label)
+			fmt.Printf("Project %q: filters changed but waiting for project to be ready (environments)\n", cp.Spec.Label)
+			return ""
+		}
+		if !r.areFiltersReady(cp) {
+			fmt.Printf("Project %q: filters changed but waiting for filters to be ready (Uyuni)\n", cp.Spec.Label)
 			return ""
 		}
 		return "filters-changed"
