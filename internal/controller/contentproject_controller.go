@@ -491,11 +491,29 @@ func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context,
 
 // --- build decision ---
 
+func (r *ContentProjectReconciler) isProjectReady(cp *uyuniv1.ContentProject) bool {
+	// Project is ready if all expected environments are created (status not nil/empty)
+	if len(cp.Spec.Environments) == 0 {
+		return false // No environments defined
+	}
+	if len(cp.Status.EnvironmentStates) != len(cp.Spec.Environments) {
+		fmt.Printf("Project %q not ready: %d/%d environments created\n",
+			cp.Spec.Label, len(cp.Status.EnvironmentStates), len(cp.Spec.Environments))
+		return false
+	}
+	return true
+}
+
 func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sources []string, filtersChanged bool) string {
 	if cp.Status.BuildStatus == "Building" {
 		return ""
 	}
 	if filtersChanged {
+		// Only trigger build on filter changes if project is fully ready
+		if !r.isProjectReady(cp) {
+			fmt.Printf("Project %q: filters changed but waiting for project to be ready\n", cp.Spec.Label)
+			return ""
+		}
 		return "filters-changed"
 	}
 	if cp.Spec.Build.AutoBuildSources {
