@@ -444,9 +444,15 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 		if desiredNames[name] {
 			continue
 		}
-		_ = uc.DetachFilter(ctx, cp.Spec.Label, id)
+		// Detach filter from project first
+		if err := uc.DetachFilter(ctx, cp.Spec.Label, id); err != nil {
+			fmt.Printf("Failed to detach filter %q from project %q: %v\n", name, cp.Spec.Label, err)
+			return false, err
+		}
+		// Then remove the filter entirely
 		if err := uc.RemoveFilter(ctx, id); err != nil && !uyuni.IsNotFound(err) {
-			return false, fmt.Errorf("remove filter %q: %w", name, err)
+			fmt.Printf("Failed to remove filter %q: %v\n", name, err)
+			return false, err
 		}
 		delete(cp.Status.FilterIDs, name)
 		filtersChanged = true
