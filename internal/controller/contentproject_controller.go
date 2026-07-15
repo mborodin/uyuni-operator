@@ -651,6 +651,8 @@ func (r *ContentProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.projectsForRepository)).
 		Watches(&uyuniv1.ContentProjectPromotion{},
 			handler.EnqueueRequestsFromMapFunc(r.projectsForPromotion)).
+		Watches(&uyuniv1.ClmEnvironment{},
+			handler.EnqueueRequestsFromMapFunc(r.projectsForEnvironment)).
 		Complete(r)
 }
 
@@ -697,4 +699,16 @@ func (r *ContentProjectReconciler) projectsForRepository(ctx context.Context, ob
 		})
 	}
 	return out
+}
+
+func (r *ContentProjectReconciler) projectsForEnvironment(_ context.Context, obj client.Object) []reconcile.Request {
+	// When a ClmEnvironment changes (especially becoming Ready), trigger reconciliation
+	// of its parent ContentProject so the project can check if build conditions are now met
+	env, ok := obj.(*uyuniv1.ClmEnvironment)
+	if !ok {
+		return nil
+	}
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Namespace: env.Namespace, Name: env.Spec.ProjectRef.Name},
+	}}
 }
