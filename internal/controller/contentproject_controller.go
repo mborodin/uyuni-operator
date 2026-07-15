@@ -479,13 +479,10 @@ func (r *ContentProjectReconciler) refreshEnvironmentStates(ctx context.Context,
 // --- build decision ---
 
 func (r *ContentProjectReconciler) isProjectReady(cp *uyuniv1.ContentProject) bool {
-	// Project is ready if all expected environments are created (status not nil/empty)
-	if len(cp.Spec.Environments) == 0 {
-		return false // No environments defined
-	}
-	if len(cp.Status.EnvironmentStates) != len(cp.Spec.Environments) {
-		fmt.Printf("Project %q not ready: %d/%d environments created\n",
-			cp.Spec.Label, len(cp.Status.EnvironmentStates), len(cp.Spec.Environments))
+	// Project is ready if at least one environment exists in status
+	// (Environments are managed as separate ClmEnvironment CRs, not in ContentProject spec)
+	if len(cp.Status.EnvironmentStates) == 0 {
+		fmt.Printf("Project %q not ready: no environments created yet\n", cp.Spec.Label)
 		return false
 	}
 	return true
