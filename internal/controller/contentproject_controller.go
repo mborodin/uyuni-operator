@@ -121,21 +121,27 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.refreshEnvironmentStates(ctx, uc, &cp); err != nil {
 		return ctrl.Result{}, err
 	}
-	if reason := r.shouldBuild(&cp, desiredSources, filtersChanged); reason != "" {
+	if reason := r.shouldBuild(ctx, &cp, desiredSources, filtersChanged); reason != "" {
 		msg := cp.Spec.Build.Message
 		if msg == "" {
 			msg = "automated build by uyuni-operator: " + reason
 		}
 		fmt.Printf("Triggering build for project %q (reason: %s)\n", cp.Spec.Label, reason)
 		if err := uc.BuildProject(ctx, cp.Spec.Label, msg); err != nil {
-			fmt.Printf("Build failed for project %q: %v\n", cp.Spec.Label, err)
-			return r.fail(ctx, &cp, "BuildFailed", err)
+			// If build fails due to no environments, skip and retry later (environments may be still being created)
+			if strings.Contains(err.Error(), "no environments") {
+				fmt.Printf("Build skipped for project %q - waiting for environments to be created: %v\n", cp.Spec.Label, err)
+			} else {
+				fmt.Printf("Build failed for project %q: %v\n", cp.Spec.Label, err)
+				return r.fail(ctx, &cp, "BuildFailed", err)
+			}
+		} else {
+			fmt.Printf("Build triggered successfully for project %q\n", cp.Spec.Label)
+			now := metav1.NewTime(r.Now())
+			cp.Status.LastBuildStartedAt = &now
+			cp.Status.BuildStatus = "Building"
+			cp.Status.LastBuildSourceFingerprint = fingerprintSources(desiredSources)
 		}
-		fmt.Printf("Build triggered successfully for project %q\n", cp.Spec.Label)
-		now := metav1.NewTime(r.Now())
-		cp.Status.LastBuildStartedAt = &now
-		cp.Status.BuildStatus = "Building"
-		cp.Status.LastBuildSourceFingerprint = fingerprintSources(desiredSources)
 	}
 
 	// 7. Status & requeue.
@@ -501,7 +507,37 @@ func (r *ContentProjectReconciler) areFiltersReady(cp *uyuniv1.ContentProject) b
 	return true
 }
 
-func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sources []string, filtersChanged bool) string {
+func (r *ContentProjectReconciler) areEnvironmentsReady(ctx context.Context, cp *uyuniv1.ContentProject) bool {
+	// Environments are ready if all ClmEnvironment CRs for this project are Ready
+	var envList uyuniv1.ClmEnvironmentList
+	if err := r.List(ctx, &envList, client.InNamespace(cp.Namespace)); err != nil {
+		fmt.Printf("Project %q: failed to list ClmEnvironments: %v\n", cp.Spec.Label, err)
+		return false
+	}
+
+	readyCount := 0
+	for _, env := range envList.Items {
+		if env.Spec.ProjectRef.Name == cp.Name {
+			// Check if this environment is Ready
+			for _, cond := range env.Status.Conditions {
+				if cond.Type == "Ready" && cond.Status == metav1.ConditionTrue {
+					readyCount++
+					break
+				}
+			}
+		}
+	}
+
+	expectedCount := len(cp.Status.EnvironmentStates)
+	if readyCount < expectedCount {
+		fmt.Printf("Project %q: waiting for environments - %d/%d ready in Uyuni\n",
+			cp.Spec.Label, readyCount, expectedCount)
+		return false
+	}
+	return true
+}
+
+func (r *ContentProjectReconciler) shouldBuild(ctx context.Context, cp *uyuniv1.ContentProject, sources []string, filtersChanged bool) string {
 	if cp.Status.BuildStatus == "Building" {
 		return ""
 	}
@@ -526,7 +562,12 @@ func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sourc
 
 	if hasFilters && filtersReady && neverBuilt && r.isProjectReady(cp) {
 		// First build: all filters ready and never built before
-		fmt.Printf("Project %q: all filters ready, triggering first build now\n", cp.Spec.Label)
+		// But wait for environments to be created in Uyuni first
+		if !r.areEnvironmentsReady(ctx, cp) {
+			fmt.Printf("Project %q: filters ready but waiting for environments to be created in Uyuni\n", cp.Spec.Label)
+			return ""
+		}
+		fmt.Printf("Project %q: all filters and environments ready, triggering first build now\n", cp.Spec.Label)
 		return "initial-filters"
 	}
 	if cp.Spec.Build.AutoBuildSources {
