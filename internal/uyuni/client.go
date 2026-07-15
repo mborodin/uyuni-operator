@@ -1908,9 +1908,9 @@ func (c *Client) ListFilterCriteria(ctx context.Context) ([]FilterCriteriaOption
 }
 
 func (c *Client) BuildProject(ctx context.Context, projectLabel, message string) error {
-	endpoint := fmt.Sprintf("contentmanagement/projects/%s/build", url.QueryEscape(projectLabel))
-	_, err := apiPost[any](c, endpoint, map[string]any{
-		"message": message,
+	_, err := apiPost[any](c, "contentmanagement/buildProject", map[string]any{
+		"projectLabel": projectLabel,
+		"message":      message,
 	})
 	return err
 }
