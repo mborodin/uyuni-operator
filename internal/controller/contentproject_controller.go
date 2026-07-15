@@ -159,11 +159,6 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if cp.Status.BuildStatus == "Building" {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-	// Stabilization: if filters just changed, wait 10s before next reconcile (for build trigger)
-	if filtersChanged {
-		fmt.Printf("Project %q: requeuing in 10s for filter stabilization\n", cp.Spec.Label)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-	}
 	if next := r.nextCronDeadline(&cp); !next.IsZero() {
 		return ctrl.Result{RequeueAfter: time.Until(next).Round(time.Second)}, nil
 	}
@@ -514,7 +509,7 @@ func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sourc
 		return ""
 	}
 	if filtersChanged {
-		// Filter just changed - apply stabilization delay
+		// Filter just changed - trigger build immediately if ready
 		if !r.isProjectReady(cp) {
 			fmt.Printf("Project %q: filters changed but waiting for project to be ready (environments)\n", cp.Spec.Label)
 			return ""
@@ -523,19 +518,18 @@ func (r *ContentProjectReconciler) shouldBuild(cp *uyuniv1.ContentProject, sourc
 			fmt.Printf("Project %q: filters changed but waiting for filters to be ready (Uyuni)\n", cp.Spec.Label)
 			return ""
 		}
-		// Stabilization: wait 10 seconds after filter reconciliation before building
-		fmt.Printf("Project %q: filters reconciled, waiting 10s for stabilization before build\n", cp.Spec.Label)
-		return ""
+		fmt.Printf("Project %q: filters ready, triggering build now\n", cp.Spec.Label)
+		return "filters-changed"
 	}
 
-	// Check if this is the first build (filters exist but never built after stabilization)
+	// Check if this is the first build (filters exist but never built)
 	hasFilters := len(cp.Spec.Filters) > 0
 	filtersReady := r.areFiltersReady(cp)
 	neverBuilt := cp.Status.LastBuildStartedAt == nil
 
 	if hasFilters && filtersReady && neverBuilt && r.isProjectReady(cp) {
 		// First build: all filters ready and never built before
-		fmt.Printf("Project %q: first build - all filters ready after stabilization\n", cp.Spec.Label)
+		fmt.Printf("Project %q: all filters ready, triggering first build now\n", cp.Spec.Label)
 		return "initial-filters"
 	}
 	if cp.Spec.Build.AutoBuildSources {
