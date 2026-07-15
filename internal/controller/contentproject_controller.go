@@ -412,7 +412,13 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 		}
 
 		if existing, ok := allByName[fullName]; ok {
-			if existing.Rule != f.Rule || existing.Criteria != desired {
+			// Compare field-by-field to avoid false positives from API response formatting
+			ruleMatch := existing.Rule == f.Rule
+			criteriaMatch := existing.Criteria.Field == desired.Field &&
+				existing.Criteria.Matcher == desired.Matcher &&
+				existing.Criteria.Value == desired.Value
+
+			if !ruleMatch || !criteriaMatch {
 				if err := uc.UpdateFilter(ctx, existing.ID, fullName, f.Rule, desired); err != nil {
 					return false, fmt.Errorf("update filter %q: %w", fullName, err)
 				}
