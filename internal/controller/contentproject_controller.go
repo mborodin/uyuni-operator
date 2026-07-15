@@ -450,12 +450,25 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 			return false, err
 		}
 		// Then remove the filter entirely
-		if err := uc.RemoveFilter(ctx, id); err != nil && !uyuni.IsNotFound(err) {
-			fmt.Printf("Failed to remove filter %q: %v\n", name, err)
-			return false, err
+		if err := uc.RemoveFilter(ctx, id); err != nil {
+			if uyuni.IsNotFound(err) {
+				// Filter already deleted, just remove from status
+				delete(cp.Status.FilterIDs, name)
+				filtersChanged = true
+			} else if strings.Contains(err.Error(), "still in use") || strings.Contains(err.Error(), "is used in") {
+				// Filter still in use by Uyuni (detach not fully propagated yet)
+				// Log and continue - will retry on next reconciliation
+				fmt.Printf("Filter %q still in use by Uyuni (will retry): %v\n", name, err)
+				// Don't delete from FilterIDs yet - retry on next reconcile
+				filtersChanged = true
+			} else {
+				fmt.Printf("Failed to remove filter %q: %v\n", name, err)
+				return false, err
+			}
+		} else {
+			delete(cp.Status.FilterIDs, name)
+			filtersChanged = true
 		}
-		delete(cp.Status.FilterIDs, name)
-		filtersChanged = true
 	}
 	return filtersChanged, nil
 }
