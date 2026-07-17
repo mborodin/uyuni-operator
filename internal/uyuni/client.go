@@ -1771,8 +1771,10 @@ func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, 
 	_, err := apiPost[any](c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments", map[string]any{
 		"projectLabel": projectLabel,
 		"envLabel":     envLabel,
-		"name":         name,
-		"description":  description,
+		"props": map[string]any{
+			"name":        name,
+			"description": description,
+		},
 	})
 	return err
 }

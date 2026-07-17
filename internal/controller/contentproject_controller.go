@@ -117,6 +117,9 @@ func (r *ContentProjectReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.fail(ctx, &cp, "FilterReconcileFailed", err)
 	}
 
+	// 5b. Cleanup orphaned filters (not used by any project)
+	r.cleanupOrphanedFilters(ctx, uc)
+
 	// 6. Refresh environment states and decide on build.
 	if err := r.refreshEnvironmentStates(ctx, uc, &cp); err != nil {
 		return ctrl.Result{}, err
@@ -585,6 +588,42 @@ func (r *ContentProjectReconciler) areEnvironmentsReady(ctx context.Context, cp 
 		return false
 	}
 	return true
+}
+
+func (r *ContentProjectReconciler) cleanupOrphanedFilters(ctx context.Context, uc uyuni.API) {
+	// Periodically clean up filters that aren't attached to any ContentProject
+	allFilters, err := uc.ListFilters(ctx)
+	if err != nil {
+		fmt.Printf("Failed to list all filters for cleanup: %v\n", err)
+		return
+	}
+
+	// Get all ContentProjects to check which filters are in use
+	var projectList uyuniv1.ContentProjectList
+	if err := r.List(ctx, &projectList); err != nil {
+		fmt.Printf("Failed to list ContentProjects for filter cleanup: %v\n", err)
+		return
+	}
+
+	// Build set of in-use filter names from all projects
+	inUseFilters := make(map[string]bool)
+	for _, proj := range projectList.Items {
+		for filterName := range proj.Status.FilterIDs {
+			inUseFilters[filterName] = true
+		}
+	}
+
+	// Delete any filter not in use by any project
+	for _, filter := range allFilters {
+		if !inUseFilters[filter.Name] {
+			fmt.Printf("Filter %q (ID: %d) is orphaned - attempting cleanup...\n", filter.Name, filter.ID)
+			if err := uc.RemoveFilter(ctx, filter.ID); err != nil {
+				fmt.Printf("Failed to remove orphaned filter %q: %v\n", filter.Name, err)
+			} else {
+				fmt.Printf("Orphaned filter %q removed successfully ✅\n", filter.Name)
+			}
+		}
+	}
 }
 
 func (r *ContentProjectReconciler) shouldBuild(ctx context.Context, cp *uyuniv1.ContentProject, sources []string, filtersChanged bool) string {
