@@ -450,31 +450,27 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 			return false, err
 		}
 		fmt.Printf("Filter %q detached from project %q\n", name, cp.Spec.Label)
+		// Remove from this project's tracking immediately since detach succeeded
+		delete(cp.Status.FilterIDs, name)
+		filtersChanged = true
 
 		// Try to remove the filter entirely from Uyuni
 		// (only succeeds if no other projects are using it)
+		// This runs in background - if it fails, it just means other projects still use it
 		if err := uc.RemoveFilter(ctx, id); err != nil {
 			if uyuni.IsNotFound(err) {
-				// Filter already removed, just clean up tracking
+				// Filter already removed
 				fmt.Printf("Filter %q already removed from Uyuni\n", name)
-				delete(cp.Status.FilterIDs, name)
-				filtersChanged = true
 			} else if strings.Contains(err.Error(), "still in use") || strings.Contains(err.Error(), "is used in") {
-				// Filter is still attached to other projects
-				// Keep it in FilterIDs and retry on next reconciliation
-				// Once all other projects remove it, this will succeed
-				fmt.Printf("Filter %q still attached to other projects - will retry removal on next reconciliation\n", name)
-				filtersChanged = true
-				// Don't remove from FilterIDs - keep retrying
+				// Filter is used by other projects - will be cleaned up when they remove it too
+				fmt.Printf("Filter %q is used by other projects - will be removed when they remove it from their YAML\n", name)
 			} else {
-				fmt.Printf("Failed to remove filter %q: %v\n", name, err)
-				return false, err
+				// Other errors - log but don't fail (removal is best-effort)
+				fmt.Printf("RemoveFilter %q: %v (continuing anyway - detach succeeded)\n", name, err)
 			}
 		} else {
 			// Filter successfully removed from Uyuni
 			fmt.Printf("Filter %q removed completely from Uyuni\n", name)
-			delete(cp.Status.FilterIDs, name)
-			filtersChanged = true
 		}
 	}
 	return filtersChanged, nil
