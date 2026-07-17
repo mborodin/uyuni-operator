@@ -1756,7 +1756,7 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
 	payload := map[string]any{
 		"projectLabel": projectLabel,
-		"envLabel":     label,
+		"label":        label,
 		"name":         name,
 		"description":  description,
 	}
