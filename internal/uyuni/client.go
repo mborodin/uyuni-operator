@@ -1756,7 +1756,7 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
 	payload := map[string]any{
 		"projectLabel": projectLabel,
-		"envLabel":     label,
+		"label":        label,
 		"name":         name,
 		"description":  description,
 	}
@@ -1770,11 +1770,9 @@ func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, nam
 func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error {
 	_, err := apiPost[any](c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments", map[string]any{
 		"projectLabel": projectLabel,
-		"envLabel":     envLabel,
-		"props": map[string]any{
-			"name":        name,
-			"description": description,
-		},
+		"label":        envLabel,
+		"name":         name,
+		"description":  description,
 	})
 	return err
 }
