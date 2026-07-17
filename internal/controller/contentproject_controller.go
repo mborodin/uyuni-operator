@@ -450,32 +450,27 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 			return false, err
 		}
 		fmt.Printf("Filter %q detached from project %q\n", name, cp.Spec.Label)
+		// Remove from THIS project's tracking immediately since detach succeeded
+		delete(cp.Status.FilterIDs, name)
+		filtersChanged = true
 
-		// Try to remove the filter entirely from Uyuni
-		// Keep retrying on each reconciliation until it succeeds
+		// Try to remove the filter globally from Uyuni (best-effort)
+		// Only succeeds if no other projects are using it
 		if err := uc.RemoveFilter(ctx, id); err != nil {
 			if uyuni.IsNotFound(err) {
 				// Filter already removed
 				fmt.Printf("Filter %q already removed from Uyuni\n", name)
-				delete(cp.Status.FilterIDs, name)
-				filtersChanged = true
 			} else if strings.Contains(err.Error(), "still in use") || strings.Contains(err.Error(), "is used in") {
-				// Filter still attached to other projects OR Uyuni hasn't propagated detach yet
-				// Keep in tracking to auto-retry on next reconciliation (5-minute heartbeat)
-				fmt.Printf("Filter %q still in-use - will auto-retry removal\n", name)
-				filtersChanged = true
-				// Keep in FilterIDs - don't delete yet, will retry next cycle
+				// Filter is still used by other projects - that's OK
+				// Other projects will clean it up when they remove it from their YAML
+				fmt.Printf("Filter %q still used by other projects - will be cleaned up when they remove it\n", name)
 			} else {
-				// Other errors - keep retrying (will eventually succeed)
-				fmt.Printf("RemoveFilter %q: %v (will auto-retry)\n", name, err)
-				filtersChanged = true
-				// Keep in FilterIDs to auto-retry on next reconciliation
+				// Other errors - log but don't fail (filter is already detached from this project)
+				fmt.Printf("RemoveFilter %q: %v (filter already removed from project)\n", name, err)
 			}
 		} else {
 			// Filter successfully removed from Uyuni ✅
 			fmt.Printf("Filter %q removed completely from Uyuni\n", name)
-			delete(cp.Status.FilterIDs, name)
-			filtersChanged = true
 		}
 	}
 	return filtersChanged, nil
