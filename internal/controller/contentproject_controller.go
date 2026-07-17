@@ -461,9 +461,37 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 				// Filter already removed
 				fmt.Printf("Filter %q already removed from Uyuni\n", name)
 			} else if strings.Contains(err.Error(), "still in use") || strings.Contains(err.Error(), "is used in") {
-				// Filter is still used by other projects - that's OK
-				// Other projects will clean it up when they remove it from their YAML
-				fmt.Printf("Filter %q still used by other projects - will be cleaned up when they remove it\n", name)
+				// Check Kubernetes: is this filter used by ANY other ContentProject?
+				isUsedByAnyProject := false
+				usedByProjects := []string{}
+
+				var projectList uyuniv1.ContentProjectList
+				if listErr := r.List(ctx, &projectList, client.InNamespace(cp.Namespace)); listErr == nil {
+					for _, proj := range projectList.Items {
+						if proj.Name == cp.Name {
+							// Skip this project (we just detached it)
+							continue
+						}
+						// Check if any other project has this filter
+						if _, hasFilter := proj.Status.FilterIDs[name]; hasFilter {
+							isUsedByAnyProject = true
+							usedByProjects = append(usedByProjects, proj.Name)
+						}
+					}
+				}
+
+				if isUsedByAnyProject {
+					fmt.Printf("Filter %q still used by projects: %v - will be cleaned up when they remove it\n", name, usedByProjects)
+				} else {
+					// Filter is not used by ANY ContentProject in Kubernetes, but Uyuni says it's "in use"
+					// This is likely an orphaned filter. Since it's not used, attempt permanent deletion.
+					fmt.Printf("Filter %q not used by any ContentProject (orphaned) - forcing permanent deletion...\n", name)
+					if forceErr := uc.RemoveFilter(ctx, id); forceErr != nil {
+						fmt.Printf("Force delete filter %q failed: %v - may need manual removal from Uyuni UI\n", name, forceErr)
+					} else {
+						fmt.Printf("Filter %q permanently deleted from Uyuni ✅\n", name)
+					}
+				}
 			} else {
 				// Other errors - log but don't fail (filter is already detached from this project)
 				fmt.Printf("RemoveFilter %q: %v (filter already removed from project)\n", name, err)
