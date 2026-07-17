@@ -460,18 +460,19 @@ func (r *ContentProjectReconciler) reconcileFilters(ctx context.Context, uc uyun
 				delete(cp.Status.FilterIDs, name)
 				filtersChanged = true
 			} else if strings.Contains(err.Error(), "still in use") || strings.Contains(err.Error(), "is used in") {
-				// Filter is used by other projects - leave it in Uyuni
-				// Just remove from THIS project's tracking since detach succeeded
-				fmt.Printf("Filter %q is used by other projects - removed from %q only\n", name, cp.Spec.Label)
-				delete(cp.Status.FilterIDs, name)
+				// Filter is still attached to other projects
+				// Keep it in FilterIDs and retry on next reconciliation
+				// Once all other projects remove it, this will succeed
+				fmt.Printf("Filter %q still attached to other projects - will retry removal on next reconciliation\n", name)
 				filtersChanged = true
+				// Don't remove from FilterIDs - keep retrying
 			} else {
 				fmt.Printf("Failed to remove filter %q: %v\n", name, err)
 				return false, err
 			}
 		} else {
 			// Filter successfully removed from Uyuni
-			fmt.Printf("Filter %q removed from Uyuni\n", name)
+			fmt.Printf("Filter %q removed completely from Uyuni\n", name)
 			delete(cp.Status.FilterIDs, name)
 			filtersChanged = true
 		}
