@@ -1756,7 +1756,7 @@ func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel strin
 func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, name, description, predecessor string) error {
 	payload := map[string]any{
 		"projectLabel": projectLabel,
-		"label":        label,
+		"envLabel":     label,
 		"name":         name,
 		"description":  description,
 	}
@@ -1770,7 +1770,7 @@ func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, nam
 func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error {
 	_, err := apiPost[any](c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments", map[string]any{
 		"projectLabel": projectLabel,
-		"label":        envLabel,
+		"envLabel":     envLabel,
 		"props": map[string]any{
 			"name":        name,
 			"description": description,
@@ -1806,18 +1806,11 @@ func (c *Client) RemoveEnvironment(ctx context.Context, projectLabel, envLabel, 
 		}
 	}
 
-	// Build environment object for DELETE request using provided fields
-	// We use reasonable defaults for fields not available from the controller
+	// Per Uyuni API docs: removeEnvironment requires projectLabel and envLabel only
 	path := "contentmanagement/projects/" + url.QueryEscape(projectLabel) + "/environments"
 	payload := map[string]any{
 		"projectLabel": projectLabel,
-		"label":        envLabel,
-		"name":         name,
-		"description":  description,
-		"version":      0,
-		"status":       nil,
-		"builtTime":    nil,
-		"hasProfiles":  false,
+		"envLabel":     envLabel,
 	}
 
 	fmt.Printf("DEBUG: Sending DELETE request for env=%s with payload: %+v\n", envLabel, payload)
