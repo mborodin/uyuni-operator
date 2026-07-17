@@ -1770,7 +1770,7 @@ func (c *Client) CreateEnvironment(ctx context.Context, projectLabel, label, nam
 func (c *Client) UpdateEnvironment(ctx context.Context, projectLabel, envLabel, name, description string) error {
 	_, err := apiPost[any](c, "contentmanagement/projects/"+url.QueryEscape(projectLabel)+"/environments", map[string]any{
 		"projectLabel": projectLabel,
-		"label":        envLabel,
+		"envLabel":     envLabel,
 		"name":         name,
 		"description":  description,
 	})
