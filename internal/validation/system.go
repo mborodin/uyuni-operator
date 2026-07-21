@@ -92,7 +92,10 @@ func SystemFormulas(formulas []uyuniv1.FormulaAssignment, path *field.Path) fiel
 			}
 			// path is required, except an empty path with format yaml|json merges
 			// the parsed structure at the form-data root.
-			if vf.Path == "" && !(structured && (hasSecret || hasCM)) {
+			// Allow empty path only if: format is yaml|json AND we have a source (secret or configmap).
+			hasPath := vf.Path != ""
+			allowEmptyPath := structured && (hasSecret || hasCM)
+			if !hasPath && !allowEmptyPath {
 				errs = append(errs, field.Required(vp.Child("path"),
 					"path is required (an empty path is only allowed with format: yaml|json to merge at the root)"))
 			}
