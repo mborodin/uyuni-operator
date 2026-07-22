@@ -99,24 +99,33 @@ func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 // 1. Known serverID in status (fast path).
 // 2. Lookup by minionID (Salt key).
 // 3. Lookup by MAC address (for pre-created profiles awaiting first boot).
+// Each found system is validated to ensure it matches the expected hostname/minionID
+// before being adopted, preventing accidental mismatches.
 func (r *SystemReconciler) findOrAdopt(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (*uyuni.SystemDetails, bool, error) {
 	if sys.Status.UyuniServerID != 0 {
 		d, err := uc.GetSystemDetails(ctx, sys.Status.UyuniServerID)
 		if err == nil {
-			return d, true, nil
+			// Verify the cached system still matches our spec (hostname/minionID)
+			if r.systemMatchesSpec(sys, d) {
+				return d, true, nil
+			}
+			// Cached system no longer matches spec; clear it and fall through
+			sys.Status.UyuniServerID = 0
 		}
 		if !uyuni.IsNotFound(err) {
 			return nil, false, err
 		}
-		// Uyuni record disappeared; clear cached ID and fall through.
-		sys.Status.UyuniServerID = 0
 	}
 
 	d, err := uc.FindSystemByMinionID(ctx, sys.Spec.MinionID)
 	if err == nil {
-		return d, true, nil
+		// Verify found system matches our spec before adopting
+		if r.systemMatchesSpec(sys, d) {
+			return d, true, nil
+		}
+		// MinionID lookup returned a different system; don't adopt
 	}
-	if !uyuni.IsNotFound(err) {
+	if err != nil && !uyuni.IsNotFound(err) {
 		return nil, false, err
 	}
 
@@ -127,15 +136,37 @@ func (r *SystemReconciler) findOrAdopt(ctx context.Context, uc uyuni.API, sys *u
 			}
 			d, err := uc.FindSystemByMAC(ctx, nic.MACAddress)
 			if err == nil {
-				return d, true, nil
+				// Verify found system matches our spec before adopting
+				if r.systemMatchesSpec(sys, d) {
+					return d, true, nil
+				}
+				// MAC lookup returned a different system; don't adopt
 			}
-			if !uyuni.IsNotFound(err) {
+			if err != nil && !uyuni.IsNotFound(err) {
 				return nil, false, err
 			}
 		}
 	}
 
 	return nil, false, nil
+}
+
+// systemMatchesSpec verifies that a found system in Uyuni matches the expected spec.
+// This prevents adoption of wrong systems when lookups return unrelated records.
+func (r *SystemReconciler) systemMatchesSpec(sys *uyuniv1.System, found *uyuni.SystemDetails) bool {
+	// If system is registered (not bootstrap), verify minionID matches
+	if found.BaseEntitlement != "bootstrap_entitled" && found.MinionID != "" {
+		return found.MinionID == sys.Spec.MinionID
+	}
+
+	// For pre-created systems awaiting registration, verify hostname matches
+	// (minionID will be empty until first registration)
+	if found.Hostname != "" {
+		return found.Hostname == sys.Spec.Hostname
+	}
+
+	// If we have no identifying info on the found system, don't adopt it
+	return false
 }
 
 // systemProfileDisplayName returns the value used as Uyuni's systemName when
