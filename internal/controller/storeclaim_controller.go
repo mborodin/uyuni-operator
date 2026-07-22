@@ -79,15 +79,15 @@ func (r *StoreClaimReconciler) cleanupRemovedSystems(ctx context.Context, namesp
 		}
 	}
 
-	// Get XStore name (used in Object names)
+	// Get XStore name (used in System resource names)
 	xstoreName := fmt.Sprintf("%s-sc7t4", storeClaimName) // Format: storeclaim-name + random suffix
 
-	// Delete System Objects for removed systems
+	// Delete System CRD resources for removed systems
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "kubernetes.crossplane.io",
-		Version: "v1alpha2",
-		Kind:    "ObjectList",
+		Group:   "uyuni.uyuni-project.org",
+		Version: "v1alpha1",
+		Kind:    "SystemList",
 	})
 
 	if err := r.List(ctx, list, &client.ListOptions{
@@ -97,36 +97,32 @@ func (r *StoreClaimReconciler) cleanupRemovedSystems(ctx context.Context, namesp
 	}
 
 	for _, item := range list.Items {
-		if item.GetKind() != "Object" {
+		if item.GetKind() != systemKind {
 			continue
 		}
 
-		// Check if this Object is a System created by the StoreClaim Composition
-		manifest, _, _ := unstructured.NestedMap(item.Object, "spec", "forProvider", "manifest")
-		if manifest == nil {
-			continue
-		}
-
-		kind, _, _ := unstructured.NestedString(manifest, "kind")
-		if kind != systemKind {
-			continue
-		}
-
-		objName, _, _ := unstructured.NestedString(manifest, "metadata", "name")
-		if objName == "" {
+		sysName := item.GetName()
+		if sysName == "" {
 			continue
 		}
 
 		// Check if this system is still in the current spec
 		// System names are formatted as: xstore-name-system-name
-		for sysName := range currentSystems {
-			if objName == fmt.Sprintf("%s-%s", xstoreName, sysName) {
+		found := false
+		for specSysName := range currentSystems {
+			expectedName := fmt.Sprintf("%s-%s", xstoreName, specSysName)
+			if sysName == expectedName {
 				// System still exists in spec, don't delete
-				return
+				found = true
+				break
 			}
 		}
+		if found {
+			continue
+		}
 
-		// System was removed from spec, delete the Object
+		// System was removed from spec, delete it
+		// This will trigger the System controller's finalizer logic to delete from Uyuni
 		if err := r.Delete(ctx, &item); err != nil {
 			// Log but don't fail
 			continue
