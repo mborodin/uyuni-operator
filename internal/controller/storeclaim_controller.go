@@ -4,15 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
@@ -87,20 +83,20 @@ func (r *StoreClaimReconciler) cleanupRemovedSystems(ctx context.Context, namesp
 	xstoreName := fmt.Sprintf("%s-sc7t4", storeClaimName) // Format: storeclaim-name + random suffix
 
 	// Delete System Objects for removed systems
-	systemGVR := schema.GroupVersionResource{
-		Group:    "kubernetes.crossplane.io",
-		Version:  "v1alpha2",
-		Resource: "objects",
-	}
-
-	list, err := r.List(ctx, &unstructured.UnstructuredList{}, &client.ListOptions{
-		Namespace: namespace,
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "kubernetes.crossplane.io",
+		Version: "v1alpha2",
+		Kind:    "ObjectList",
 	})
-	if err != nil {
+
+	if err := r.List(ctx, list, &client.ListOptions{
+		Namespace: namespace,
+	}); err != nil {
 		return
 	}
 
-	for _, item := range list.(*unstructured.UnstructuredList).Items {
+	for _, item := range list.Items {
 		if item.GetKind() != "Object" {
 			continue
 		}
@@ -151,20 +147,20 @@ func (r *StoreClaimReconciler) cleanupRemovedStoreHubs(ctx context.Context, name
 	}
 
 	// Delete StoreHubClaims for removed storeHubs
-	storeHubClaimGVR := schema.GroupVersionResource{
-		Group:    storeClaimGroup,
-		Version:  storeClaimVersion,
-		Resource: "storehubclaims",
-	}
-
-	list, err := r.List(ctx, &unstructured.UnstructuredList{}, &client.ListOptions{
-		Namespace: namespace,
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   storeClaimGroup,
+		Version: storeClaimVersion,
+		Kind:    "StoreHubClaimList",
 	})
-	if err != nil {
+
+	if err := r.List(ctx, list, &client.ListOptions{
+		Namespace: namespace,
+	}); err != nil {
 		return
 	}
 
-	for _, item := range list.(*unstructured.UnstructuredList).Items {
+	for _, item := range list.Items {
 		if item.GetKind() != storeHubClaimKind {
 			continue
 		}
@@ -203,24 +199,19 @@ func (r *StoreClaimReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	r.previousSpecs = make(map[string]map[string]interface{})
 
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   storeClaimGroup,
+		Version: storeClaimVersion,
+		Kind:    storeClaimKind,
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&unstructured.Unstructured{}).
+		For(u).
 		WithEventFilter(predicate.NewPredicateFuncs(func(object client.Object) bool {
 			// Only watch StoreClaim resources
 			return object.GetObjectKind().GroupVersionKind().Kind == storeClaimKind &&
 				object.GetObjectKind().GroupVersionKind().Group == storeClaimGroup
 		})).
-		Watches(
-			&unstructured.Unstructured{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-				// Trigger StoreClaim cleanup when StoreHubClaim or System changes
-				if obj.GetObjectKind().GroupVersionKind().Kind == storeHubClaimKind ||
-					obj.GetObjectKind().GroupVersionKind().Kind == systemKind {
-					// Re-reconcile the parent StoreClaim
-					return []reconcile.Request{}
-				}
-				return []reconcile.Request{}
-			}),
-		).
 		Complete(r)
 }
