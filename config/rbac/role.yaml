@@ -14,6 +14,32 @@ rules:
   - list
   - watch
 - apiGroups:
+  - kubernetes.crossplane.io
+  resources:
+  - objects
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nexa.ahold-delhaize.com
+  resources:
+  - storeclaims
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nexa.ahold-delhaize.com
+  resources:
+  - storehubclaims
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
   - uyuni.uyuni-project.org
   resources:
   - activationkeys
