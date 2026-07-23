@@ -135,11 +135,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.StoreClaimReconciler{}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "StoreClaim")
-		os.Exit(1)
-	}
-
 	if err := (&controller.RepositoryReconciler{
 		Client:  mgr.GetClient(),
 		Clients: clientPool,
