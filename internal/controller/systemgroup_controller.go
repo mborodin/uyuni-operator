@@ -104,20 +104,30 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	// Sync group membership.
+	// Sync group membership. Only take an authoritative stance (add missing,
+	// remove extras) when this SystemGroup actually declares members via
+	// memberRefs/staticMinionIDs. Some groups are populated exclusively via
+	// System.spec.groupRefs (the system-side, preferred declaration per
+	// System.Spec.GroupRefs's doc comment) — for those, memberRefs is
+	// intentionally empty, and desiredIDs being empty must NOT be read as
+	// "membership should be empty": doing so previously caused this
+	// reconciler to strip out every system added via the System-side
+	// declaration on every pass.
 	currentIDs, err := uc.ListSystemsInGroup(ctx, sg.Spec.Name)
 	if err != nil && !uyuni.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
-	if add, rm := diffIntSets(currentIDs, desiredIDs); len(add)+len(rm) > 0 {
-		if len(add) > 0 {
-			if err := uc.AddSystemsToGroup(ctx, sg.Spec.Name, add); err != nil {
-				return ctrl.Result{}, err
+	if len(sg.Spec.MemberRefs) > 0 || len(sg.Spec.StaticMinionIDs) > 0 {
+		if add, rm := diffIntSets(currentIDs, desiredIDs); len(add)+len(rm) > 0 {
+			if len(add) > 0 {
+				if err := uc.AddSystemsToGroup(ctx, sg.Spec.Name, add); err != nil {
+					return ctrl.Result{}, err
+				}
 			}
-		}
-		if len(rm) > 0 {
-			if err := uc.RemoveSystemsFromGroup(ctx, sg.Spec.Name, rm); err != nil {
-				return ctrl.Result{}, err
+			if len(rm) > 0 {
+				if err := uc.RemoveSystemsFromGroup(ctx, sg.Spec.Name, rm); err != nil {
+					return ctrl.Result{}, err
+				}
 			}
 		}
 	}
@@ -145,7 +155,7 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	sg.Status.MemberCount = len(desiredIDs)
+	sg.Status.MemberCount = len(currentIDs)
 	sg.Status.ResolvedMembers = minionIDs
 	sg.Status.ActiveConfigChannelLabels = desiredCCs
 	sg.Status.ObservedGeneration = sg.Generation
