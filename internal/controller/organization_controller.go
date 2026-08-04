@@ -69,6 +69,21 @@ func (r *OrganizationReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		// this org is ours to manage, unlike an imported one.
 		details, err := uc.GetOrganizationByID(ctx, org.Status.UyuniOrgID)
 		if err != nil {
+			if uyuni.IsNotFound(err) {
+				// The org we thought we owned is gone — deleted directly in
+				// Uyuni, or (pre-fix data) deleted by a sibling Organization CR
+				// that had ended up sharing this same ID via the by-name
+				// adoption race guarded against below. There's nothing to
+				// auto-recover here (recreating could conflict with whatever
+				// the customer intended), so this gets its own reason instead
+				// of looping on generic LookupFailed forever.
+				setReady(&org.Status.Conditions, org.Generation, metav1.ConditionFalse, "OrganizationMissing",
+					fmt.Sprintf("Uyuni organization %d is no longer found; it was removed outside of this CR's lifecycle", org.Status.UyuniOrgID))
+				if serr := r.Status().Update(ctx, &org); serr != nil {
+					return ctrl.Result{}, serr
+				}
+				return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			}
 			return r.fail(ctx, &org, "LookupFailed", err)
 		}
 		if details.Name != org.Spec.Name {
@@ -77,6 +92,26 @@ func (r *OrganizationReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			}
 		}
 	} else {
+		// Guard against a second, unrelated Organization CR (e.g. from a
+		// different BrandRegionClaim) that happens to share this Uyuni server
+		// and name silently adopting the org the other CR already created —
+		// the by-name lookup below can't tell "this is my org, reconciling
+		// after a restart" apart from "someone else's org with the same
+		// name". See organization_webhook.go's checkDuplicate for the
+		// admission-time version; this is the reconcile-time backstop for the
+		// race window between two CRs created close together.
+		if otherRef, otherID, err := r.findRealizedDuplicate(ctx, &org); err != nil {
+			return ctrl.Result{}, err
+		} else if otherRef != "" {
+			setReady(&org.Status.Conditions, org.Generation, metav1.ConditionFalse, "DuplicateOrganization",
+				fmt.Sprintf("Organization %s already manages Uyuni org %d with name %q on this Uyuni server; rename one of them or adopt the existing org via spec.import",
+					otherRef, otherID, org.Spec.Name))
+			if serr := r.Status().Update(ctx, &org); serr != nil {
+				return ctrl.Result{}, serr
+			}
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		}
+
 		details, err := uc.GetOrganizationByName(ctx, org.Spec.Name)
 		if uyuni.IsNotFound(err) {
 			orgID, err := r.createOrg(ctx, uc, &org)
@@ -192,6 +227,76 @@ func (r *OrganizationReconciler) createOrg(ctx context.Context, uc uyuni.API, or
 	return uc.CreateOrganization(ctx, org.Spec.Name, username, password, firstName, lastName, email)
 }
 
+// providerURL resolves a providerRef name to the UyuniProvider's spec.url.
+// Each BrandRegionClaim gets its own privately named UyuniProvider object
+// (see config/crossplane/composition.yaml), so two Organizations can have
+// different providerRef names while pointing at the very same Uyuni server —
+// uniqueness of spec.name has to be scoped by the resolved server URL, not
+// by the k8s providerRef name string.
+func (r *OrganizationReconciler) providerURL(ctx context.Context, providerName string) (string, error) {
+	var prov uyuniv1.UyuniProvider
+	if err := r.Get(ctx, types.NamespacedName{Name: providerName}, &prov); err != nil {
+		return "", err
+	}
+	return prov.Spec.URL, nil
+}
+
+// findRealizedDuplicate returns the identifying name and UyuniOrgID of
+// another non-import Organization CR (any namespace) that already manages a
+// Uyuni org with the same name on the same Uyuni server as org. Returns ""
+// if none — including when org's own provider can't be resolved yet, since
+// that's a ReferenceUnavailable-shaped wait state handled elsewhere, not a
+// duplicate.
+func (r *OrganizationReconciler) findRealizedDuplicate(ctx context.Context, org *uyuniv1.Organization) (string, int, error) {
+	myURL, err := r.providerURL(ctx, org.Spec.ProviderRef.Name)
+	if err != nil {
+		return "", 0, nil
+	}
+
+	var list uyuniv1.OrganizationList
+	if err := r.List(ctx, &list); err != nil {
+		return "", 0, err
+	}
+	for _, other := range list.Items {
+		if other.Namespace == org.Namespace && other.Name == org.Name {
+			continue
+		}
+		if other.Spec.Import != nil || other.Spec.Name != org.Spec.Name || other.Status.UyuniOrgID == 0 {
+			continue
+		}
+		otherURL, err := r.providerURL(ctx, other.Spec.ProviderRef.Name)
+		if err != nil || otherURL != myURL {
+			continue
+		}
+		return other.Namespace + "/" + other.Name, other.Status.UyuniOrgID, nil
+	}
+	return "", 0, nil
+}
+
+// sharedByOther reports whether another Organization CR (any namespace, not
+// itself being deleted) currently has the same UyuniOrgID bound in its
+// status. Guards against deleting the underlying Uyuni org out from under a
+// sibling CR that ended up sharing it — e.g. cluster state left over from
+// before findRealizedDuplicate existed.
+func (r *OrganizationReconciler) sharedByOther(ctx context.Context, org *uyuniv1.Organization) (bool, error) {
+	var list uyuniv1.OrganizationList
+	if err := r.List(ctx, &list); err != nil {
+		return false, err
+	}
+	for _, other := range list.Items {
+		if other.Namespace == org.Namespace && other.Name == org.Name {
+			continue
+		}
+		if !other.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if other.Status.UyuniOrgID != 0 && other.Status.UyuniOrgID == org.Status.UyuniOrgID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *OrganizationReconciler) handleDeletion(ctx context.Context, org *uyuniv1.Organization) (ctrl.Result, error) {
 	if !containsFinalizer(org, orgFinalizer) {
 		return ctrl.Result{}, nil
@@ -222,6 +327,19 @@ func (r *OrganizationReconciler) handleDeletion(ctx context.Context, org *uyuniv
 
 	// Don't delete imported orgs — they pre-existed and may be shared.
 	if org.Spec.Import == nil && org.Status.UyuniOrgID > 0 {
+		// Don't delete a Uyuni org that a sibling Organization CR is still
+		// bound to (see findRealizedDuplicate for how that sharing normally
+		// gets prevented, and sharedByOther's doc comment for why this check
+		// still matters as a backstop). Deleting it here would break the
+		// sibling out from under it instead of just cleaning up this CR.
+		if shared, err := r.sharedByOther(ctx, org); err != nil {
+			return ctrl.Result{}, err
+		} else if shared {
+			r.Clients.InvalidateOrg(org.Namespace + "/" + org.Name)
+			removeFinalizer(org, orgFinalizer)
+			return ctrl.Result{}, r.Update(ctx, org)
+		}
+
 		uc, err := r.clientFromSnapshot(ctx, org)
 		if err != nil {
 			return ctrl.Result{}, err
