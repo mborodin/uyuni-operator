@@ -4,6 +4,31 @@
 
 ### Fixed
 
+- **Two Organization CRs can no longer silently share one Uyuni org.**
+  Reconciling a new Organization looks up an existing Uyuni org by name and
+  adopts it if found — meant to survive operator restarts, not to merge
+  unrelated CRs. Two BrandRegionClaims that happened to use the same
+  `organization.name` (e.g. a copy-pasted sample never renamed) each got
+  their own Organization CR, and the second one silently adopted the
+  first's org: both CRs then showed the same `OrgID`, and deleting either
+  one deleted the org out from under the other, leaving the survivor stuck
+  failing forever (manual finalizer removal was the only way out). The
+  admission webhook now rejects a create/update whose `(resolved Uyuni
+  server, spec.name)` matches another non-import Organization CR; the
+  reconciler carries the same check as a race-window backstop (new `Ready`
+  reason `DuplicateOrganization`). Deletion now also checks whether a
+  sibling CR still references the same `UyuniOrgID` before calling
+  `org/delete`, skipping the Uyuni-side delete if so — protecting clusters
+  that already have a pre-existing duplicate. A bound org that disappears
+  from Uyuni (deleted directly, or by this bug pre-fix) now surfaces as its
+  own reason, `OrganizationMissing`, instead of retrying `LookupFailed`
+  forever. Uniqueness is scoped by the `UyuniProvider`'s resolved `spec.url`,
+  not by `spec.providerRef.name` — each BrandRegionClaim gets its own
+  privately named `UyuniProvider`, so two Organizations can share a
+  differently-named providerRef while pointing at the same server, or vice
+  versa. Existing clusters: only new/updated Organization CRs get the
+  admission check; already-duplicated CRs from before this fix need manual
+  review (`kubectl get organization -A`, look for repeated `ORGID`).
 - **The Cobbler system record now carries the system hostname.** A pre-created
   System's `spec.hostname` was only used for the Cobbler record *name*; the record
   itself had an empty `hostname` and no interface `dns_name`, so Cobbler couldn't
