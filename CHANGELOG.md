@@ -13,10 +13,16 @@
   first's org: both CRs then showed the same `OrgID`, and deleting either
   one deleted the org out from under the other, leaving the survivor stuck
   failing forever (manual finalizer removal was the only way out). The
-  admission webhook now rejects a create/update whose `(resolved Uyuni
-  server, spec.name)` matches another non-import Organization CR; the
-  reconciler carries the same check as a race-window backstop (new `Ready`
-  reason `DuplicateOrganization`). Deletion now also checks whether a
+  admission webhook now rejects a create whose `(resolved Uyuni server,
+  spec.name)` matches another non-import Organization CR; the reconciler
+  carries the same check as a race-window backstop (new `Ready` reason
+  `DuplicateOrganization`). The webhook check runs on Create only, not
+  Update — `spec.name`/`spec.providerRef`/`spec.import` are already
+  immutable post-create, so an Update can never introduce a new collision,
+  and rejecting updates on an already-flagged CR would block the
+  reconciler's own routine updates (finalizer add/remove included),
+  reintroducing the exact "can't finalize, must strip manually" symptom
+  this fix targets. Deletion now also checks whether a
   sibling CR still references the same `UyuniOrgID` before calling
   `org/delete`, skipping the Uyuni-side delete if so — protecting clusters
   that already have a pre-existing duplicate. A bound org that disappears
