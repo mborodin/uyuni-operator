@@ -39,13 +39,24 @@ func (v *OrganizationValidator) ValidateCreate(ctx context.Context, obj runtime.
 	return v.checkDuplicate(ctx, org)
 }
 
-func (v *OrganizationValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (v *OrganizationValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	old := oldObj.(*uyuniv1.Organization)
 	org := newObj.(*uyuniv1.Organization)
-	if err := v.validateSpec(org, old); err != nil {
-		return nil, err
-	}
-	return v.checkDuplicate(ctx, org)
+	// checkDuplicate deliberately does NOT run here. spec.name, spec.providerRef,
+	// and spec.import are already enforced immutable by validateSpec below, so
+	// an Update can never introduce a new (server, name) collision that Create
+	// didn't already see — running it here would only re-check a conflict that,
+	// if present, was already present at Create. Blocking updates on it is
+	// actively harmful: the reconciler's own routine updates (adding the
+	// finalizer, stripping annotations, removing the finalizer on delete) go
+	// through this same path, and rejecting them would make an already-flagged
+	// duplicate impossible to finalize OR clean up — reintroducing the "manual
+	// finalizer removal" symptom this fix exists to eliminate. The race-window
+	// case (Create admitted before the conflict was resolvable) is instead
+	// caught by the reconciler's findRealizedDuplicate backstop, which sets a
+	// Ready=False/DuplicateOrganization condition via the status subresource
+	// (not covered by this webhook) rather than blocking the object outright.
+	return nil, v.validateSpec(org, old)
 }
 
 func (v *OrganizationValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
