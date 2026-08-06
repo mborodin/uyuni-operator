@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **SoftwareChannel no longer piles up duplicate repo sync schedules and
+  concurrent syncs.** `channel/software/syncRepo` with a `cronExpr` *appends*
+  a schedule in Uyuni rather than replacing the existing one, and the
+  reconciler called it unconditionally on every pass — including the
+  10-minute steady-state heartbeat and every `Repository` watch event. On a
+  cluster with nine channels this left 264 rows in `rhntaskoschedule` in a
+  single afternoon, and taskomatic duly fanned each one out into its own
+  `spacewalk-repo-sync` process: 16+ concurrent syncs of the same channel,
+  several of them ending up `idle in transaction` against Postgres and
+  blocking package linking entirely (channels sat at `Ready=True`,
+  `PackagesSynced=SyncInProgress`, zero packages, indefinitely). The
+  reconciler now reads the live schedule via the new
+  `GetRepoSyncSchedule` (`channel/software/getRepoSyncCronExpression`) and
+  only writes when the cron actually differs. Separately, the one-off
+  `sync-now` annotation and `syncOnCreate` triggers now skip re-triggering
+  while Uyuni reports `sync_status: "R"`, so a repo that takes longer to
+  sync than the reconcile interval no longer gets a fresh sync queued on
+  top of the running one. Recovering an already-affected server needs the
+  duplicate `rhntaskoschedule` rows pruned by hand; a sync job wedged in
+  `EXECUTING` also leaves an orphan `qrtz_fired_triggers` row that keeps
+  respawning workers until it is deleted.
+
 - **Two Organization CRs can no longer silently share one Uyuni org.**
   Reconciling a new Organization looks up an existing Uyuni org by name and
   adopts it if found — meant to survive operator restarts, not to merge

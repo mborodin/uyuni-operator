@@ -1407,6 +1407,24 @@ func (c *Client) DisassociateRepo(ctx context.Context, channelLabel, repoLabel s
 	return err
 }
 
+// GetRepoSyncSchedule returns the quartz cron expression currently attached
+// to the channel's repo sync, or "" when no recurring sync is scheduled.
+// Needed because SetRepoSyncSchedule appends a schedule rather than
+// replacing one, so callers must diff against the live value first.
+func (c *Client) GetRepoSyncSchedule(ctx context.Context, channelLabel string) (string, error) {
+	cron, err := apiGet[string](c, "channel/software/getRepoSyncCronExpression?channelLabel="+url.QueryEscape(channelLabel))
+	if err != nil {
+		return "", asNotFound(err)
+	}
+	return cron, nil
+}
+
+// SetRepoSyncSchedule attaches a recurring sync schedule to the channel.
+// Uyuni ADDS a schedule on every call instead of replacing the existing
+// one, so callers must only invoke this when the cron actually differs
+// from GetRepoSyncSchedule - otherwise every reconcile leaves another row
+// in rhntaskoschedule and taskomatic ends up running the same repo sync
+// many times over.
 func (c *Client) SetRepoSyncSchedule(ctx context.Context, channelLabel, quartzCron string) error {
 	_, err := apiPost[any](c, "channel/software/syncRepo", map[string]any{
 		"channelLabel": channelLabel,

@@ -125,6 +125,7 @@ type API interface {
 	ListChannelRepos(ctx context.Context, label string) ([]string, error)
 	AssociateRepo(ctx context.Context, channelLabel, repoLabel string) error
 	DisassociateRepo(ctx context.Context, channelLabel, repoLabel string) error
+	GetRepoSyncSchedule(ctx context.Context, channelLabel string) (string, error)
 	SetRepoSyncSchedule(ctx context.Context, channelLabel, quartzCron string) error
 	SyncChannelNow(ctx context.Context, channelLabel string) error
 	GetChannelPackageCount(ctx context.Context, label string) (int, error)

@@ -196,10 +196,20 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Set recurring sync schedule if configured.
+	// Set recurring sync schedule if configured. Uyuni appends a schedule on
+	// every syncRepo-with-cronExpr call rather than replacing the existing
+	// one, so diff against the live value first: without this, each reconcile
+	// leaves another row in rhntaskoschedule and taskomatic fans out that
+	// many concurrent spacewalk-repo-sync processes for the same channel.
 	if sc.Spec.Sync.Cron != "" {
-		if err := uc.SetRepoSyncSchedule(ctx, sc.Spec.Label, sc.Spec.Sync.Cron); err != nil {
+		currentCron, err := uc.GetRepoSyncSchedule(ctx, sc.Spec.Label)
+		if err != nil && !uyuni.IsNotFound(err) {
 			return ctrl.Result{}, err
+		}
+		if currentCron != sc.Spec.Sync.Cron {
+			if err := uc.SetRepoSyncSchedule(ctx, sc.Spec.Label, sc.Spec.Sync.Cron); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
