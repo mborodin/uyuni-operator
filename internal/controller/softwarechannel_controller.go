@@ -203,21 +203,33 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Handle one-off sync annotation.
+	// Handle one-off sync annotation. Uyuni's own sync_status ("R" while a
+	// repo-sync task is running) is the only authoritative in-flight signal
+	// available to us; skip re-triggering while it's set, otherwise a repo
+	// that takes longer than the reconcile heartbeat to sync gets a fresh
+	// spacewalk-repo-sync queued on every pass, and taskomatic does not
+	// deduplicate those (observed: a dozen-plus concurrent processes on the
+	// same channel, several ending up idle-in-transaction against Postgres).
 	if sc.Annotations[uyuniv1.AnnSyncNow] == "true" {
-		if err := uc.SyncChannelNow(ctx, sc.Spec.Label); err != nil {
-			return ctrl.Result{}, err
+		if current.SyncStatus != "R" {
+			if err := uc.SyncChannelNow(ctx, sc.Spec.Label); err != nil {
+				return ctrl.Result{}, err
+			}
+			now := metav1.Now()
+			sc.Status.LastSyncTime = &now
 		}
-		now := metav1.Now()
-		sc.Status.LastSyncTime = &now
 		delete(sc.Annotations, uyuniv1.AnnSyncNow)
 		if err := r.Update(ctx, &sc); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	// Trigger sync after first creation if requested.
-	if justCreated && sc.Spec.Sync.SyncOnCreate {
+	// Trigger sync after first creation if requested. justCreated is only
+	// true on the reconcile pass right after CreateChannel, so this alone
+	// can't cause repeated triggering across the 10-minute heartbeat - but
+	// it shares the same current.SyncStatus guard for consistency and in
+	// case a future caller starts re-evaluating justCreated per pass.
+	if justCreated && sc.Spec.Sync.SyncOnCreate && current.SyncStatus != "R" {
 		if err := uc.SyncChannelNow(ctx, sc.Spec.Label); err != nil {
 			return ctrl.Result{}, err
 		}
