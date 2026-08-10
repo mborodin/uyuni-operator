@@ -2293,8 +2293,17 @@ func (c *Client) CreateMaintenanceCalendarWithURL(ctx context.Context, label, ca
 	return &r, nil
 }
 
+// GetMaintenanceCalendarDetails, ListMaintenanceCalendarLabels,
+// GetMaintenanceScheduleDetails, ListMaintenanceScheduleNames, and
+// ListSystemsWithSchedule below all use apiPost, not apiGet — unlike most
+// other namespaces in this client, every method in the `maintenance`
+// namespace (including its list/get reads) is documented as HTTP POST only;
+// a GET never reaches the API handler and Uyuni's routing falls through to
+// a generic access-denied page instead of a real 404/405.
 func (c *Client) GetMaintenanceCalendarDetails(ctx context.Context, label string) (*MaintenanceCalendarDetails, error) {
-	r, err := apiGet[MaintenanceCalendarDetails](c, "maintenance/getCalendarDetails?label="+url.QueryEscape(label))
+	r, err := apiPost[MaintenanceCalendarDetails](c, "maintenance/getCalendarDetails", map[string]any{
+		"label": label,
+	})
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -2302,7 +2311,7 @@ func (c *Client) GetMaintenanceCalendarDetails(ctx context.Context, label string
 }
 
 func (c *Client) ListMaintenanceCalendarLabels(ctx context.Context) ([]string, error) {
-	return apiGet[[]string](c, "maintenance/listCalendarLabels")
+	return apiPost[[]string](c, "maintenance/listCalendarLabels", map[string]any{})
 }
 
 func (c *Client) UpdateMaintenanceCalendar(ctx context.Context, label string, ical, calendarURL, rescheduleStrategy string) error {
@@ -2353,7 +2362,9 @@ func (c *Client) CreateMaintenanceSchedule(ctx context.Context, name, schedType,
 }
 
 func (c *Client) GetMaintenanceScheduleDetails(ctx context.Context, name string) (*MaintenanceScheduleDetails, error) {
-	r, err := apiGet[MaintenanceScheduleDetails](c, "maintenance/getScheduleDetails?name="+url.QueryEscape(name))
+	r, err := apiPost[MaintenanceScheduleDetails](c, "maintenance/getScheduleDetails", map[string]any{
+		"name": name,
+	})
 	if err != nil {
 		return nil, asNotFound(err)
 	}
@@ -2361,7 +2372,7 @@ func (c *Client) GetMaintenanceScheduleDetails(ctx context.Context, name string)
 }
 
 func (c *Client) ListMaintenanceScheduleNames(ctx context.Context) ([]string, error) {
-	return apiGet[[]string](c, "maintenance/listScheduleNames")
+	return apiPost[[]string](c, "maintenance/listScheduleNames", map[string]any{})
 }
 
 func (c *Client) UpdateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel, rescheduleStrategy string) error {
@@ -2404,7 +2415,9 @@ func (c *Client) RetractScheduleFromSystems(ctx context.Context, serverIDs []int
 }
 
 func (c *Client) ListSystemsWithSchedule(ctx context.Context, scheduleName string) ([]int, error) {
-	return apiGet[[]int](c, "maintenance/listSystemsWithSchedule?scheduleName="+url.QueryEscape(scheduleName))
+	return apiPost[[]int](c, "maintenance/listSystemsWithSchedule", map[string]any{
+		"scheduleName": scheduleName,
+	})
 }
 
 // =============================================================================
