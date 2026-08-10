@@ -2268,6 +2268,146 @@ func (c *Client) CancelAction(ctx context.Context, actionID int) error {
 }
 
 // =============================================================================
+// Maintenance (maintenance) — calendars, schedules, system assignment
+// =============================================================================
+
+func (c *Client) CreateMaintenanceCalendar(ctx context.Context, label, ical string) (*MaintenanceCalendarDetails, error) {
+	r, err := apiPost[MaintenanceCalendarDetails](c, "maintenance/createCalendar", map[string]any{
+		"label": label,
+		"ical":  ical,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (c *Client) CreateMaintenanceCalendarWithURL(ctx context.Context, label, calendarURL string) (*MaintenanceCalendarDetails, error) {
+	r, err := apiPost[MaintenanceCalendarDetails](c, "maintenance/createCalendarWithUrl", map[string]any{
+		"label": label,
+		"url":   calendarURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (c *Client) GetMaintenanceCalendarDetails(ctx context.Context, label string) (*MaintenanceCalendarDetails, error) {
+	r, err := apiGet[MaintenanceCalendarDetails](c, "maintenance/getCalendarDetails?label="+url.QueryEscape(label))
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	return &r, nil
+}
+
+func (c *Client) ListMaintenanceCalendarLabels(ctx context.Context) ([]string, error) {
+	return apiGet[[]string](c, "maintenance/listCalendarLabels")
+}
+
+func (c *Client) UpdateMaintenanceCalendar(ctx context.Context, label string, ical, calendarURL, rescheduleStrategy string) error {
+	details := map[string]any{}
+	if ical != "" {
+		details["ical"] = ical
+	}
+	if calendarURL != "" {
+		details["url"] = calendarURL
+	}
+	_, err := apiPost[any](c, "maintenance/updateCalendar", map[string]any{
+		"label":              label,
+		"details":            details,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+func (c *Client) RefreshMaintenanceCalendar(ctx context.Context, label, rescheduleStrategy string) error {
+	_, err := apiPost[any](c, "maintenance/refreshCalendar", map[string]any{
+		"label":              label,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+func (c *Client) DeleteMaintenanceCalendar(ctx context.Context, label string, cancelScheduledActions bool) error {
+	_, err := apiPost[any](c, "maintenance/deleteCalendar", map[string]any{
+		"label":                  label,
+		"cancelScheduledActions": cancelScheduledActions,
+	})
+	return asNotFound(err)
+}
+
+func (c *Client) CreateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel string) (*MaintenanceScheduleDetails, error) {
+	body := map[string]any{
+		"name": name,
+		"type": schedType,
+	}
+	if calendarLabel != "" {
+		body["calendar"] = calendarLabel
+	}
+	r, err := apiPost[MaintenanceScheduleDetails](c, "maintenance/createSchedule", body)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (c *Client) GetMaintenanceScheduleDetails(ctx context.Context, name string) (*MaintenanceScheduleDetails, error) {
+	r, err := apiGet[MaintenanceScheduleDetails](c, "maintenance/getScheduleDetails?name="+url.QueryEscape(name))
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	return &r, nil
+}
+
+func (c *Client) ListMaintenanceScheduleNames(ctx context.Context) ([]string, error) {
+	return apiGet[[]string](c, "maintenance/listScheduleNames")
+}
+
+func (c *Client) UpdateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel, rescheduleStrategy string) error {
+	details := map[string]any{
+		"type":     schedType,
+		"calendar": calendarLabel, // "" clears the calendar (unrestricted)
+	}
+	_, err := apiPost[any](c, "maintenance/updateSchedule", map[string]any{
+		"name":               name,
+		"details":            details,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+func (c *Client) DeleteMaintenanceSchedule(ctx context.Context, name string) error {
+	_, err := apiPost[any](c, "maintenance/deleteSchedule", map[string]any{
+		"name": name,
+	})
+	return asNotFound(err)
+}
+
+func (c *Client) AssignScheduleToSystems(ctx context.Context, scheduleName string, serverIDs []int, rescheduleStrategy string) error {
+	_, err := apiPost[any](c, "maintenance/assignScheduleToSystems", map[string]any{
+		"scheduleName":       scheduleName,
+		"sids":               serverIDs,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+// RetractScheduleFromSystems takes only system IDs — Uyuni's
+// retractScheduleFromSystems has no schedule-name parameter because a
+// system holds at most one schedule at a time.
+func (c *Client) RetractScheduleFromSystems(ctx context.Context, serverIDs []int) error {
+	_, err := apiPost[any](c, "maintenance/retractScheduleFromSystems", map[string]any{
+		"sids": serverIDs,
+	})
+	return err
+}
+
+func (c *Client) ListSystemsWithSchedule(ctx context.Context, scheduleName string) ([]int, error) {
+	return apiGet[[]int](c, "maintenance/listSystemsWithSchedule?scheduleName="+url.QueryEscape(scheduleName))
+}
+
+// =============================================================================
 // Organization management (satellite admin)
 // =============================================================================
 

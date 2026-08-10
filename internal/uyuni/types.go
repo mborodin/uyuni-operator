@@ -309,3 +309,26 @@ type SystemActionResult struct {
 	Result   string
 	ExitCode *int
 }
+
+// --- Maintenance (maintenance) ---
+
+// MaintenanceCalendarDetails is the wire shape returned by
+// maintenance.createCalendar / createCalendarWithUrl / getCalendarDetails.
+type MaintenanceCalendarDetails struct {
+	ID    int    `json:"id"`
+	OrgID int    `json:"orgId"`
+	Label string `json:"label"`
+	URL   string `json:"url"`
+	ICal  string `json:"ical"`
+}
+
+// MaintenanceScheduleDetails is the wire shape returned by
+// maintenance.createSchedule / getScheduleDetails. Calendar is nil when the
+// schedule has no calendar assigned (the 24/7, no-restriction case).
+type MaintenanceScheduleDetails struct {
+	ID       int                         `json:"id"`
+	OrgID    int                         `json:"orgId"`
+	Name     string                      `json:"name"`
+	Type     string                      `json:"type"`
+	Calendar *MaintenanceCalendarDetails `json:"calendar,omitempty"`
+}

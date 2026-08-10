@@ -1,0 +1,35 @@
+# MaintenanceCalendar Sample
+# Apply with: kubectl apply -f config/samples/maintenancecalendar-sample.yaml
+#
+# A MaintenanceCalendar defines a reusable set of recurring maintenance
+# windows in Uyuni (RFC5545 iCal). MaintenanceSchedules reference it by
+# name — one calendar can be shared by many schedules/stores.
+#
+# spec.label is immutable (it is the calendar's identity in Uyuni).
+# Exactly one of spec.ical / spec.url must be set (webhook-enforced).
+# For a URL-backed calendar, trigger a re-pull with the
+# uyuni.uyuni-project.org/refresh-now annotation.
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: MaintenanceCalendar
+metadata:
+  name: weeknights
+  namespace: linux-platform
+spec:
+  label: weeknights
+  # Tue/Wed/Thu 02:00-04:00, recurring weekly.
+  ical: |
+    BEGIN:VCALENDAR
+    VERSION:2.0
+    PRODID:-//uyuni-operator//maintenance-calendar//EN
+    BEGIN:VEVENT
+    UID:weeknights@uyuni-operator
+    DTSTART;TZID=Europe/Brussels:20260101T020000
+    DTEND;TZID=Europe/Brussels:20260101T040000
+    RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH
+    SUMMARY:Store maintenance window
+    END:VEVENT
+    END:VCALENDAR
+  organizationRef:
+    name: pantheon-of-goods

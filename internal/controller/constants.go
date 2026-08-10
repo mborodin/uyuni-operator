@@ -24,6 +24,17 @@ func orgRef(ref *uyuniv1.LocalObjectRef) string {
 	return ref.Name
 }
 
+// rescheduleStrategyOrDefault guards against an empty spec value reaching
+// the Uyuni API (the kubebuilder default applies server-side on Create, but
+// this is cheap defense-in-depth for objects built outside the API server,
+// e.g. in tests).
+func rescheduleStrategyOrDefault(s string) string {
+	if s == "" {
+		return "Cancel"
+	}
+	return s
+}
+
 // Finalizer strings, all rooted in the current API group. Centralized so
 // reconcilers reference these constants rather than hardcoding strings.
 const (
@@ -49,4 +60,6 @@ const (
 	cobSysFinalizer   = uyuniv1.Group + "/cobblersystem"
 	cobDistFinalizer  = uyuniv1.Group + "/cobblerdistro"
 	cobProfFinalizer  = uyuniv1.Group + "/cobblerprofile"
+	mcalFinalizer     = uyuniv1.Group + "/maintenancecalendar"
+	mschedFinalizer   = uyuniv1.Group + "/maintenanceschedule"
 )

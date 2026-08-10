@@ -50,4 +50,9 @@ const (
 	// and the FormulaValuesDrift condition indicates the applied values are
 	// stale. Stripped after the values are applied. Value must be exactly "true".
 	AnnApplyFormulaValues = Group + "/apply-formula-values"
+
+	// AnnRefreshNow on a MaintenanceCalendar triggers a one-off
+	// maintenance.refreshCalendar call for URL-backed calendars. Stripped
+	// after the refresh is submitted.
+	AnnRefreshNow = Group + "/refresh-now"
 )

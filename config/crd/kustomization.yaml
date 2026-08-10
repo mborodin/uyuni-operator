@@ -14,6 +14,8 @@ resources:
 - bases/uyuni.uyuni-project.org_imagebuilds.yaml
 - bases/uyuni.uyuni-project.org_imageprofiles.yaml
 - bases/uyuni.uyuni-project.org_imagestores.yaml
+- bases/uyuni.uyuni-project.org_maintenancecalendars.yaml
+- bases/uyuni.uyuni-project.org_maintenanceschedules.yaml
 - bases/uyuni.uyuni-project.org_organizations.yaml
 - bases/uyuni.uyuni-project.org_repositories.yaml
 - bases/uyuni.uyuni-project.org_softwarechannels.yaml

@@ -30,6 +30,8 @@ rules:
   - imagebuilds
   - imageprofiles
   - imagestores
+  - maintenancecalendars
+  - maintenanceschedules
   - organizations
   - repositories
   - softwarechannels
@@ -60,6 +62,8 @@ rules:
   - imagebuilds/finalizers
   - imageprofiles/finalizers
   - imagestores/finalizers
+  - maintenancecalendars/finalizers
+  - maintenanceschedules/finalizers
   - organizations/finalizers
   - repositories/finalizers
   - softwarechannels/finalizers
@@ -85,6 +89,8 @@ rules:
   - imagebuilds/status
   - imageprofiles/status
   - imagestores/status
+  - maintenancecalendars/status
+  - maintenanceschedules/status
   - organizations/status
   - repositories/status
   - softwarechannels/status

@@ -368,3 +368,80 @@ func TestSystemFormulas(t *testing.T) {
 		})
 	}
 }
+
+func TestMaintenanceCalendarSourceMutex(t *testing.T) {
+	cases := []struct {
+		name     string
+		ical     string
+		url      string
+		wantErrs int
+	}{
+		{name: "ical only is valid", ical: "BEGIN:VCALENDAR..."},
+		{name: "url only is valid", url: "https://example.com/cal.ics"},
+		{name: "neither is rejected", wantErrs: 1},
+		{name: "both is rejected", ical: "BEGIN:VCALENDAR...", url: "https://example.com/cal.ics", wantErrs: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := validation.MaintenanceCalendarSourceMutex(tc.ical, tc.url, field.NewPath("spec"))
+			require.Len(t, errs, tc.wantErrs, "errors: %v", errs)
+		})
+	}
+}
+
+func TestMaintenanceScheduleTargetCount(t *testing.T) {
+	oneRef := []uyuniv1.LocalObjectRef{{Name: "sys-a"}}
+	twoRefs := []uyuniv1.LocalObjectRef{{Name: "sys-a"}, {Name: "sys-b"}}
+	groupRef := []uyuniv1.LocalObjectRef{{Name: "grp-a"}}
+
+	cases := []struct {
+		name            string
+		schedType       string
+		systemRefs      []uyuniv1.LocalObjectRef
+		systemGroupRefs []uyuniv1.LocalObjectRef
+		wantErrs        int
+		wantPath        string
+	}{
+		{name: "multi with groups and systems is valid", schedType: "Multi", systemRefs: twoRefs, systemGroupRefs: groupRef},
+		{name: "single with no targets is valid", schedType: "Single"},
+		{name: "single with one system is valid", schedType: "Single", systemRefs: oneRef},
+		{
+			name:       "single with two systems is rejected",
+			schedType:  "Single",
+			systemRefs: twoRefs,
+			wantErrs:   1,
+			wantPath:   "spec.systemRefs",
+		},
+		{
+			name:            "single with a group is rejected",
+			schedType:       "Single",
+			systemGroupRefs: groupRef,
+			wantErrs:        1,
+			wantPath:        "spec.systemGroupRefs",
+		},
+		{
+			name:            "single with a group and two systems is rejected twice",
+			schedType:       "Single",
+			systemRefs:      twoRefs,
+			systemGroupRefs: groupRef,
+			wantErrs:        2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := validation.MaintenanceScheduleTargetCount(
+				tc.schedType, tc.systemRefs, tc.systemGroupRefs, field.NewPath("spec"))
+			require.Len(t, errs, tc.wantErrs, "errors: %v", errs)
+			if tc.wantPath != "" {
+				found := false
+				for _, e := range errs {
+					if e.Field == tc.wantPath {
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "expected error at %q, got %v", tc.wantPath, errs)
+			}
+		})
+	}
+}
