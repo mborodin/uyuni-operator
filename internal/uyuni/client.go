@@ -2349,7 +2349,9 @@ func (c *Client) DeleteMaintenanceCalendar(ctx context.Context, label string, ca
 func (c *Client) CreateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel string) (*MaintenanceScheduleDetails, error) {
 	body := map[string]any{
 		"name": name,
-		"type": schedType,
+		// Uyuni's documented values are lowercase ("single"/"multi"); the CRD
+		// uses PascalCase ("Single"/"Multi") to match Kubernetes convention.
+		"type": strings.ToLower(schedType),
 	}
 	if calendarLabel != "" {
 		body["calendar"] = calendarLabel
@@ -2377,8 +2379,8 @@ func (c *Client) ListMaintenanceScheduleNames(ctx context.Context) ([]string, er
 
 func (c *Client) UpdateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel, rescheduleStrategy string) error {
 	details := map[string]any{
-		"type":     schedType,
-		"calendar": calendarLabel, // "" clears the calendar (unrestricted)
+		"type":     strings.ToLower(schedType), // see CreateMaintenanceSchedule
+		"calendar": calendarLabel,              // "" clears the calendar (unrestricted)
 	}
 	_, err := apiPost[any](c, "maintenance/updateSchedule", map[string]any{
 		"name":               name,

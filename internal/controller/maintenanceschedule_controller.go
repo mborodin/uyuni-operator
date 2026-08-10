@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,7 +85,9 @@ func (r *MaintenanceScheduleReconciler) Reconcile(ctx context.Context, req ctrl.
 		if existing.Calendar != nil {
 			existingCalLabel = existing.Calendar.Label
 		}
-		if existing.Type != ms.Spec.Type || existingCalLabel != calendarLabel {
+		// Uyuni returns type lowercase ("multi") regardless of the case we
+		// sent ("Multi"); compare case-insensitively so this doesn't drift-loop.
+		if !strings.EqualFold(existing.Type, ms.Spec.Type) || existingCalLabel != calendarLabel {
 			if err := uc.UpdateMaintenanceSchedule(ctx, ms.Spec.Name, ms.Spec.Type, calendarLabel, strategy); err != nil {
 				return r.fail(ctx, &ms, "UpdateFailed", err)
 			}
