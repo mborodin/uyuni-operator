@@ -66,6 +66,8 @@ rules:
   - imagebuilds
   - imageprofiles
   - imagestores
+  - maintenancecalendars
+  - maintenanceschedules
   - organizations
   - proxies
   - repositories
@@ -97,6 +99,8 @@ rules:
   - imagebuilds/finalizers
   - imageprofiles/finalizers
   - imagestores/finalizers
+  - maintenancecalendars/finalizers
+  - maintenanceschedules/finalizers
   - organizations/finalizers
   - proxies/finalizers
   - repositories/finalizers
@@ -123,6 +127,8 @@ rules:
   - imagebuilds/status
   - imageprofiles/status
   - imagestores/status
+  - maintenancecalendars/status
+  - maintenanceschedules/status
   - organizations/status
   - proxies/status
   - repositories/status

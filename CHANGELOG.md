@@ -4,23 +4,27 @@
 
 ### Added
 
-- **`Proxy` resource** — declarative management of a Uyuni containerized proxy's
-  configuration. The operator calls `proxy.containerConfig` on the referenced
-  provider, extracts the returned config archive (`config.yaml`, `httpd.yaml`,
-  `ssh.yaml`, certs/keys) into an **operator-owned Secret** (named in
-  `status.secretName`, garbage-collected with the CR), and surfaces the
-  non-sensitive config (`config.yaml`) plus metadata (`status.files`,
-  `inputHash`, `generatedAt`) in status — private keys never touch status.
-  `spec.tlsSecretRef` supplies the proxy certificate from a `kubernetes.io/tls`
-  Secret (caller-cert generation); omit it to have Uyuni reuse its own
-  certificate. Because `proxy.containerConfig` rotates the proxy↔server SSH
-  keypair on every call, regeneration is gated on a hash of the resolved inputs
-  and the one-shot `uyuni.uyuni-project.org/regenerate` annotation, not on every
-  reconcile. `spec.fqdn` is immutable (webhook-enforced). This adds the
-  operator's first Secret **write** RBAC (`secrets: create/update/patch/delete`).
-  The `proxy.containerConfig` call is POST with camelCase params, and its byte[]
-  result is returned as a JSON array of *signed* integers (not base64) — both
-  verified against a live Uyuni 2026.06 server.
+- **`MaintenanceCalendar` and `MaintenanceSchedule` CRDs.** Declarative
+  control of Uyuni maintenance windows (the `maintenance` API namespace),
+  so operators can define and change per-store maintenance schedules from
+  Git instead of the WebUI. `MaintenanceCalendar` holds a reusable RFC5545
+  calendar of recurring windows (inline `spec.ical` or a Uyuni-fetched
+  `spec.url`, mutually exclusive); `MaintenanceSchedule` assigns a calendar
+  to a set of `spec.systemRefs`/`spec.systemGroupRefs` (`spec.type: Single`
+  restricts a schedule to at most one system and no groups; `Multi` allows
+  any combination — group membership is expanded to individual Uyuni
+  server IDs, since Uyuni's `assignScheduleToSystems` has no group-native
+  form). `spec.calendarRef` is optional: a schedule with no calendar
+  attached carries no time restriction in Uyuni at all, which is the
+  mechanism for stores that run 24/7 with no dedicated maintenance window.
+  A `MaintenanceCalendar` can't be deleted while a `MaintenanceSchedule`
+  still references it (`Ready=False/CalendarInUse`, same guard shape as
+  `CustomInfoKey`'s `InUse`). New annotation
+  `uyuni.uyuni-project.org/refresh-now` on a `MaintenanceCalendar` triggers
+  a one-off re-pull of a URL-backed calendar. See
+  `config/samples/maintenancecalendar-sample.yaml`,
+  `maintenanceschedule-sample.yaml`, and
+  `maintenanceschedule-247-sample.yaml` (the no-calendar/24-7 case).
 
 ### Fixed
 

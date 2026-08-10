@@ -188,6 +188,46 @@ webhooks:
       service:
         name: {{ include "uyuni-operator.webhookServiceName" . }}
         namespace: {{ .Values.webhook.namespace | default .Release.Namespace }}
+        path: /validate-uyuni-uyuni-project-org-v1alpha1-maintenancecalendar
+    failurePolicy: Fail
+    name: vmaintenancecalendar.uyuni.uyuni-project.org
+    rules:
+      - apiGroups:
+          - uyuni.uyuni-project.org
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - maintenancecalendars
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "uyuni-operator.webhookServiceName" . }}
+        namespace: {{ .Values.webhook.namespace | default .Release.Namespace }}
+        path: /validate-uyuni-uyuni-project-org-v1alpha1-maintenanceschedule
+    failurePolicy: Fail
+    name: vmaintenanceschedule.uyuni.uyuni-project.org
+    rules:
+      - apiGroups:
+          - uyuni.uyuni-project.org
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - maintenanceschedules
+    sideEffects: None
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "uyuni-operator.webhookServiceName" . }}
+        namespace: {{ .Values.webhook.namespace | default .Release.Namespace }}
         path: /validate-uyuni-uyuni-project-org-v1alpha1-organization
     failurePolicy: Fail
     name: vorganization.uyuni.uyuni-project.org

@@ -267,12 +267,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.ProxyReconciler{
+	if err := (&controller.MaintenanceCalendarReconciler{
 		Client:  mgr.GetClient(),
 		Clients: clientPool,
-		Now:     time.Now,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Proxy")
+		setupLog.Error(err, "unable to create controller", "controller", "MaintenanceCalendar")
+		os.Exit(1)
+	}
+
+	if err := (&controller.MaintenanceScheduleReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "MaintenanceSchedule")
 		os.Exit(1)
 	}
 
@@ -346,8 +353,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&webhook.ProxyValidator{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "ProxyValidator")
+	if err := (&webhook.MaintenanceCalendarValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "MaintenanceCalendarValidator")
+		os.Exit(1)
+	}
+
+	if err := (&webhook.MaintenanceScheduleValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "MaintenanceScheduleValidator")
 		os.Exit(1)
 	}
 

@@ -1,0 +1,26 @@
+# MaintenanceSchedule Sample - store with a defined maintenance window
+# Apply with: kubectl apply -f config/samples/maintenanceschedule-sample.yaml
+#
+# Assigns the "weeknights" MaintenanceCalendar (see
+# maintenancecalendar-sample.yaml) to a store's SystemGroup. Uyuni restricts
+# scheduled actions on assigned systems to the calendar's windows.
+#
+# type: Multi allows any number of systems/groups on one schedule; type:
+# Single restricts it to at most one system and no groups
+# (webhook-enforced).
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: MaintenanceSchedule
+metadata:
+  name: store-1234-schedule
+  namespace: linux-platform
+spec:
+  name: store-1234-schedule
+  type: Multi
+  calendarRef:
+    name: weeknights
+  systemGroupRefs:
+    - name: store-1234-servers
+  organizationRef:
+    name: pantheon-of-goods
