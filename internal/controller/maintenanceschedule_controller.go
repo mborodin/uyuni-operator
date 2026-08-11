@@ -191,12 +191,12 @@ func (r *MaintenanceScheduleReconciler) resolveDesiredSystems(ctx context.Contex
 	seen := map[int]bool{}
 
 	for _, ref := range ms.Spec.SystemRefs {
-		var sys uyuniv1.System
-		if getErr := r.Get(ctx, types.NamespacedName{Namespace: ms.Namespace, Name: ref.Name}, &sys); getErr != nil {
-			if client.IgnoreNotFound(getErr) == nil {
-				return nil, fmt.Sprintf("System %q not found", ref.Name), nil
-			}
-			return nil, "", getErr
+		sys, findErr := findSystem(ctx, r.Client, ms.Namespace, ref.Name)
+		if findErr != nil {
+			return nil, "", findErr
+		}
+		if sys == nil {
+			return nil, fmt.Sprintf("System %q not found", ref.Name), nil
 		}
 		if sys.Status.UyuniServerID == 0 {
 			return nil, fmt.Sprintf("System %q not yet registered in Uyuni", ref.Name), nil
@@ -283,7 +283,7 @@ func (r *MaintenanceScheduleReconciler) schedulesForSystem(ctx context.Context, 
 	var out []reconcile.Request
 	for _, ms := range list.Items {
 		for _, ref := range ms.Spec.SystemRefs {
-			if ref.Name == sys.Name {
+			if systemRefMatches(ref, sys) {
 				out = append(out, reconcile.Request{
 					NamespacedName: types.NamespacedName{Namespace: ms.Namespace, Name: ms.Name},
 				})

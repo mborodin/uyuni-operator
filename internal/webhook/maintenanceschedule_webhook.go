@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -114,16 +115,32 @@ func (v *MaintenanceScheduleValidator) warnIfCalendarMissing(ctx context.Context
 	return ""
 }
 
+// warnIfSystemMissing mirrors the controller's findSystem resolution chain
+// (exact name, k8s-name suffix, spec.minionId, spec.hostname) so a validly
+// short-named ref doesn't produce a false "not found" warning here.
 func (v *MaintenanceScheduleValidator) warnIfSystemMissing(ctx context.Context, ns, name string, path *field.Path) string {
 	var sys uyuniv1.System
-	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &sys); err != nil {
-		if client.IgnoreNotFound(err) == nil {
-			return fmt.Sprintf("%s: System %q not found in namespace %q (may be applied alongside in the same commit)",
-				path.String(), name, ns)
-		}
+	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &sys); err == nil {
+		return ""
+	} else if client.IgnoreNotFound(err) != nil {
 		return ""
 	}
-	return ""
+
+	var list uyuniv1.SystemList
+	if err := v.Client.List(ctx, &list, client.InNamespace(ns)); err != nil {
+		return ""
+	}
+	for i := range list.Items {
+		s := &list.Items[i]
+		if strings.HasSuffix(s.Name, "-"+name) || s.Spec.MinionID == name || s.Spec.Hostname == name {
+			return ""
+		}
+		if short, _, ok := strings.Cut(s.Spec.Hostname, "."); ok && short == name {
+			return ""
+		}
+	}
+	return fmt.Sprintf("%s: System %q not found in namespace %q (may be applied alongside in the same commit)",
+		path.String(), name, ns)
 }
 
 func (v *MaintenanceScheduleValidator) warnIfSystemGroupMissing(ctx context.Context, ns, name string, path *field.Path) string {
