@@ -123,6 +123,7 @@ func (r *MaintenanceScheduleReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	ms.Status.UyuniID = existing.ID
 	ms.Status.ResolvedSystemIDs = desiredIDs
+	ms.Status.SystemCount = len(desiredIDs)
 	ms.Status.ObservedGeneration = ms.Generation
 	setReady(&ms.Status.Conditions, ms.Generation, metav1.ConditionTrue, "Reconciled", "")
 	if err := r.Status().Update(ctx, &ms); err != nil {
