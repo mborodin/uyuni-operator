@@ -62,6 +62,11 @@ type MaintenanceScheduleStatus struct {
 	// membership expanded). Used to compute additions/removals on drift.
 	ResolvedSystemIDs []int `json:"resolvedSystemIds,omitempty"`
 
+	// SystemCount is len(ResolvedSystemIDs), kept as a separate scalar field
+	// because kubectl printcolumns can't render a list value directly
+	// (same reason SystemGroup carries MemberCount alongside its member list).
+	SystemCount int `json:"systemCount,omitempty"`
+
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
@@ -71,7 +76,7 @@ type MaintenanceScheduleStatus struct {
 // +kubebuilder:printcolumn:name="Name",type=string,JSONPath=`.spec.name`
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="Calendar",type=string,JSONPath=`.spec.calendarRef.name`
-// +kubebuilder:printcolumn:name="Systems",type=integer,JSONPath=`.status.resolvedSystemIds`
+// +kubebuilder:printcolumn:name="Systems",type=integer,JSONPath=`.status.systemCount`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
 type MaintenanceSchedule struct {
 	metav1.TypeMeta   `json:",inline"`

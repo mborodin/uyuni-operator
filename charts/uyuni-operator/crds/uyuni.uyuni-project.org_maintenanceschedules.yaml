@@ -24,7 +24,7 @@ spec:
     - jsonPath: .spec.calendarRef.name
       name: Calendar
       type: string
-    - jsonPath: .status.resolvedSystemIds
+    - jsonPath: .status.systemCount
       name: Systems
       type: integer
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
@@ -223,6 +223,12 @@ spec:
                 items:
                   type: integer
                 type: array
+              systemCount:
+                description: |-
+                  SystemCount is len(ResolvedSystemIDs), kept as a separate scalar field
+                  because kubectl printcolumns can't render a list value directly
+                  (same reason SystemGroup carries MemberCount alongside its member list).
+                type: integer
               uyuniId:
                 description: UyuniID is the schedule ID assigned by Uyuni.
                 type: integer
