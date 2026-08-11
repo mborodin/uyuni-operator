@@ -378,3 +378,71 @@ func resolveFromProject(ctx context.Context, c client.Client, namespace string, 
 			"add it to the project's sourceRefs and rebuild",
 		ref.SourceChannelLabel, ref.Environment, cp.Name, state.DerivedChannels), nil
 }
+
+// findSystem resolves a ref string to a System CR in namespace, mirroring
+// findSoftwareChannel/findSystemGroup's no-prefix-required resolution chain:
+//
+//  1. Exact Kubernetes object metadata.name.
+//  2. Suffix match on metadata.name (e.g. "am01s01" matches
+//     "gmrc-am01-am01s01") — lets a ref use the short device name a
+//     composition claim generated, without knowing the composite-name prefix.
+//  3. spec.minionId (Uyuni's minion identifier — often equal to the
+//     Kubernetes name, but not always).
+//  4. spec.hostname, or its short label before the first "." — Uyuni's
+//     WebUI displays this as the "System Name".
+func findSystem(ctx context.Context, c client.Client, namespace, name string) (*uyuniv1.System, error) {
+	var sys uyuniv1.System
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sys); err == nil {
+		return &sys, nil
+	} else if client.IgnoreNotFound(err) != nil {
+		return nil, err
+	}
+	var list uyuniv1.SystemList
+	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	suffix := "-" + name
+	for i := range list.Items {
+		if strings.HasSuffix(list.Items[i].Name, suffix) {
+			return &list.Items[i], nil
+		}
+	}
+	for i := range list.Items {
+		if list.Items[i].Spec.MinionID == name {
+			return &list.Items[i], nil
+		}
+	}
+	for i := range list.Items {
+		h := list.Items[i].Spec.Hostname
+		if h == name {
+			return &list.Items[i], nil
+		}
+		if short, _, ok := strings.Cut(h, "."); ok && short == name {
+			return &list.Items[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// systemRefMatches reports whether ref (as written in a spec, possibly a
+// short name) resolves to sys via the same chain findSystem uses. Used by
+// watch mappers to react correctly to a changed System even when the
+// referencing spec used a short name rather than sys's Kubernetes name.
+func systemRefMatches(ref uyuniv1.LocalObjectRef, sys *uyuniv1.System) bool {
+	if ref.Name == sys.Name {
+		return true
+	}
+	if strings.HasSuffix(sys.Name, "-"+ref.Name) {
+		return true
+	}
+	if sys.Spec.MinionID == ref.Name {
+		return true
+	}
+	if sys.Spec.Hostname == ref.Name {
+		return true
+	}
+	if short, _, ok := strings.Cut(sys.Spec.Hostname, "."); ok && short == ref.Name {
+		return true
+	}
+	return false
+}
