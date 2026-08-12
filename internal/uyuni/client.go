@@ -966,6 +966,52 @@ func (c *Client) ChangeProxy(ctx context.Context, serverIDs []int, proxyID int) 
 	})
 }
 
+// ServerHost returns the Uyuni server hostname parsed from the provider URL.
+func (c *Client) ServerHost() string {
+	return c.conn.Server
+}
+
+// GenerateProxyContainerConfig calls proxy/containerConfig and returns the
+// config archive (tar.gz) bytes. proxy.containerConfig is a mutating call (it
+// generates and registers a proxy SSH keypair server-side), hence POST.
+//
+// The param set selects the API overload: when cert material is present the
+// caller-supplied-cert overload is used; otherwise the no-cert overload.
+//
+// Encoding note (verified against a live Uyuni 2025.x server, 2026-07-28):
+// although getApiCallList advertises return type "base64", the HTTP JSON API
+// actually serializes the Java byte[] as a JSON array of *signed* integers
+// (e.g. [31,-117,8,...] = the gzip magic 0x1f 0x8b 0x08). It is NOT a base64
+// string, so it cannot be decoded straight into []byte (encoding/json would
+// reject -117 as out of uint8 range). We decode into []int and truncate each
+// element to its low 8 bits; byte(-117) == 0x8b reverses Java's signed byte.
+// The camelCase param names below are also live-verified: a wrong-name control
+// returns "No method exists with the matching parameters".
+func (c *Client) GenerateProxyContainerConfig(ctx context.Context, args ProxyContainerConfigArgs) ([]byte, error) {
+	params := map[string]any{
+		"proxyName": args.ProxyName,
+		"proxyPort": args.ProxyPort,
+		"server":    args.ParentServer,
+		"maxCache":  args.MaxCacheMB,
+		"email":     args.Email,
+	}
+	if args.ProxyCrt != "" || args.ProxyKey != "" || args.RootCA != "" {
+		params["rootCA"] = args.RootCA
+		params["intermediateCAs"] = args.IntermediateCAs
+		params["proxyCrt"] = args.ProxyCrt
+		params["proxyKey"] = args.ProxyKey
+	}
+	raw, err := apiPost[[]int](c, "proxy/containerConfig", params)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, len(raw))
+	for i, v := range raw {
+		out[i] = byte(v)
+	}
+	return out, nil
+}
+
 func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error) {
 	// The single-sid scheduleChangeChannels returns a bare int action id (not a
 	// struct), so unmarshalling into a {action_id} struct fails.

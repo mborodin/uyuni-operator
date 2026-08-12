@@ -272,6 +272,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.ProxyReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+		Now:     time.Now,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Proxy")
+		os.Exit(1)
+	}
+
 	if err := (&webhook.OrganizationValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "OrganizationValidator")
 		os.Exit(1)
@@ -339,6 +348,11 @@ func main() {
 
 	if err := (&webhook.CustomInfoKeyValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "CustomInfoKeyValidator")
+		os.Exit(1)
+	}
+
+	if err := (&webhook.ProxyValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxyValidator")
 		os.Exit(1)
 	}
 

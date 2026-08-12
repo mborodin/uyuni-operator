@@ -127,6 +127,7 @@ charts/uyuni-operator/       # Helm chart (hand-maintained packaging, see below)
 | `CobblerDistro` | Namespaced | Cobbler distribution over XMLRPC (`mode: import`/`create`) |
 | `CobblerProfile` | Namespaced | Cobbler profile over XMLRPC (`mode: import`/`create`) |
 | `CobblerSystem` | Namespaced | Cobbler system record (interfaces, ks_meta, netboot, proxy) |
+| `Proxy` | Namespaced | Uyuni containerized proxy config (proxy.containerConfig → owned Secret) |
 
 `BrandRegion` is **not** a native Go CRD — it is implemented as a Crossplane
 CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
@@ -134,20 +135,20 @@ CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
 
 ### Implementation status (current repo state)
 
-- **API types**: all 22 Kinds above are declared in `api/v1alpha1/`.
-- **`cmd/main.go`**: present. Registers **21 reconcilers** (Organization,
+- **API types**: all 23 Kinds above are declared in `api/v1alpha1/`.
+- **`cmd/main.go`**: present. Registers **22 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
   AutoinstallProfile, ImageStore, ImageProfile, ImageBuild, CustomInfoKey,
-  CobblerSystem, CobblerDistro, CobblerProfile) and **14 webhooks**.
+  CobblerSystem, CobblerDistro, CobblerProfile, Proxy) and **15 webhooks**.
 - **Types without a controller**: `ConfigFile`.
 - **Cobbler client (`internal/cobbler`)**: hand-rolled XMLRPC client against
   Uyuni's `/cobbler_api`, reusing `UyuniProvider` creds via `pool.Cobbler(...)`.
   Reads (get_*/find_*) are unauthenticated; writes (new/modify/save/remove) need
   a token from `login`, which requires cobbler's `redhat_management_permissive`
   setting enabled (the provider user must be `config_admin`/`org_admin`).
-- **CRDs**: 22 base files under `config/crd/bases/`, all included in
+- **CRDs**: 23 base files under `config/crd/bases/`, all included in
   `config/crd/kustomization.yaml`. ⚠️ Keep this aligned: `main.go` registering
   a controller for a Kind whose CRD is not installed makes the manager
   crash-loop (`no matches for kind ...` / `timed out waiting for cache to be

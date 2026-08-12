@@ -9,10 +9,21 @@ rules:
   - ""
   resources:
   - configmaps
-  - secrets
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - uyuni.uyuni-project.org
@@ -31,6 +42,7 @@ rules:
   - imageprofiles
   - imagestores
   - organizations
+  - proxies
   - repositories
   - softwarechannels
   - systemgroups
@@ -61,6 +73,7 @@ rules:
   - imageprofiles/finalizers
   - imagestores/finalizers
   - organizations/finalizers
+  - proxies/finalizers
   - repositories/finalizers
   - softwarechannels/finalizers
   - systemgroups/finalizers
@@ -86,6 +99,7 @@ rules:
   - imageprofiles/status
   - imagestores/status
   - organizations/status
+  - proxies/status
   - repositories/status
   - softwarechannels/status
   - systemgroups/status

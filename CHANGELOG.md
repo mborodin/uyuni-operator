@@ -2,7 +2,31 @@
 
 ## Unreleased
 
+### Added
+
+- **`Proxy` resource** — declarative management of a Uyuni containerized proxy's
+  configuration. The operator calls `proxy.containerConfig` on the referenced
+  provider, extracts the returned config archive (`config.yaml`, `httpd.yaml`,
+  `ssh.yaml`, certs/keys) into an **operator-owned Secret** (named in
+  `status.secretName`, garbage-collected with the CR), and surfaces the
+  non-sensitive config (`config.yaml`) plus metadata (`status.files`,
+  `inputHash`, `generatedAt`) in status — private keys never touch status.
+  `spec.tlsSecretRef` supplies the proxy certificate from a `kubernetes.io/tls`
+  Secret (caller-cert generation); omit it to have Uyuni reuse its own
+  certificate. Because `proxy.containerConfig` rotates the proxy↔server SSH
+  keypair on every call, regeneration is gated on a hash of the resolved inputs
+  and the one-shot `uyuni.uyuni-project.org/regenerate` annotation, not on every
+  reconcile. `spec.fqdn` is immutable (webhook-enforced). This adds the
+  operator's first Secret **write** RBAC (`secrets: create/update/patch/delete`).
+  The `proxy.containerConfig` call is POST with camelCase params, and its byte[]
+  result is returned as a JSON array of *signed* integers (not base64) — both
+  verified against a live Uyuni 2026.06 server.
+
 ### Fixed
+
+- **Removed stray debug output from the System validator.** A leftover
+  `fmt.Printf` in `internal/validation` `SystemFormulas` logged to the webhook's
+  stdout on every empty-path `valuesFrom`; removed it (and the now-unused import).
 
 - **The Cobbler system record now carries the system hostname.** A pre-created
   System's `spec.hostname` was only used for the Cobbler record *name*; the record

@@ -63,6 +63,14 @@ type API interface {
 	GetConnectionPath(ctx context.Context, serverID int) ([]ProxyHop, error)
 	ChangeProxy(ctx context.Context, serverIDs []int, proxyID int) ([]int, error)
 
+	// GenerateProxyContainerConfig calls proxy.containerConfig and returns the
+	// decoded configuration archive (tar.gz bytes) for a containerized proxy.
+	GenerateProxyContainerConfig(ctx context.Context, args ProxyContainerConfigArgs) ([]byte, error)
+
+	// ServerHost returns the Uyuni server's hostname (the host portion of the
+	// provider URL), used e.g. as the default proxy parent server.
+	ServerHost() string
+
 	ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error)
 
 	// GetSubscribedBaseChannel / ListSubscribedChildChannels read the system's
