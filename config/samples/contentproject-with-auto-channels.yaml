@@ -1,0 +1,222 @@
+---
+# Example: ContentProject with automatic child channel creation for CLM environments
+#
+# This example shows how to use the new 'channels' configuration to automatically
+# create environment-specific child channels for a Content Lifecycle Project.
+#
+# When this ContentProject is created with:
+# - 3 environments: dev, test, prod
+# - baseChannelRefs: [opensuse-leap-16-0-x86-64]
+# - childChannelRefs: [opensuse-leap-16-0-updates-x86-64]
+#
+# The operator automatically creates 6 SoftwareChannel CRs:
+# 1. opensuse-leap-16-0-x86-64-dev (base channel for dev)
+# 2. opensuse-leap-16-0-x86-64-test (base channel for test)
+# 3. opensuse-leap-16-0-x86-64-prod (base channel for prod)
+# 4. opensuse-leap-16-0-updates-x86-64-dev (child of #1)
+# 5. opensuse-leap-16-0-updates-x86-64-test (child of #2)
+# 6. opensuse-leap-16-0-updates-x86-64-prod (child of #3)
+
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Organization
+metadata:
+  name: golden-mane
+  namespace: uyuni
+spec:
+  name: The Golden Mane Retail Co.
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Repository
+metadata:
+  name: leap-16-0-oss
+  namespace: uyuni
+spec:
+  label: opensuse_leap16_0-x86_64-repo
+  type: yum
+  url: https://download.opensuse.org/distribution/leap/16.0/repo/oss/x86_64/
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Repository
+metadata:
+  name: leap-16-0-updates-oss
+  namespace: uyuni
+spec:
+  label: opensuse_leap16_0-updates-x86_64-repo
+  type: yum
+  url: https://download.opensuse.org/update/leap/16.0/oss/x86_64/
+
+---
+# Base software channel (parent)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SoftwareChannel
+metadata:
+  name: opensuse-leap-16-0-x86-64
+  namespace: uyuni
+spec:
+  arch: channel-x86_64
+  label: opensuse_leap16_0-x86_64
+  name: openSUSE Leap 16.0 (x86_64)
+  summary: openSUSE Leap 16.0 base channel
+  organizationRef:
+    name: golden-mane
+  repositoryRefs:
+    - name: leap-16-0-oss
+  sync:
+    cron: 0 0 3 ? * *
+    syncOnCreate: true
+
+---
+# Child software channel (references base)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SoftwareChannel
+metadata:
+  name: opensuse-leap-16-0-updates-x86-64
+  namespace: uyuni
+spec:
+  arch: channel-x86_64
+  label: opensuse_leap16_0-updates-x86_64
+  name: openSUSE Leap 16.0 Updates (x86_64)
+  summary: openSUSE Leap 16.0 updates
+  organizationRef:
+    name: golden-mane
+  parentChannelRef:
+    name: opensuse-leap-16-0-x86-64
+  repositoryRefs:
+    - name: leap-16-0-updates-oss
+  sync:
+    cron: 0 30 3 ? * *
+
+---
+# ContentProject with automatic channel creation
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ContentProject
+metadata:
+  name: leap16-platform
+  namespace: uyuni
+spec:
+  label: dlz-leap16-platform
+  name: GMRC Leap 16.0 Platform
+  description: CLM project for openSUSE Leap 16.0 with automatic environment channels
+  organizationRef:
+    name: golden-mane
+
+  # NEW: Channel configuration with automatic child channel creation
+  channels:
+    baseChannelRefs:
+      - name: opensuse-leap-16-0-x86-64
+    childChannelRefs:
+      - name: opensuse-leap-16-0-updates-x86-64
+
+  # Optional: build policies
+  build:
+    autoBuildSources: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+
+---
+# Development environment
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: leap16-dev
+  namespace: uyuni
+spec:
+  id: dev
+  name: Development
+  description: Latest content, not production-ready
+  projectRef:
+    name: leap16-platform
+  organizationRef:
+    name: golden-mane
+
+---
+# Testing environment
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: leap16-test
+  namespace: uyuni
+spec:
+  id: test
+  name: Testing
+  description: Validated content for QA
+  predecessor: dev
+  projectRef:
+    name: leap16-platform
+  organizationRef:
+    name: golden-mane
+
+---
+# Production environment
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ClmEnvironment
+metadata:
+  name: leap16-prod
+  namespace: uyuni
+spec:
+  id: prod
+  name: Production
+  description: Promoted and approved content
+  predecessor: test
+  projectRef:
+    name: leap16-platform
+  organizationRef:
+    name: golden-mane
+
+---
+# RESULT AFTER RECONCILIATION:
+#
+# kubectl get softwarechannels -n uyuni
+#
+# NAME                                    LABEL                                      READY
+# opensuse-leap-16-0-x86-64              opensuse_leap16_0-x86_64                   True    (manual)
+# opensuse-leap-16-0-updates-x86-64      opensuse_leap16_0-updates-x86_64           True    (manual)
+# opensuse-leap-16-0-x86-64-dev          opensuse_leap16_0-x86_64-dev               True    (auto-created)
+# opensuse-leap-16-0-x86-64-test         opensuse_leap16_0-x86_64-test              True    (auto-created)
+# opensuse-leap-16-0-x86-64-prod         opensuse_leap16_0-x86_64-prod              True    (auto-created)
+# opensuse-leap-16-0-updates-x86-64-dev  opensuse_leap16_0-updates-x86_64-dev       True    (auto-created)
+# opensuse-leap-16-0-updates-x86-64-test opensuse_leap16_0-updates-x86_64-test      True    (auto-created)
+# opensuse-leap-16-0-updates-x86-64-prod opensuse_leap16_0-updates-x86_64-prod      True    (auto-created)
+#
+# ContentProject Status:
+#
+# kubectl get contentproject leap16-platform -n uyuni -o yaml
+#
+# status:
+#   autoCreatedChannels:
+#   - baseChannelName: opensuse-leap-16-0-x86-64
+#     channelName: opensuse-leap-16-0-x86-64-dev
+#     environmentId: dev
+#     ready: true
+#     createdAt: 2024-01-15T10:30:00Z
+#   - baseChannelName: opensuse-leap-16-0-x86-64
+#     channelName: opensuse-leap-16-0-x86-64-test
+#     environmentId: test
+#     ready: true
+#     createdAt: 2024-01-15T10:30:01Z
+#   - baseChannelName: opensuse-leap-16-0-x86-64
+#     channelName: opensuse-leap-16-0-x86-64-prod
+#     environmentId: prod
+#     ready: true
+#     createdAt: 2024-01-15T10:30:02Z
+#   - baseChannelName: opensuse-leap-16-0-updates-x86-64
+#     channelName: opensuse-leap-16-0-updates-x86-64-dev
+#     environmentId: dev
+#     ready: true
+#     createdAt: 2024-01-15T10:30:03Z
+#   - baseChannelName: opensuse-leap-16-0-updates-x86-64
+#     channelName: opensuse-leap-16-0-updates-x86-64-test
+#     environmentId: test
+#     ready: true
+#     createdAt: 2024-01-15T10:30:04Z
+#   - baseChannelName: opensuse-leap-16-0-updates-x86-64
+#     channelName: opensuse-leap-16-0-updates-x86-64-prod
+#     environmentId: prod
+#     ready: true
+#     createdAt: 2024-01-15T10:30:05Z
+#   conditions:
+#   - type: Ready
+#     status: "True"
+#     reason: Reconciled
+#     message: ""

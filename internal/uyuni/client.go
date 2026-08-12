@@ -1453,6 +1453,24 @@ func (c *Client) DisassociateRepo(ctx context.Context, channelLabel, repoLabel s
 	return err
 }
 
+// GetRepoSyncSchedule returns the quartz cron expression currently attached
+// to the channel's repo sync, or "" when no recurring sync is scheduled.
+// Needed because SetRepoSyncSchedule appends a schedule rather than
+// replacing one, so callers must diff against the live value first.
+func (c *Client) GetRepoSyncSchedule(ctx context.Context, channelLabel string) (string, error) {
+	cron, err := apiGet[string](c, "channel/software/getRepoSyncCronExpression?channelLabel="+url.QueryEscape(channelLabel))
+	if err != nil {
+		return "", asNotFound(err)
+	}
+	return cron, nil
+}
+
+// SetRepoSyncSchedule attaches a recurring sync schedule to the channel.
+// Uyuni ADDS a schedule on every call instead of replacing the existing
+// one, so callers must only invoke this when the cron actually differs
+// from GetRepoSyncSchedule - otherwise every reconcile leaves another row
+// in rhntaskoschedule and taskomatic ends up running the same repo sync
+// many times over.
 func (c *Client) SetRepoSyncSchedule(ctx context.Context, channelLabel, quartzCron string) error {
 	_, err := apiPost[any](c, "channel/software/syncRepo", map[string]any{
 		"channelLabel": channelLabel,
@@ -2293,6 +2311,161 @@ func (c *Client) CancelAction(ctx context.Context, actionID int) error {
 		"actionIds": []int{actionID},
 	})
 	return err
+}
+
+// =============================================================================
+// Maintenance (maintenance) — calendars, schedules, system assignment
+// =============================================================================
+
+func (c *Client) CreateMaintenanceCalendar(ctx context.Context, label, ical string) (*MaintenanceCalendarDetails, error) {
+	r, err := apiPost[MaintenanceCalendarDetails](c, "maintenance/createCalendar", map[string]any{
+		"label": label,
+		"ical":  ical,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (c *Client) CreateMaintenanceCalendarWithURL(ctx context.Context, label, calendarURL string) (*MaintenanceCalendarDetails, error) {
+	r, err := apiPost[MaintenanceCalendarDetails](c, "maintenance/createCalendarWithUrl", map[string]any{
+		"label": label,
+		"url":   calendarURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// GetMaintenanceCalendarDetails, ListMaintenanceCalendarLabels,
+// GetMaintenanceScheduleDetails, ListMaintenanceScheduleNames, and
+// ListSystemsWithSchedule below all use apiPost, not apiGet — unlike most
+// other namespaces in this client, every method in the `maintenance`
+// namespace (including its list/get reads) is documented as HTTP POST only;
+// a GET never reaches the API handler and Uyuni's routing falls through to
+// a generic access-denied page instead of a real 404/405.
+func (c *Client) GetMaintenanceCalendarDetails(ctx context.Context, label string) (*MaintenanceCalendarDetails, error) {
+	r, err := apiPost[MaintenanceCalendarDetails](c, "maintenance/getCalendarDetails", map[string]any{
+		"label": label,
+	})
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	return &r, nil
+}
+
+func (c *Client) ListMaintenanceCalendarLabels(ctx context.Context) ([]string, error) {
+	return apiPost[[]string](c, "maintenance/listCalendarLabels", map[string]any{})
+}
+
+func (c *Client) UpdateMaintenanceCalendar(ctx context.Context, label string, ical, calendarURL, rescheduleStrategy string) error {
+	details := map[string]any{}
+	if ical != "" {
+		details["ical"] = ical
+	}
+	if calendarURL != "" {
+		details["url"] = calendarURL
+	}
+	_, err := apiPost[any](c, "maintenance/updateCalendar", map[string]any{
+		"label":              label,
+		"details":            details,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+func (c *Client) RefreshMaintenanceCalendar(ctx context.Context, label, rescheduleStrategy string) error {
+	_, err := apiPost[any](c, "maintenance/refreshCalendar", map[string]any{
+		"label":              label,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+func (c *Client) DeleteMaintenanceCalendar(ctx context.Context, label string, cancelScheduledActions bool) error {
+	_, err := apiPost[any](c, "maintenance/deleteCalendar", map[string]any{
+		"label":                  label,
+		"cancelScheduledActions": cancelScheduledActions,
+	})
+	return asNotFound(err)
+}
+
+func (c *Client) CreateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel string) (*MaintenanceScheduleDetails, error) {
+	body := map[string]any{
+		"name": name,
+		// Uyuni's documented values are lowercase ("single"/"multi"); the CRD
+		// uses PascalCase ("Single"/"Multi") to match Kubernetes convention.
+		"type": strings.ToLower(schedType),
+	}
+	if calendarLabel != "" {
+		body["calendar"] = calendarLabel
+	}
+	r, err := apiPost[MaintenanceScheduleDetails](c, "maintenance/createSchedule", body)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (c *Client) GetMaintenanceScheduleDetails(ctx context.Context, name string) (*MaintenanceScheduleDetails, error) {
+	r, err := apiPost[MaintenanceScheduleDetails](c, "maintenance/getScheduleDetails", map[string]any{
+		"name": name,
+	})
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	return &r, nil
+}
+
+func (c *Client) ListMaintenanceScheduleNames(ctx context.Context) ([]string, error) {
+	return apiPost[[]string](c, "maintenance/listScheduleNames", map[string]any{})
+}
+
+func (c *Client) UpdateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel, rescheduleStrategy string) error {
+	details := map[string]any{
+		"type":     strings.ToLower(schedType), // see CreateMaintenanceSchedule
+		"calendar": calendarLabel,              // "" clears the calendar (unrestricted)
+	}
+	_, err := apiPost[any](c, "maintenance/updateSchedule", map[string]any{
+		"name":               name,
+		"details":            details,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+func (c *Client) DeleteMaintenanceSchedule(ctx context.Context, name string) error {
+	_, err := apiPost[any](c, "maintenance/deleteSchedule", map[string]any{
+		"name": name,
+	})
+	return asNotFound(err)
+}
+
+func (c *Client) AssignScheduleToSystems(ctx context.Context, scheduleName string, serverIDs []int, rescheduleStrategy string) error {
+	_, err := apiPost[any](c, "maintenance/assignScheduleToSystems", map[string]any{
+		"scheduleName":       scheduleName,
+		"sids":               serverIDs,
+		"rescheduleStrategy": []string{rescheduleStrategy},
+	})
+	return err
+}
+
+// RetractScheduleFromSystems takes only system IDs — Uyuni's
+// retractScheduleFromSystems has no schedule-name parameter because a
+// system holds at most one schedule at a time.
+func (c *Client) RetractScheduleFromSystems(ctx context.Context, serverIDs []int) error {
+	_, err := apiPost[any](c, "maintenance/retractScheduleFromSystems", map[string]any{
+		"sids": serverIDs,
+	})
+	return err
+}
+
+func (c *Client) ListSystemsWithSchedule(ctx context.Context, scheduleName string) ([]int, error) {
+	return apiPost[[]int](c, "maintenance/listSystemsWithSchedule", map[string]any{
+		"scheduleName": scheduleName,
+	})
 }
 
 // =============================================================================

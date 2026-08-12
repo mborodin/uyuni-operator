@@ -687,12 +687,12 @@ func (r *SystemReconciler) resolveOrderedConfigChannels(ctx context.Context, sys
 	}
 
 	for _, groupRef := range sys.Spec.GroupRefs {
-		var sg uyuniv1.SystemGroup
-		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: groupRef.Name}, &sg); err != nil {
-			if client.IgnoreNotFound(err) == nil {
-				continue // group not found yet; no channels to inherit
-			}
+		sg, err := findSystemGroup(ctx, r.Client, sys.Namespace, groupRef.Name)
+		if err != nil {
 			return nil, "", err
+		}
+		if sg == nil {
+			continue // group not found yet; no channels to inherit
 		}
 		for _, ccRef := range sg.Spec.ConfigChannelRefs {
 			var cc uyuniv1.ConfigurationChannel
@@ -943,12 +943,12 @@ func (r *SystemReconciler) resolveAutoinstallVariables(ctx context.Context, sys 
 // resolveGroupMembership returns the list of Uyuni group names the system should belong to.
 func (r *SystemReconciler) resolveGroupMembership(ctx context.Context, sys *uyuniv1.System) (names []string, wait string, err error) {
 	for _, ref := range sys.Spec.GroupRefs {
-		var sg uyuniv1.SystemGroup
-		if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: ref.Name}, &sg); err != nil {
-			if client.IgnoreNotFound(err) == nil {
-				return nil, fmt.Sprintf("SystemGroup %q not found", ref.Name), nil
-			}
+		sg, err := findSystemGroup(ctx, r.Client, sys.Namespace, ref.Name)
+		if err != nil {
 			return nil, "", err
+		}
+		if sg == nil {
+			return nil, fmt.Sprintf("SystemGroup %q not found", ref.Name), nil
 		}
 		if sg.Status.UyuniID == 0 {
 			return nil, fmt.Sprintf("SystemGroup %q not yet realized", ref.Name), nil

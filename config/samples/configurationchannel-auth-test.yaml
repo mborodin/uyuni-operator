@@ -1,0 +1,45 @@
+# ConfigurationChannel with Authentication Test
+# Uses the secret created: configchannel-auth
+# Repository: https://github.com/muhammad-khan-epam/repo-sync-auth-test
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: salt-baseline-auth-test
+  namespace: uyuni-system  # Adjust namespace as needed
+spec:
+  # Channel ID (must be unique in Uyuni)
+  id: salt-baseline-auth-test
+
+  # Human-readable name
+  name: "Salt Baseline Auth Test"
+
+  # Type: normal, state, or dictionary
+  type: state  # Using 'state' since this is salt/baseline
+
+  description: "Test ConfigurationChannel with authentication"
+
+  # Private repository URL (no credentials in URL)
+  url: "https://github.com/muhammad-khan-epam/repo-sync-auth-test.git"
+
+  # Repository type: git, http, or local
+  repositoryType: git
+
+  # Branch to sync from
+  repositoryRef: "dev"
+
+  # Subdirectory within the repository
+  repositoryPath: "salt/baseline"
+
+  # Enable automatic synchronization
+  autoSync: true
+
+  # Optional: Sync schedule (sync every 6 hours)
+  syncSchedule: "0 */6 * * *"
+
+  # Reference to the Kubernetes Secret containing git credentials
+  auth:
+    name: configchannel-auth        # Your secret name
+    usernameKey: username           # Key in secret for username
+    passwordKey: password           # Key in secret for password/token

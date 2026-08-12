@@ -28,6 +28,83 @@
   `fmt.Printf` in `internal/validation` `SystemFormulas` logged to the webhook's
   stdout on every empty-path `valuesFrom`; removed it (and the now-unused import).
 
+- **`MaintenanceCalendar` and `MaintenanceSchedule` CRDs.** Declarative
+  control of Uyuni maintenance windows (the `maintenance` API namespace),
+  so operators can define and change per-store maintenance schedules from
+  Git instead of the WebUI. `MaintenanceCalendar` holds a reusable RFC5545
+  calendar of recurring windows (inline `spec.ical` or a Uyuni-fetched
+  `spec.url`, mutually exclusive); `MaintenanceSchedule` assigns a calendar
+  to a set of `spec.systemRefs`/`spec.systemGroupRefs` (`spec.type: Single`
+  restricts a schedule to at most one system and no groups; `Multi` allows
+  any combination — group membership is expanded to individual Uyuni
+  server IDs, since Uyuni's `assignScheduleToSystems` has no group-native
+  form). `spec.calendarRef` is optional: a schedule with no calendar
+  attached carries no time restriction in Uyuni at all, which is the
+  mechanism for stores that run 24/7 with no dedicated maintenance window.
+  A `MaintenanceCalendar` can't be deleted while a `MaintenanceSchedule`
+  still references it (`Ready=False/CalendarInUse`, same guard shape as
+  `CustomInfoKey`'s `InUse`). New annotation
+  `uyuni.uyuni-project.org/refresh-now` on a `MaintenanceCalendar` triggers
+  a one-off re-pull of a URL-backed calendar. See
+  `config/samples/maintenancecalendar-sample.yaml`,
+  `maintenanceschedule-sample.yaml`, and
+  `maintenanceschedule-247-sample.yaml` (the no-calendar/24-7 case).
+
+### Fixed
+
+- **SoftwareChannel no longer piles up duplicate repo sync schedules and
+  concurrent syncs.** `channel/software/syncRepo` with a `cronExpr` *appends*
+  a schedule in Uyuni rather than replacing the existing one, and the
+  reconciler called it unconditionally on every pass — including the
+  10-minute steady-state heartbeat and every `Repository` watch event. On a
+  cluster with nine channels this left 264 rows in `rhntaskoschedule` in a
+  single afternoon, and taskomatic duly fanned each one out into its own
+  `spacewalk-repo-sync` process: 16+ concurrent syncs of the same channel,
+  several of them ending up `idle in transaction` against Postgres and
+  blocking package linking entirely (channels sat at `Ready=True`,
+  `PackagesSynced=SyncInProgress`, zero packages, indefinitely). The
+  reconciler now reads the live schedule via the new
+  `GetRepoSyncSchedule` (`channel/software/getRepoSyncCronExpression`) and
+  only writes when the cron actually differs. Separately, the one-off
+  `sync-now` annotation and `syncOnCreate` triggers now skip re-triggering
+  while Uyuni reports `sync_status: "R"`, so a repo that takes longer to
+  sync than the reconcile interval no longer gets a fresh sync queued on
+  top of the running one. Recovering an already-affected server needs the
+  duplicate `rhntaskoschedule` rows pruned by hand; a sync job wedged in
+  `EXECUTING` also leaves an orphan `qrtz_fired_triggers` row that keeps
+  respawning workers until it is deleted.
+
+- **Two Organization CRs can no longer silently share one Uyuni org.**
+  Reconciling a new Organization looks up an existing Uyuni org by name and
+  adopts it if found — meant to survive operator restarts, not to merge
+  unrelated CRs. Two BrandRegionClaims that happened to use the same
+  `organization.name` (e.g. a copy-pasted sample never renamed) each got
+  their own Organization CR, and the second one silently adopted the
+  first's org: both CRs then showed the same `OrgID`, and deleting either
+  one deleted the org out from under the other, leaving the survivor stuck
+  failing forever (manual finalizer removal was the only way out). The
+  admission webhook now rejects a create whose `(resolved Uyuni server,
+  spec.name)` matches another non-import Organization CR; the reconciler
+  carries the same check as a race-window backstop (new `Ready` reason
+  `DuplicateOrganization`). The webhook check runs on Create only, not
+  Update — `spec.name`/`spec.providerRef`/`spec.import` are already
+  immutable post-create, so an Update can never introduce a new collision,
+  and rejecting updates on an already-flagged CR would block the
+  reconciler's own routine updates (finalizer add/remove included),
+  reintroducing the exact "can't finalize, must strip manually" symptom
+  this fix targets. Deletion now also checks whether a
+  sibling CR still references the same `UyuniOrgID` before calling
+  `org/delete`, skipping the Uyuni-side delete if so — protecting clusters
+  that already have a pre-existing duplicate. A bound org that disappears
+  from Uyuni (deleted directly, or by this bug pre-fix) now surfaces as its
+  own reason, `OrganizationMissing`, instead of retrying `LookupFailed`
+  forever. Uniqueness is scoped by the `UyuniProvider`'s resolved `spec.url`,
+  not by `spec.providerRef.name` — each BrandRegionClaim gets its own
+  privately named `UyuniProvider`, so two Organizations can share a
+  differently-named providerRef while pointing at the same server, or vice
+  versa. Existing clusters: only new/updated Organization CRs get the
+  admission check; already-duplicated CRs from before this fix need manual
+  review (`kubectl get organization -A`, look for repeated `ORGID`).
 - **The Cobbler system record now carries the system hostname.** A pre-created
   System's `spec.hostname` was only used for the Cobbler record *name*; the record
   itself had an empty `hostname` and no interface `dns_name`, so Cobbler couldn't

@@ -1,0 +1,89 @@
+---
+# ConfigurationChannel: Feature Branch - SUMA-424 Rancher Dev
+# Syncs files from feature/suma-424-rancher_dev branch
+# Updates every 2 minutes for rapid development testing
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: feature-suma-424-baseline
+  namespace: brand
+spec:
+  id: feature-suma-424-baseline
+  name: "Feature SUMA-424 Baseline Configuration"
+  type: state
+  description: "Salt state channel for SUMA-424 Rancher development branch"
+  url: https://github.com/RoyalAholdDelhaize/becse-ngp-lom-nexa-platform
+  repositoryType: git
+  autoSync: true
+  repositoryRef: feature/suma-424-rancher_dev    # Feature branch
+  repositoryPath: salt/baseline                  # Directory to sync
+  syncSchedule: "every 2m"                      # Every 2 minutes
+
+---
+# Status Example: What you'll see after successful sync
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: feature-suma-424-baseline
+  namespace: brand
+spec:
+  id: feature-suma-424-baseline
+  name: "Feature SUMA-424 Baseline Configuration"
+  type: state
+  url: https://github.com/RoyalAholdDelhaize/becse-ngp-lom-nexa-platform
+  repositoryType: git
+  autoSync: true
+  repositoryRef: feature/suma-424-rancher_dev
+  repositoryPath: salt/baseline
+  syncSchedule: "every 2m"
+status:
+  uyuniId: 12345
+  observedGeneration: 1
+  lastSyncTime: "2026-06-29T14:30:00Z"
+  syncedFileCount: 15
+  syncStatus: Synced
+  repositoryHash: "abc123def456789..."
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Reconciled
+      message: ""
+      lastTransitionTime: "2026-06-29T14:30:15Z"
+      observedGeneration: 1
+    - type: RepoSynced
+      status: "True"
+      reason: RepoSynced
+      message: "Synced 15 files from repository"
+      lastTransitionTime: "2026-06-29T14:30:15Z"
+      observedGeneration: 1
+
+---
+# Usage Instructions:
+#
+# 1. Apply this configuration:
+#    kubectl apply -f config/samples/configurationchannel-feature-suma-424.yaml
+#
+# 2. Watch sync progress:
+#    kubectl get configurationchannels -n uyuni-operator-system -w
+#
+# 3. Check detailed status:
+#    kubectl describe configurationchannel feature-suma-424-baseline -n uyuni-operator-system
+#
+# 4. View operator logs:
+#    kubectl logs -n uyuni-operator-system deployment/uyuni-operator-controller-manager -f
+#
+# 5. Check sync every 2 minutes:
+#    - First sync happens immediately on creation
+#    - Next syncs every 2 minutes (every 2m)
+#    - Check lastSyncTime in status to see last sync
+#
+# 6. Verify in Uyuni:
+#    - Log into Uyuni server
+#    - Configuration → Configuration Channels
+#    - Find "Feature SUMA-424 Baseline Configuration"
+#    - View Configuration Files to see all synced files
+#
+# Branch: feature/suma-424-rancher_dev
+# Repository: https://github.com/RoyalAholdDelhaize/becse-ngp-lom-nexa-platform
+# Synced Path: salt/baseline
+# Sync Frequency: Every 2 minutes (every 2m)

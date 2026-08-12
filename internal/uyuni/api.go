@@ -133,6 +133,7 @@ type API interface {
 	ListChannelRepos(ctx context.Context, label string) ([]string, error)
 	AssociateRepo(ctx context.Context, channelLabel, repoLabel string) error
 	DisassociateRepo(ctx context.Context, channelLabel, repoLabel string) error
+	GetRepoSyncSchedule(ctx context.Context, channelLabel string) (string, error)
 	SetRepoSyncSchedule(ctx context.Context, channelLabel, quartzCron string) error
 	SyncChannelNow(ctx context.Context, channelLabel string) error
 	GetChannelPackageCount(ctx context.Context, label string) (int, error)
@@ -228,6 +229,35 @@ type API interface {
 	GetActionDetails(ctx context.Context, actionID int) (*ScheduledAction, error)
 	GetActionResults(ctx context.Context, actionID int) ([]SystemActionResult, error)
 	CancelAction(ctx context.Context, actionID int) error
+
+	// Maintenance (maintenance) — calendars, schedules, and system assignment.
+	//
+	// rescheduleStrategy is "Cancel" (drop actions that fall outside the
+	// recomputed windows) or "Fail" (reject the operation, leave state
+	// untouched); Uyuni's API accepts it as a []string but only the first
+	// element is meaningful.
+	CreateMaintenanceCalendar(ctx context.Context, label, ical string) (*MaintenanceCalendarDetails, error)
+	CreateMaintenanceCalendarWithURL(ctx context.Context, label, url string) (*MaintenanceCalendarDetails, error)
+	GetMaintenanceCalendarDetails(ctx context.Context, label string) (*MaintenanceCalendarDetails, error)
+	ListMaintenanceCalendarLabels(ctx context.Context) ([]string, error)
+	UpdateMaintenanceCalendar(ctx context.Context, label string, ical, url, rescheduleStrategy string) error
+	RefreshMaintenanceCalendar(ctx context.Context, label, rescheduleStrategy string) error
+	DeleteMaintenanceCalendar(ctx context.Context, label string, cancelScheduledActions bool) error
+
+	// CreateMaintenanceSchedule creates a schedule. calendarLabel == "" calls
+	// the no-calendar createSchedule variant (unrestricted / 24-7 schedule).
+	CreateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel string) (*MaintenanceScheduleDetails, error)
+	GetMaintenanceScheduleDetails(ctx context.Context, name string) (*MaintenanceScheduleDetails, error)
+	ListMaintenanceScheduleNames(ctx context.Context) ([]string, error)
+	// UpdateMaintenanceSchedule updates type and/or calendar. calendarLabel
+	// == "" clears the calendar (unrestricted).
+	UpdateMaintenanceSchedule(ctx context.Context, name, schedType, calendarLabel, rescheduleStrategy string) error
+	DeleteMaintenanceSchedule(ctx context.Context, name string) error
+	AssignScheduleToSystems(ctx context.Context, scheduleName string, serverIDs []int, rescheduleStrategy string) error
+	// RetractScheduleFromSystems takes only system IDs — Uyuni does not take
+	// a schedule name here because a system holds at most one schedule.
+	RetractScheduleFromSystems(ctx context.Context, serverIDs []int) error
+	ListSystemsWithSchedule(ctx context.Context, scheduleName string) ([]int, error)
 
 	// Organization management (satellite admin operations)
 	CreateOrganization(ctx context.Context, name, adminLogin, adminPass, adminFirstName, adminLastName, adminEmail string) (int, error)

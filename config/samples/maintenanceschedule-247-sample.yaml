@@ -1,0 +1,34 @@
+# MaintenanceSchedule Sample - 24/7 store, no maintenance window restriction
+# Apply with: kubectl apply -f config/samples/maintenanceschedule-247-sample.yaml
+#
+# No spec.calendarRef is set. Uyuni imposes no time restriction on systems
+# assigned to this schedule — actions can be scheduled at any time. Use for
+# stores that operate around the clock with no dedicated maintenance slot.
+#
+# This targets an already-deployed store (StoreClaim "gmrc-test", namespace
+# "brand"; see becse-ngp-lom-nexa-test-brand/brand/store_claim.yaml), whose
+# Crossplane composition generates SystemGroups "gmrc-test-poses" and
+# "gmrc-test-branchservers" in this namespace.
+#
+# NOTE: verify organizationRef.name against `kubectl get organizations -n
+# brand` before applying — the StoreClaim composition currently templates it
+# from spec.organizationRef.name ("The Golden Mane Retail Co."), which is
+# not a valid Kubernetes object name; the actual Organization CR is more
+# likely named "gmrc", matching the BrandRegionClaim convention used
+# elsewhere in this cluster.
+
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: MaintenanceSchedule
+metadata:
+  name: gmrc-test-schedule
+  namespace: brand
+spec:
+  name: gmrc-test-schedule
+  type: Multi
+  # calendarRef intentionally omitted — gmrc-test runs 24/7
+  systemGroupRefs:
+    - name: gmrc-test-poses
+    - name: gmrc-test-branchservers
+  organizationRef:
+    name: gmrc

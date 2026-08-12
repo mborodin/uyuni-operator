@@ -1,0 +1,147 @@
+# Example: ConfigurationChannel with Authentication
+# This demonstrates how to use Kubernetes Secrets for git repository authentication
+
+---
+# Step 1: Create a Kubernetes Secret with git credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-config-creds
+  namespace: uyuni-system
+type: Opaque
+stringData:
+  # GitHub Personal Access Token (PAT) or username
+  username: "my-github-username"
+  # GitHub Personal Access Token or password
+  password: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+---
+# Step 2: Create a Secret for GitLab deploy token (alternative example)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitlab-config-creds
+  namespace: uyuni-system
+type: Opaque
+stringData:
+  username: "deploy-token-user"
+  password: "glpat-xxxxxxxxxxxxxxxxxx"
+
+---
+# Step 3: ConfigurationChannel that uses GitHub with authentication
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: private-nginx-config
+  namespace: uyuni-system
+spec:
+  # Channel ID (must be unique in Uyuni)
+  id: private-nginx-config-state
+  # Human-readable name
+  name: "Private Nginx Configuration (state)"
+  # Type: normal, state, or dictionary
+  type: state
+  description: "Salt state channel for private Nginx configuration"
+
+  # Private repository URL (no credentials in URL)
+  url: "https://github.com/myorg/private-nginx-config.git"
+
+  # Repository type: git, http, or local
+  repositoryType: git
+
+  # Branch, tag, or commit reference
+  repositoryRef: "main"
+
+  # Optional: subdirectory within the repository
+  repositoryPath: "salt/nginx"
+
+  # Enable automatic synchronization from the repository
+  autoSync: true
+
+  # Sync schedule (optional)
+  # Examples: "0 */6 * * *" (every 6 hours), "@daily" (daily), "every 2h" (every 2 hours)
+  syncSchedule: "0 */6 * * *"
+
+  # Reference to the Kubernetes Secret containing git credentials
+  auth:
+    # Name of the Secret in the same namespace
+    name: github-config-creds
+    # Key for username in the Secret (defaults to "username")
+    usernameKey: username
+    # Key for password/token in the Secret (defaults to "password")
+    passwordKey: password
+
+---
+# Step 4: ConfigurationChannel using GitLab with authentication
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: private-gitlab-config
+  namespace: uyuni-system
+spec:
+  id: private-gitlab-config-normal
+  name: "Private GitLab Configuration"
+  type: normal
+  description: "Configuration files from private GitLab repository"
+
+  # Private GitLab repository
+  url: "https://gitlab.com/mygroup/private-configs.git"
+
+  repositoryType: git
+  repositoryRef: "develop"
+  repositoryPath: "configs"
+  autoSync: true
+  syncSchedule: "@daily"
+
+  # Use GitLab deploy token stored in a different secret
+  auth:
+    name: gitlab-config-creds
+    usernameKey: username
+    passwordKey: password
+
+---
+# Step 5: ConfigurationChannel with custom key names (if your secret uses different key names)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: bitbucket-config
+  namespace: uyuni-system
+spec:
+  id: bitbucket-config-state
+  name: "Bitbucket Configuration"
+  type: state
+  description: "Configuration from private Bitbucket repository"
+
+  url: "https://bitbucket.org/myteam/private-configs.git"
+  repositoryType: git
+  repositoryRef: "main"
+  autoSync: true
+
+  # If your secret uses different key names, specify them here
+  auth:
+    name: bitbucket-credentials
+    usernameKey: git-user      # Custom key name
+    passwordKey: git-password  # Custom key name
+
+---
+# Step 6: Public ConfigurationChannel (no auth needed)
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: ConfigurationChannel
+metadata:
+  name: public-config
+  namespace: uyuni-system
+spec:
+  id: public-config-normal
+  name: "Public Configuration"
+  type: normal
+  description: "Configuration from public repository (no auth needed)"
+
+  # Public repository - no credentials required
+  url: "https://github.com/openstack/salt-formulas.git"
+
+  repositoryType: git
+  repositoryRef: "main"
+  autoSync: true
+  syncSchedule: "@weekly"
+
+  # No auth field - repository is public

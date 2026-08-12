@@ -57,4 +57,8 @@ const (
 	// SSH keypair, it is otherwise gated on an input-hash change. Stripped after
 	// the archive is regenerated. Value must be exactly "true".
 	AnnRegenerate = Group + "/regenerate"
+	// AnnRefreshNow on a MaintenanceCalendar triggers a one-off
+	// maintenance.refreshCalendar call for URL-backed calendars. Stripped
+	// after the refresh is submitted.
+	AnnRefreshNow = Group + "/refresh-now"
 )
