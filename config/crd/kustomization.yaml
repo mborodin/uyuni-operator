@@ -15,6 +15,7 @@ resources:
 - bases/uyuni.uyuni-project.org_imageprofiles.yaml
 - bases/uyuni.uyuni-project.org_imagestores.yaml
 - bases/uyuni.uyuni-project.org_organizations.yaml
+- bases/uyuni.uyuni-project.org_proxies.yaml
 - bases/uyuni.uyuni-project.org_repositories.yaml
 - bases/uyuni.uyuni-project.org_softwarechannels.yaml
 - bases/uyuni.uyuni-project.org_systemgroups.yaml

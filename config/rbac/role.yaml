@@ -8,8 +8,45 @@ rules:
   - ""
   resources:
   - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kubernetes.crossplane.io
+  resources:
+  - objects
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nexa.ahold-delhaize.com
+  resources:
+  - storeclaims
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nexa.ahold-delhaize.com
+  resources:
+  - storehubclaims
+  verbs:
+  - delete
   - get
   - list
   - watch
@@ -30,6 +67,7 @@ rules:
   - imageprofiles
   - imagestores
   - organizations
+  - proxies
   - repositories
   - softwarechannels
   - systemgroups
@@ -60,6 +98,7 @@ rules:
   - imageprofiles/finalizers
   - imagestores/finalizers
   - organizations/finalizers
+  - proxies/finalizers
   - repositories/finalizers
   - softwarechannels/finalizers
   - systemgroups/finalizers
@@ -85,6 +124,7 @@ rules:
   - imageprofiles/status
   - imagestores/status
   - organizations/status
+  - proxies/status
   - repositories/status
   - softwarechannels/status
   - systemgroups/status

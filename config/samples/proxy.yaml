@@ -1,0 +1,39 @@
+# Example: a Uyuni containerized proxy.
+#
+# The operator calls proxy.containerConfig on the referenced provider's server,
+# extracts the returned config archive into an owned Secret (here:
+# "retail-proxy-01-config"), and surfaces the non-sensitive config in status.
+# The Secret is what an mgrpxy deployment consumes; it is garbage-collected when
+# this Proxy is deleted.
+#
+# The TLS secret is optional: omit tlsSecretRef to have Uyuni reuse its own
+# certificate. When present it must be a kubernetes.io/tls secret with
+# tls.crt/tls.key/ca.crt (and optionally ca-intermediate.crt).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: retail-proxy-01-tls
+  namespace: nexa-platform
+type: kubernetes.io/tls
+data:
+  tls.crt: <base64 PEM proxy certificate>
+  tls.key: <base64 PEM proxy private key>
+  ca.crt: <base64 PEM root CA>
+  # ca-intermediate.crt: <base64 PEM intermediate CA bundle>   # optional
+---
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: Proxy
+metadata:
+  name: retail-proxy-01
+  namespace: nexa-platform
+spec:
+  providerRef:
+    name: uyuni
+  fqdn: retail-proxy-01.example.com
+  # parentServer defaults to the provider's server host when omitted.
+  # parentServer: uyuni.example.com
+  sshPort: 8022
+  maxCacheMB: 102400
+  email: admin@example.com
+  tlsSecretRef:
+    name: retail-proxy-01-tls

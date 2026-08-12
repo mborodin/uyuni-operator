@@ -254,6 +254,26 @@ type ProxyHop struct {
 	Hostname string `json:"hostname"`
 }
 
+// ProxyContainerConfigArgs are the inputs to proxy.containerConfig, which
+// generates a containerized proxy's configuration archive (tar.gz). When the
+// cert fields (RootCA/ProxyCrt/ProxyKey) are set, the caller-supplied-cert
+// overload is used; otherwise the no-cert overload is used and the server
+// reuses its own certificate.
+type ProxyContainerConfigArgs struct {
+	ProxyName    string // proxy FQDN
+	ParentServer string // FQDN of the server the proxy connects to
+	ProxyPort    int    // SSH port
+	MaxCacheMB   int    // squid cache size in MB
+	Email        string // proxy admin email
+
+	// Certificate material (all optional; supply together for the caller-cert
+	// overload). PEM-encoded.
+	RootCA          string
+	IntermediateCAs []string
+	ProxyCrt        string
+	ProxyKey        string
+}
+
 type ProfileCreateArgs struct {
 	Label              string
 	VirtualizationType string

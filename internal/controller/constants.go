@@ -49,4 +49,5 @@ const (
 	cobSysFinalizer   = uyuniv1.Group + "/cobblersystem"
 	cobDistFinalizer  = uyuniv1.Group + "/cobblerdistro"
 	cobProfFinalizer  = uyuniv1.Group + "/cobblerprofile"
+	proxyFinalizer    = uyuniv1.Group + "/proxy"
 )

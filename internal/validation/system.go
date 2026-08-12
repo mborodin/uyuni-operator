@@ -1,8 +1,6 @@
 package validation
 
 import (
-	"fmt"
-
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
@@ -97,11 +95,6 @@ func SystemFormulas(formulas []uyuniv1.FormulaAssignment, path *field.Path) fiel
 			// Allow empty path only if: format is yaml|json AND we have a source (secret or configmap).
 			hasPath := vf.Path != ""
 			allowEmptyPath := structured && (hasSecret || hasCM)
-			// DEBUG: Log what we're checking
-			if vf.Path == "" {
-				fmt.Printf("DEBUG: path='', format=%q, structured=%v, hasSecret=%v, hasCM=%v, allowEmptyPath=%v\n",
-					vf.Format, structured, hasSecret, hasCM, allowEmptyPath)
-			}
 			if !hasPath && !allowEmptyPath {
 				errs = append(errs, field.Required(vp.Child("path"),
 					"path is required (an empty path is only allowed with format: yaml|json to merge at the root)"))

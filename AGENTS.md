@@ -126,6 +126,7 @@ charts/uyuni-operator/       # Helm chart (hand-maintained packaging, see below)
 | `CobblerDistro` | Namespaced | Cobbler distribution over XMLRPC (`mode: import`/`create`) |
 | `CobblerProfile` | Namespaced | Cobbler profile over XMLRPC (`mode: import`/`create`) |
 | `CobblerSystem` | Namespaced | Cobbler system record (interfaces, ks_meta, netboot, proxy) |
+| `Proxy` | Namespaced | Uyuni containerized proxy config (proxy.containerConfig → owned Secret) |
 
 `BrandRegion` is **not** a native Go CRD — it is implemented as a Crossplane
 CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
@@ -133,20 +134,20 @@ CompositeResourceDefinition under `config/crossplane/` (`xrd.yaml` +
 
 Implementation status (current repo state):
 
-- **API types**: all 22 Kinds above are declared in `api/v1alpha1/`.
+- **API types**: all 23 Kinds above are declared in `api/v1alpha1/`.
 
-- **`cmd/main.go`**: present. Registers **21 reconcilers** (Organization,
+- **`cmd/main.go`**: present. Registers **22 reconcilers** (Organization,
   UyuniProvider, SystemGroup, System, ActivationKey, Repository,
   SoftwareChannel, ContentProject, ContentProjectPromotion, Task,
   ConfigurationChannel, ClmEnvironment, AutoinstallDistribution,
   AutoinstallProfile, ImageStore, ImageProfile, ImageBuild, CustomInfoKey,
-  CobblerSystem, CobblerDistro, CobblerProfile) and **14 webhooks**. The Cobbler
+  CobblerSystem, CobblerDistro, CobblerProfile, Proxy) and **15 webhooks**. The Cobbler
   controllers talk XMLRPC to Uyuni's `/cobbler_api` via `internal/cobbler` (reads
   unauth; writes need cobbler `redhat_management_permissive` enabled).
 
 - **Types without a controller**: `ConfigFile`.
 
-- **CRDs**: 18 base files under `config/crd/bases/`, all included in
+- **CRDs**: 23 base files under `config/crd/bases/`, all included in
   `config/crd/kustomization.yaml`. ⚠️ Keep this aligned: `main.go` registering
   a controller for a Kind whose CRD is not installed makes the manager
   crash-loop (`no matches for kind ...` / `timed out waiting for cache to be

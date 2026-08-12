@@ -50,4 +50,11 @@ const (
 	// and the FormulaValuesDrift condition indicates the applied values are
 	// stale. Stripped after the values are applied. Value must be exactly "true".
 	AnnApplyFormulaValues = Group + "/apply-formula-values"
+
+	// AnnRegenerate on a Proxy forces the operator to re-call
+	// proxy.containerConfig and rewrite the owned config Secret, even when the
+	// resolved inputs are unchanged. Because regeneration rotates the proxy's
+	// SSH keypair, it is otherwise gated on an input-hash change. Stripped after
+	// the archive is regenerated. Value must be exactly "true".
+	AnnRegenerate = Group + "/regenerate"
 )
