@@ -273,6 +273,9 @@ func main() {
 		Now:     time.Now,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Proxy")
+		os.Exit(1)
+	}
+	
 	if err := (&controller.MaintenanceCalendarReconciler{
 		Client:  mgr.GetClient(),
 		Clients: clientPool,
@@ -378,6 +381,7 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
+
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
