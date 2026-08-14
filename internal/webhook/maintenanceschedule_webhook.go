@@ -116,8 +116,9 @@ func (v *MaintenanceScheduleValidator) warnIfCalendarMissing(ctx context.Context
 }
 
 // warnIfSystemMissing mirrors the controller's findSystem resolution chain
-// (exact name, k8s-name suffix, spec.minionId, spec.hostname) so a validly
-// short-named ref doesn't produce a false "not found" warning here.
+// (exact name, spec.minionId, spec.hostname — deliberately no k8s-name
+// suffix match, see findSystem's doc comment) so a validly short-named ref
+// doesn't produce a false "not found" warning here.
 func (v *MaintenanceScheduleValidator) warnIfSystemMissing(ctx context.Context, ns, name string, path *field.Path) string {
 	var sys uyuniv1.System
 	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &sys); err == nil {
@@ -132,7 +133,7 @@ func (v *MaintenanceScheduleValidator) warnIfSystemMissing(ctx context.Context, 
 	}
 	for i := range list.Items {
 		s := &list.Items[i]
-		if strings.HasSuffix(s.Name, "-"+name) || s.Spec.MinionID == name || s.Spec.Hostname == name {
+		if s.Spec.MinionID == name || s.Spec.Hostname == name {
 			return ""
 		}
 		if short, _, ok := strings.Cut(s.Spec.Hostname, "."); ok && short == name {

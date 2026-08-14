@@ -379,17 +379,20 @@ func resolveFromProject(ctx context.Context, c client.Client, namespace string, 
 		ref.SourceChannelLabel, ref.Environment, cp.Name, state.DerivedChannels), nil
 }
 
-// findSystem resolves a ref string to a System CR in namespace, mirroring
-// findSoftwareChannel/findSystemGroup's no-prefix-required resolution chain:
+// findSystem resolves a ref string to a System CR in namespace:
 //
 //  1. Exact Kubernetes object metadata.name.
-//  2. Suffix match on metadata.name (e.g. "am01s01" matches
-//     "gmrc-am01-am01s01") — lets a ref use the short device name a
-//     composition claim generated, without knowing the composite-name prefix.
-//  3. spec.minionId (Uyuni's minion identifier — often equal to the
+//  2. spec.minionId (Uyuni's minion identifier — often equal to the
 //     Kubernetes name, but not always).
-//  4. spec.hostname, or its short label before the first "." — Uyuni's
+//  3. spec.hostname, or its short label before the first "." — Uyuni's
 //     WebUI displays this as the "System Name".
+//
+// Deliberately no k8s-name suffix match here (unlike findSoftwareChannel/
+// findSystemGroup): a bare naming-convention guess risks silently matching
+// the wrong system when two devices in the same namespace share a short
+// suffix (e.g. two stores each with their own "pos01"). minionId/hostname
+// are real Uyuni identity fields, not a convention, so they don't have that
+// collision risk.
 func findSystem(ctx context.Context, c client.Client, namespace, name string) (*uyuniv1.System, error) {
 	var sys uyuniv1.System
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sys); err == nil {
@@ -400,12 +403,6 @@ func findSystem(ctx context.Context, c client.Client, namespace, name string) (*
 	var list uyuniv1.SystemList
 	if err := c.List(ctx, &list, client.InNamespace(namespace)); err != nil {
 		return nil, err
-	}
-	suffix := "-" + name
-	for i := range list.Items {
-		if strings.HasSuffix(list.Items[i].Name, suffix) {
-			return &list.Items[i], nil
-		}
 	}
 	for i := range list.Items {
 		if list.Items[i].Spec.MinionID == name {
@@ -430,9 +427,6 @@ func findSystem(ctx context.Context, c client.Client, namespace, name string) (*
 // referencing spec used a short name rather than sys's Kubernetes name.
 func systemRefMatches(ref uyuniv1.LocalObjectRef, sys *uyuniv1.System) bool {
 	if ref.Name == sys.Name {
-		return true
-	}
-	if strings.HasSuffix(sys.Name, "-"+ref.Name) {
 		return true
 	}
 	if sys.Spec.MinionID == ref.Name {
