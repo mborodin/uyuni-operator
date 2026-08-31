@@ -1621,6 +1621,13 @@ func (c *Client) GetConfigFile(ctx context.Context, channelLabel, path string) (
 }
 
 func (c *Client) CreateOrUpdateConfigFile(ctx context.Context, channelLabel string, f ConfigFileUpsert) (*ConfigFileDetails, error) {
+	// Uyuni auto-creates init.sls for every state channel and rejects it on
+	// createOrUpdatePath with "Please use 'updateInitSls' method for updating
+	// init.sls file." It takes no ownership or permission attributes.
+	if isInitSls(f.Path) {
+		return c.UpdateInitSls(ctx, channelLabel, f)
+	}
+
 	pathInfo := map[string]any{
 		"contents":    f.Contents,
 		"owner":       f.Owner,
@@ -1645,6 +1652,33 @@ func (c *Client) CreateOrUpdateConfigFile(ctx context.Context, channelLabel stri
 	}
 
 	r, err := apiPost[wireConfigFile](c, "configchannel/createOrUpdatePath", payload)
+	if err != nil {
+		return nil, err
+	}
+	return wireConfigFileToDetails(&r), nil
+}
+
+// isInitSls reports whether path addresses a state channel's init.sls, with or
+// without the leading slash the repository sync adds.
+func isInitSls(path string) bool {
+	return path == "init.sls" || path == "/init.sls"
+}
+
+// UpdateInitSls sets the contents of a state channel's init.sls. Uyuni exposes
+// this as a dedicated call because init.sls always exists and cannot be created
+// or deleted like an ordinary path.
+func (c *Client) UpdateInitSls(ctx context.Context, channelLabel string, f ConfigFileUpsert) (*ConfigFileDetails, error) {
+	pathInfo := map[string]any{
+		"contents": f.Contents,
+	}
+	if f.Macro {
+		pathInfo["macro"] = f.Macro
+	}
+
+	r, err := apiPost[wireConfigFile](c, "configchannel/updateInitSls", map[string]any{
+		"label":    channelLabel,
+		"pathInfo": pathInfo,
+	})
 	if err != nil {
 		return nil, err
 	}

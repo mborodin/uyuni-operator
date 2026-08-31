@@ -288,7 +288,11 @@ func (r *ConfigurationChannelReconciler) syncRepositoryFiles(ctx context.Context
 }
 
 func (r *ConfigurationChannelReconciler) uploadFilesToUyuni(ctx context.Context, uc uyuni.API, cc *uyuniv1.ConfigurationChannel, files map[string]string) error {
-	for filePath, content := range files {
+	// Iterate in sorted order: a failure aborts the sync, and Go's randomised
+	// map order would otherwise leave a different, unpredictable subset of the
+	// files uploaded on every attempt.
+	for _, filePath := range sortedMapKeys(files) {
+		content := files[filePath]
 		fileUpsert := uyuni.ConfigFileUpsert{
 			Path:        filePath,
 			Contents:    content,
