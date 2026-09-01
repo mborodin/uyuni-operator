@@ -2244,13 +2244,16 @@ func (c *Client) ScheduleHighstate(ctx context.Context, serverIDs []int, earlies
 }
 
 func (c *Client) ScheduleRemoteCommand(ctx context.Context, serverIDs []int, earliest time.Time, command, user, group string, timeoutSeconds int) (int, error) {
+	// Uyuni's real param name is "earliestOccurrence" (camelCase) - confirmed
+	// live against the tst Uyuni server; "earliest_occurrence" caused
+	// "No method exists with the matching parameters".
 	return apiPost[int](c, "system/scheduleScriptRun", map[string]any{
-		"sids":                serverIDs,
-		"username":            user,
-		"groupname":           group,
-		"timeout":             timeoutSeconds,
-		"script":              command,
-		"earliest_occurrence": earliest.Format(time.RFC3339),
+		"sids":               serverIDs,
+		"username":           user,
+		"groupname":          group,
+		"timeout":            timeoutSeconds,
+		"script":             command,
+		"earliestOccurrence": earliest.Format(time.RFC3339),
 	})
 }
 
