@@ -154,8 +154,37 @@ func (v *ContentProjectPromotionValidator) validate(ctx context.Context, p *uyun
 		return nil, nil
 	}
 
+	// known/pred describe the project's environment chain. Built from two
+	// sources merged together:
+	//   1. cp.Spec.Environments - the deprecated embedded field. Kept for
+	//      backward compat with any project still using it.
+	//   2. live ClmEnvironment objects referencing this project - the
+	//      current recommended pattern (see contentproject_types.go).
+	// CONFIRMED LIVE (VerificationTest promote action testing): a project
+	// created the modern way (ClmEnvironment CRDs, empty
+	// spec.environments) made every promotion fail admission with
+	// "Not found" for both fromEnvironment and toEnvironment, because
+	// this validator only ever read source 1. Source 2 is what actually
+	// reflects reality for that (now standard) case.
+	known := make(map[string]bool)
+	pred := make(map[string]string)
+	for _, e := range cp.Spec.Environments {
+		known[e.Label] = true
+		pred[e.Label] = e.Predecessor
+	}
+	var envList uyuniv1.ClmEnvironmentList
+	if err := v.Client.List(ctx, &envList, client.InNamespace(p.Namespace)); err == nil {
+		for _, e := range envList.Items {
+			if e.Spec.ProjectRef.Name != cp.Name {
+				continue
+			}
+			known[e.Spec.Id] = true
+			pred[e.Spec.Id] = e.Spec.Predecessor
+		}
+	}
+
 	errs = append(errs,
-		validation.PromotionPair(&cp,
+		validation.PromotionPair(known, pred,
 			p.Spec.FromEnvironment, p.Spec.ToEnvironment,
 			field.NewPath("spec", "fromEnvironment"),
 			field.NewPath("spec", "toEnvironment"))...)
