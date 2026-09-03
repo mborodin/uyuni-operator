@@ -168,26 +168,19 @@ func (r *ContentProjectPromotionReconciler) Reconcile(ctx context.Context, req c
 		return r.fail(ctx, &p, fmt.Errorf("target environment %q disappeared", p.Spec.ToEnvironment))
 	}
 
-	// TEMPORARY DIAGNOSTIC (VerificationTest promote action testing):
-	// a real promotion confirmed Built in the Uyuni WebUI stayed at
-	// phase=Running in this CR indefinitely (12+ minutes, well past
-	// when the WebUI showed completion), with ListProjectEnvironments
-	// calls succeeding (200) every ~30s the whole time per the logs -
-	// meaning either target.Status never actually reaches the literal
-	// string "BUILT" this switch expects, or the Label match above
-	// isn't finding the right entry. Logging every polled environment's
-	// raw label+status here to see the actual wire value directly,
-	// rather than guessing further. Remove once the real value is
-	// confirmed and (if needed) the switch/match is fixed to match it.
-	ctrl.Log.Info("promotion poll: raw environment list from Uyuni",
-		"contentProjectPromotion", p.Name, "toEnvironment", p.Spec.ToEnvironment,
-		"targetFound", target != nil)
-	for _, e := range envs {
-		ctrl.Log.Info("promotion poll: environment entry",
-			"contentProjectPromotion", p.Name, "label", e.Label, "status", e.Status, "version", e.Version)
-	}
-
-	switch target.Status {
+	// CONFIRMED LIVE (VerificationTest promote action testing, via a
+	// temporary diagnostic log that has since been removed): Uyuni
+	// returns environment status in lowercase ("built", "building",
+	// etc.), not the uppercase this switch was written to expect
+	// ("BUILT", "BUILDING"). Go string comparison is case-sensitive, so
+	// every real status value fell through to default and just kept
+	// requeuing forever - a promotion that had genuinely finished in
+	// Uyuni (confirmed in the WebUI) stayed at phase=Running in this CR
+	// indefinitely, with no error, because nothing ever matched. Fixed
+	// by uppercasing before the switch, so the case values here stay
+	// the documented/readable constants (see the Status field's comment
+	// in internal/uyuni/types.go).
+	switch strings.ToUpper(target.Status) {
 	case "BUILDING", "GENERATING_REPODATA", "NEW":
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	case "FAILED":
