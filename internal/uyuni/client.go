@@ -1832,7 +1832,19 @@ func (c *Client) DetachSource(ctx context.Context, projectLabel, channelLabel st
 }
 
 func (c *Client) ListProjectEnvironments(ctx context.Context, projectLabel string) ([]ProjectEnvironmentInfo, error) {
-	list, err := apiGet[[]wireEnvironment](c, "contentmanagement/listProjectEnvironments?project_label="+url.QueryEscape(projectLabel))
+	// CONFIRMED LIVE (VerificationTest promote action testing): this sent
+	// project_label (snake_case), which Uyuni rejects with 400 "No method
+	// exists with the matching parameters" - the same class of bug as the
+	// earliestOccurrence/earliest_occurrence fix elsewhere in this file.
+	// The correct name is projectLabel (camelCase) - confirmed against
+	// CreateEnvironment just below, which already gets this right, and
+	// against the API docs. This call is what
+	// ContentProjectPromotionReconciler polls to detect a promotion's
+	// target environment reaching Built - with the wrong param name it
+	// always 400'd, so the reconciler could never observe completion and
+	// the promotion CR sat at Running forever even after Uyuni had
+	// actually finished the real work.
+	list, err := apiGet[[]wireEnvironment](c, "contentmanagement/listProjectEnvironments?projectLabel="+url.QueryEscape(projectLabel))
 	if err != nil {
 		return nil, err
 	}
