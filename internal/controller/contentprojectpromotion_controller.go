@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,6 +105,30 @@ func (r *ContentProjectPromotionReconciler) Reconcile(ctx context.Context, req c
 	}
 
 	if err := uc.PromoteProject(ctx, cp.Spec.Label, p.Spec.FromEnvironment); err != nil {
+		// CONFIRMED LIVE (VerificationTest promote action testing): the
+		// cp.Status.BuildStatus=="Building" guard above is a best-effort
+		// check, not authoritative - it can read "Idle" (stale, lagging
+		// the real Uyuni state, same class of status-latency this repo
+		// has hit elsewhere) right before Uyuni itself rejects
+		// PromoteProject with a transient lock conflict. Confirmed the
+		// hard way: a promotion that hit this exact error still
+		// completed successfully in Uyuni moments later (the target
+		// environment reached Built) while this reconciler had already
+		// marked the CR permanently Failed and never looked again -
+		// actively misleading anything reading this CR's phase. Uyuni's
+		// CLM subsystem serializes build/promote per project, so this
+		// class of conflict is expected to clear on its own; retry
+		// instead of failing terminally. Any other PromoteProject error
+		// (bad project/env, permissions, etc.) still fails immediately
+		// below - only this specific, known-transient class retries.
+		if isTransientCLMConflict(err) {
+			setReady(&p.Status.Conditions, p.Generation, metav1.ConditionFalse,
+				"CLMBusy", "Uyuni reported a build/promote already in progress for this project - retrying: "+err.Error())
+			if uerr := r.Status().Update(ctx, &p); uerr != nil {
+				return ctrl.Result{}, uerr
+			}
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		return r.fail(ctx, &p, err)
 	}
 
@@ -171,6 +196,16 @@ func (r *ContentProjectPromotionReconciler) pending(ctx context.Context, p *uyun
 
 func isTerminal(phase string) bool {
 	return phase == "Succeeded" || phase == "Failed"
+}
+
+// isTransientCLMConflict recognizes Uyuni's "already in progress" response
+// to a build/promote request submitted while another CLM operation on the
+// same project is still finishing server-side. Deliberately narrow (exact
+// substring match on the known message) rather than treating every
+// PromoteProject error as retryable - a real error (bad project/env,
+// permissions, etc.) should still fail immediately, not retry forever.
+func isTransientCLMConflict(err error) bool {
+	return strings.Contains(err.Error(), "already in progress")
 }
 
 func (r *ContentProjectPromotionReconciler) SetupWithManager(mgr ctrl.Manager) error {
