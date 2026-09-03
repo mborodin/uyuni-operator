@@ -168,6 +168,25 @@ func (r *ContentProjectPromotionReconciler) Reconcile(ctx context.Context, req c
 		return r.fail(ctx, &p, fmt.Errorf("target environment %q disappeared", p.Spec.ToEnvironment))
 	}
 
+	// TEMPORARY DIAGNOSTIC (VerificationTest promote action testing):
+	// a real promotion confirmed Built in the Uyuni WebUI stayed at
+	// phase=Running in this CR indefinitely (12+ minutes, well past
+	// when the WebUI showed completion), with ListProjectEnvironments
+	// calls succeeding (200) every ~30s the whole time per the logs -
+	// meaning either target.Status never actually reaches the literal
+	// string "BUILT" this switch expects, or the Label match above
+	// isn't finding the right entry. Logging every polled environment's
+	// raw label+status here to see the actual wire value directly,
+	// rather than guessing further. Remove once the real value is
+	// confirmed and (if needed) the switch/match is fixed to match it.
+	ctrl.Log.Info("promotion poll: raw environment list from Uyuni",
+		"contentProjectPromotion", p.Name, "toEnvironment", p.Spec.ToEnvironment,
+		"targetFound", target != nil)
+	for _, e := range envs {
+		ctrl.Log.Info("promotion poll: environment entry",
+			"contentProjectPromotion", p.Name, "label", e.Label, "status", e.Status, "version", e.Version)
+	}
+
 	switch target.Status {
 	case "BUILDING", "GENERATING_REPODATA", "NEW":
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
