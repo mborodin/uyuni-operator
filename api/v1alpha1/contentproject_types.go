@@ -155,10 +155,27 @@ type ContentProjectPromotionStatus struct {
 	// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
 	Phase string `json:"phase,omitempty"`
 
-	PromotedVersion    int                `json:"promotedVersion,omitempty"`
-	StartedAt          *metav1.Time       `json:"startedAt,omitempty"`
-	CompletedAt        *metav1.Time       `json:"completedAt,omitempty"`
-	FailureReason      string             `json:"failureReason,omitempty"`
+	PromotedVersion int          `json:"promotedVersion,omitempty"`
+	StartedAt       *metav1.Time `json:"startedAt,omitempty"`
+	CompletedAt     *metav1.Time `json:"completedAt,omitempty"`
+	FailureReason   string       `json:"failureReason,omitempty"`
+
+	// CONFIRMED LIVE (VerificationTest promote action testing): the
+	// reconciler used to call PromoteProject on every reconcile pass with
+	// no guard at all, relying on it being safe to call repeatedly. It
+	// isn't - watched it hammer Uyuni's promoteProject API every ~30s
+	// for 13+ minutes straight, every single call rejected with "Build/
+	// Promote already in progress", while the target environment
+	// visibly cycled between "Cloning channels" and "Waiting for
+	// repositories data to be generated" in the Uyuni WebUI and never
+	// reached Built - strong evidence the repeated calls were
+	// interrupting/restarting Uyuni's own in-flight promotion rather
+	// than harmlessly no-op'ing. PromotionRequested is set true the
+	// first time PromoteProject returns success for this CR, and the
+	// reconciler never calls it again afterwards - only polls
+	// ListProjectEnvironments from then on.
+	PromotionRequested bool `json:"promotionRequested,omitempty"`
+
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
