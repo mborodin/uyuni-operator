@@ -106,38 +106,35 @@ func TestChainOrder(t *testing.T) {
 }
 
 func TestPromotionPair(t *testing.T) {
-	cp := &uyuniv1.ContentProject{
-		Spec: uyuniv1.ContentProjectSpec{
-			Environments: []uyuniv1.ProjectEnvironment{
-				{Label: "dev"},
-				{Label: "test", Predecessor: "dev"},
-				{Label: "prod", Predecessor: "test"},
-			},
-		},
-	}
+	// known/pred are what the webhook builds by merging
+	// ContentProject.spec.environments (deprecated) with live
+	// ClmEnvironment objects - PromotionPair itself takes plain data, no
+	// I/O (see promotion.go doc comment).
+	known := map[string]bool{"dev": true, "test": true, "prod": true}
+	pred := map[string]string{"dev": "", "test": "dev", "prod": "test"}
 	fromPath := field.NewPath("spec.fromEnvironment")
 	toPath := field.NewPath("spec.toEnvironment")
 
 	t.Run("valid adjacent promotion", func(t *testing.T) {
-		errs := validation.PromotionPair(cp, "dev", "test", fromPath, toPath)
+		errs := validation.PromotionPair(known, pred, "dev", "test", fromPath, toPath)
 		require.Empty(t, errs)
 	})
 
 	t.Run("non-adjacent rejected", func(t *testing.T) {
-		errs := validation.PromotionPair(cp, "dev", "prod", fromPath, toPath)
+		errs := validation.PromotionPair(known, pred, "dev", "prod", fromPath, toPath)
 		require.Len(t, errs, 1)
 		require.Equal(t, "spec.toEnvironment", errs[0].Field)
 	})
 
 	t.Run("unknown source", func(t *testing.T) {
-		errs := validation.PromotionPair(cp, "staging", "prod", fromPath, toPath)
+		errs := validation.PromotionPair(known, pred, "staging", "prod", fromPath, toPath)
 		// fromEnv unknown + chain-adjacency check skipped because fromEnv missing.
 		require.Len(t, errs, 1)
 		require.Equal(t, "spec.fromEnvironment", errs[0].Field)
 	})
 
 	t.Run("same env", func(t *testing.T) {
-		errs := validation.PromotionPair(cp, "dev", "dev", fromPath, toPath)
+		errs := validation.PromotionPair(known, pred, "dev", "dev", fromPath, toPath)
 		require.Len(t, errs, 1)
 		require.Contains(t, errs[0].Detail, "differ")
 	})

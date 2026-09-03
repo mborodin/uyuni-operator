@@ -4,17 +4,28 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
-
-	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
 )
 
 // PromotionPair validates that fromEnv → toEnv is a valid promotion step
 // within the project's chain. Assumes the project's environments are
 // structurally valid (run EnvChain first).
 //
+// known/pred describe the project's environment chain: known[label] is
+// true for every environment that exists, pred[label] is that
+// environment's predecessor (empty for the root environment). The caller
+// builds these - CONFIRMED LIVE (VerificationTest promote action
+// testing): environments are commonly managed via separate ClmEnvironment
+// CRDs now (ContentProject.spec.environments is deprecated in favor of
+// that - see contentproject_types.go), so a caller that only reads
+// project.Spec.Environments will find every environment "not found" for
+// any project using the current recommended pattern. Building known/pred
+// is therefore the webhook's job (it can query live ClmEnvironment
+// objects), not this package's (no I/O here, see package doc.go).
+//
 // Returns nil if the pair is valid.
 func PromotionPair(
-	project *uyuniv1.ContentProject,
+	known map[string]bool,
+	pred map[string]string,
 	fromEnv, toEnv string,
 	fromPath, toPath *field.Path,
 ) field.ErrorList {
@@ -32,13 +43,6 @@ func PromotionPair(
 	}
 	if len(errs) > 0 {
 		return errs
-	}
-
-	pred := make(map[string]string, len(project.Spec.Environments))
-	known := make(map[string]bool, len(project.Spec.Environments))
-	for _, e := range project.Spec.Environments {
-		pred[e.Label] = e.Predecessor
-		known[e.Label] = true
 	}
 
 	if !known[fromEnv] {
