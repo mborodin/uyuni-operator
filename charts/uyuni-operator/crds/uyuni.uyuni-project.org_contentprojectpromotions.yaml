@@ -177,6 +177,8 @@ spec:
                 type: string
               promotedVersion:
                 type: integer
+              promotionRequested:
+                type: boolean
               startedAt:
                 format: date-time
                 type: string

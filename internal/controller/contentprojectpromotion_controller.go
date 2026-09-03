@@ -104,32 +104,52 @@ func (r *ContentProjectPromotionReconciler) Reconcile(ctx context.Context, req c
 		}
 	}
 
-	if err := uc.PromoteProject(ctx, cp.Spec.Label, p.Spec.FromEnvironment); err != nil {
-		// CONFIRMED LIVE (VerificationTest promote action testing): the
-		// cp.Status.BuildStatus=="Building" guard above is a best-effort
-		// check, not authoritative - it can read "Idle" (stale, lagging
-		// the real Uyuni state, same class of status-latency this repo
-		// has hit elsewhere) right before Uyuni itself rejects
-		// PromoteProject with a transient lock conflict. Confirmed the
-		// hard way: a promotion that hit this exact error still
-		// completed successfully in Uyuni moments later (the target
-		// environment reached Built) while this reconciler had already
-		// marked the CR permanently Failed and never looked again -
-		// actively misleading anything reading this CR's phase. Uyuni's
-		// CLM subsystem serializes build/promote per project, so this
-		// class of conflict is expected to clear on its own; retry
-		// instead of failing terminally. Any other PromoteProject error
-		// (bad project/env, permissions, etc.) still fails immediately
-		// below - only this specific, known-transient class retries.
-		if isTransientCLMConflict(err) {
-			setReady(&p.Status.Conditions, p.Generation, metav1.ConditionFalse,
-				"CLMBusy", "Uyuni reported a build/promote already in progress for this project - retrying: "+err.Error())
-			if uerr := r.Status().Update(ctx, &p); uerr != nil {
-				return ctrl.Result{}, uerr
+	// CONFIRMED LIVE (VerificationTest promote action testing) - a real,
+	// serious bug, found the hard way: this call used to run
+	// unconditionally on every reconcile pass, with nothing recording
+	// whether it had already been made. Watched it call Uyuni's
+	// promoteProject API every ~30s for 13+ minutes straight - EVERY
+	// single call rejected with "Build/Promote already in progress" -
+	// while the target environment visibly cycled between "Cloning
+	// channels" and "Waiting for repositories data to be generated" in
+	// the Uyuni WebUI and never once reached Built. Strong evidence the
+	// repeated calls were themselves interrupting/restarting Uyuni's own
+	// in-flight promotion, not harmlessly no-op'ing against it -
+	// PromoteProject is not safe to call again once it has already
+	// succeeded for this promotion. Fixed: call it at most once, guarded
+	// by status.promotionRequested, only set true after a successful
+	// call. Every reconcile after that just polls
+	// ListProjectEnvironments below - never calls PromoteProject again
+	// for this CR.
+	if !p.Status.PromotionRequested {
+		if err := uc.PromoteProject(ctx, cp.Spec.Label, p.Spec.FromEnvironment); err != nil {
+			// The BuildStatus=="Building" guard above is a best-effort
+			// check, not authoritative - it can read "Idle" (stale,
+			// lagging the real Uyuni state, same class of status-latency
+			// this repo has hit elsewhere) right before Uyuni itself
+			// rejects this first PromoteProject call with a transient
+			// lock conflict (e.g. a build from something else still
+			// finishing). Uyuni's CLM subsystem serializes build/promote
+			// per project, so this class of conflict on the FIRST call
+			// is expected to clear on its own - retry (still guarded by
+			// promotionRequested staying false, so this branch is the
+			// only place PromoteProject gets called) instead of failing
+			// terminally. Any other error (bad project/env, permissions,
+			// etc.) still fails immediately below.
+			if isTransientCLMConflict(err) {
+				setReady(&p.Status.Conditions, p.Generation, metav1.ConditionFalse,
+					"CLMBusy", "Uyuni reported a build/promote already in progress for this project - retrying: "+err.Error())
+				if uerr := r.Status().Update(ctx, &p); uerr != nil {
+					return ctrl.Result{}, uerr
+				}
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 			}
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			return r.fail(ctx, &p, err)
 		}
-		return r.fail(ctx, &p, err)
+		p.Status.PromotionRequested = true
+		if err := r.Status().Update(ctx, &p); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Promotion is async in Uyuni; poll the target env's status.
