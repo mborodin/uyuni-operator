@@ -198,8 +198,18 @@ func (r *TaskReconciler) scheduleByKind(ctx context.Context, uc uyuni.API, task 
 		if task.Spec.Reboot.DelaySeconds > 0 {
 			earliestReboot = r.Now().Add(time.Duration(task.Spec.Reboot.DelaySeconds) * time.Second)
 		}
-		id, err := uc.ScheduleReboot(ctx, serverIDs, earliestReboot)
-		return []int{id}, err
+		// ScheduleReboot takes one system per call (Uyuni's
+		// system/scheduleReboot has no multi-sid form) - unlike
+		// Highstate/RemoteCommand above, which do.
+		actionIDs := make([]int, 0, len(serverIDs))
+		for _, sid := range serverIDs {
+			id, err := uc.ScheduleReboot(ctx, sid, earliestReboot)
+			if err != nil {
+				return nil, err
+			}
+			actionIDs = append(actionIDs, id)
+		}
+		return actionIDs, nil
 	case task.Spec.ApplyPatches != nil:
 		id, err := uc.ScheduleApplyPatches(ctx, serverIDs, earliest, task.Spec.ApplyPatches.IncludeAdvisories)
 		return []int{id}, err

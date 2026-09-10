@@ -24,6 +24,28 @@
 
 ### Fixed
 
+- **4 more `Task`-scheduling functions sent the wrong Uyuni API parameter
+  names/types**, same bug class as `ScheduleRemoteCommand`'s earlier
+  `earliestOccurrence` fix (Uyuni's scheduling API wants camelCase, not
+  snake_case) — each caused `400: 'No method exists with the matching
+  parameters'`, so the affected `Task` kinds always reached
+  `ScheduleFailed`:
+  - `ScheduleChangeChannels`: `base_channel`/`child_channels`/
+    `earliest_occurrence` → `baseChannelLabel`/`childLabels`/
+    `earliestOccurrence`.
+  - `ScheduleApplyConfigChannels`: `earliest_occurrence` →
+    `earliestOccurrence`.
+  - `ScheduleReboot`: Uyuni's `system/scheduleReboot` takes a single `sid`,
+    not a `sids` array — the function signature changed from
+    `serverIDs []int` to `serverID int`; the reconciler now calls it once
+    per target system. Also `earliest_occurrence` → `earliestOccurrence`.
+  - `ScheduleApplyPatches`: Uyuni's `system/scheduleApplyErrata` wants
+    numeric `errataIds`, not `errata_names` advisory-name strings — added
+    `getErratumID` (resolves each advisory name via `errata/getDetails`)
+    so `Task.spec.applyPatches.includeAdvisories` stays a customer-facing
+    list of advisory names, unchanged. Also `earliest_occurrence` →
+    `earliestOccurrence`.
+
 - **Removed stray debug output from the System validator.** A leftover
   `fmt.Printf` in `internal/validation` `SystemFormulas` logged to the webhook's
   stdout on every empty-path `valuesFrom`; removed it (and the now-unused import).

@@ -223,7 +223,10 @@ type API interface {
 	// Scheduled actions (tasks)
 	ScheduleHighstate(ctx context.Context, serverIDs []int, earliest time.Time, test bool) (int, error)
 	ScheduleRemoteCommand(ctx context.Context, serverIDs []int, earliest time.Time, command, user, group string, timeoutSeconds int) (int, error)
-	ScheduleReboot(ctx context.Context, serverIDs []int, earliest time.Time) (int, error)
+	// ScheduleReboot takes a single system, not a batch - Uyuni's
+	// system/scheduleReboot has no multi-sid form. Callers targeting
+	// multiple systems call this once per system.
+	ScheduleReboot(ctx context.Context, serverID int, earliest time.Time) (int, error)
 	ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) (int, error)
 	ScheduleApplyConfigChannels(ctx context.Context, serverIDs []int, earliest time.Time) (int, error)
 	GetActionDetails(ctx context.Context, actionID int) (*ScheduledAction, error)
