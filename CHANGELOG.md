@@ -4,6 +4,52 @@
 
 ### Added
 
+- **`Proxy` resource** — declarative management of a Uyuni containerized proxy's
+  configuration. The operator calls `proxy.containerConfig` on the referenced
+  provider, extracts the returned config archive (`config.yaml`, `httpd.yaml`,
+  `ssh.yaml`, certs/keys) into an **operator-owned Secret** (named in
+  `status.secretName`, garbage-collected with the CR), and surfaces the
+  non-sensitive config (`config.yaml`) plus metadata (`status.files`,
+  `inputHash`, `generatedAt`) in status — private keys never touch status.
+  `spec.tlsSecretRef` supplies the proxy certificate from a `kubernetes.io/tls`
+  Secret (caller-cert generation); omit it to have Uyuni reuse its own
+  certificate. Because `proxy.containerConfig` rotates the proxy↔server SSH
+  keypair on every call, regeneration is gated on a hash of the resolved inputs
+  and the one-shot `uyuni.uyuni-project.org/regenerate` annotation, not on every
+  reconcile. `spec.fqdn` is immutable (webhook-enforced). This adds the
+  operator's first Secret **write** RBAC (`secrets: create/update/patch/delete`).
+  The `proxy.containerConfig` call is POST with camelCase params, and its byte[]
+  result is returned as a JSON array of *signed* integers (not base64) — both
+  verified against a live Uyuni 2026.06 server.
+
+### Fixed
+
+- **4 more `Task`-scheduling functions sent the wrong Uyuni API parameter
+  names/types**, same bug class as `ScheduleRemoteCommand`'s earlier
+  `earliestOccurrence` fix (Uyuni's scheduling API wants camelCase, not
+  snake_case) — each caused `400: 'No method exists with the matching
+  parameters'`, so the affected `Task` kinds always reached
+  `ScheduleFailed`:
+  - `ScheduleChangeChannels`: `base_channel`/`child_channels`/
+    `earliest_occurrence` → `baseChannelLabel`/`childLabels`/
+    `earliestOccurrence`.
+  - `ScheduleApplyConfigChannels`: `earliest_occurrence` →
+    `earliestOccurrence`.
+  - `ScheduleReboot`: Uyuni's `system/scheduleReboot` takes a single `sid`,
+    not a `sids` array — the function signature changed from
+    `serverIDs []int` to `serverID int`; the reconciler now calls it once
+    per target system. Also `earliest_occurrence` → `earliestOccurrence`.
+  - `ScheduleApplyPatches`: Uyuni's `system/scheduleApplyErrata` wants
+    numeric `errataIds`, not `errata_names` advisory-name strings — added
+    `getErratumID` (resolves each advisory name via `errata/getDetails`)
+    so `Task.spec.applyPatches.includeAdvisories` stays a customer-facing
+    list of advisory names, unchanged. Also `earliest_occurrence` →
+    `earliestOccurrence`.
+
+- **Removed stray debug output from the System validator.** A leftover
+  `fmt.Printf` in `internal/validation` `SystemFormulas` logged to the webhook's
+  stdout on every empty-path `valuesFrom`; removed it (and the now-unused import).
+
 - **`MaintenanceCalendar` and `MaintenanceSchedule` CRDs.** Declarative
   control of Uyuni maintenance windows (the `maintenance` API namespace),
   so operators can define and change per-store maintenance schedules from

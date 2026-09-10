@@ -1015,11 +1015,17 @@ func (c *Client) GenerateProxyContainerConfig(ctx context.Context, args ProxyCon
 func (c *Client) ScheduleChangeChannels(ctx context.Context, serverID int, base string, children []string, earliest time.Time) (int, error) {
 	// The single-sid scheduleChangeChannels returns a bare int action id (not a
 	// struct), so unmarshalling into a {action_id} struct fails.
+	//
+	// Uyuni's real param names are "baseChannelLabel"/"childLabels"/
+	// "earliestOccurrence" (camelCase) - confirmed against the official Uyuni
+	// API docs and a working WebUI test; the snake_case names caused
+	// "No method exists with the matching parameters" (same bug pattern as
+	// ScheduleRemoteCommand's earliestOccurrence fix).
 	return apiPost[int](c, "system/scheduleChangeChannels", map[string]any{
-		"sid":                 serverID,
-		"base_channel":        base,
-		"child_channels":      children,
-		"earliest_occurrence": earliest.Format(time.RFC3339),
+		"sid":                serverID,
+		"baseChannelLabel":   base,
+		"childLabels":        children,
+		"earliestOccurrence": earliest.Format(time.RFC3339),
 	})
 }
 
@@ -2269,25 +2275,69 @@ func (c *Client) ScheduleRemoteCommand(ctx context.Context, serverIDs []int, ear
 	})
 }
 
-func (c *Client) ScheduleReboot(ctx context.Context, serverIDs []int, earliest time.Time) (int, error) {
+// ScheduleReboot takes a single system, not a batch - confirmed against the
+// official Uyuni API docs and a working WebUI test: system/scheduleReboot's
+// real params are "sid" (a single int, not "sids"/array) and
+// "earliestOccurrence" (camelCase, not "earliest_occurrence") - same bug
+// pattern as ScheduleRemoteCommand's fix. Callers targeting multiple systems
+// must call this once per system (see TaskReconciler.scheduleByKind).
+func (c *Client) ScheduleReboot(ctx context.Context, serverID int, earliest time.Time) (int, error) {
 	return apiPost[int](c, "system/scheduleReboot", map[string]any{
-		"sids":                serverIDs,
-		"earliest_occurrence": earliest.Format(time.RFC3339),
+		"sid":                serverID,
+		"earliestOccurrence": earliest.Format(time.RFC3339),
 	})
 }
 
+// wireErratum is the subset of errata/getDetails' response this client
+// needs - just enough to resolve an advisory name to its numeric errata ID.
+type wireErratum struct {
+	ID           int    `json:"id"`
+	AdvisoryName string `json:"advisory_name"`
+}
+
+// getErratumID resolves a customer-facing advisory name (e.g.
+// "openSUSE-2024-1234") to the numeric errata ID Uyuni's scheduling API
+// actually wants. errata/getDetails is a @ReadOnly method (GET, per the
+// convention noted on GetActionDetails above).
+func (c *Client) getErratumID(ctx context.Context, advisoryName string) (int, error) {
+	r, err := apiGet[wireErratum](c, fmt.Sprintf("errata/getDetails?advisoryName=%s", url.QueryEscape(advisoryName)))
+	if err != nil {
+		return 0, fmt.Errorf("resolving advisory %q: %w", advisoryName, err)
+	}
+	return r.ID, nil
+}
+
 func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) (int, error) {
+	// Uyuni's real param names are "errataIds" (numeric errata IDs, not
+	// advisory name strings) and "earliestOccurrence" (camelCase) - confirmed
+	// against the official Uyuni API docs and a working WebUI test; the old
+	// errata_names/earliest_occurrence params caused "No method exists with
+	// the matching parameters" (same bug pattern as ScheduleRemoteCommand's
+	// fix). advisoryNames stays the customer-facing spec field (see
+	// Task.Spec.ApplyPatches.IncludeAdvisories) - resolved to IDs here so
+	// nothing upstream of this call needs to change.
+	errataIDs := make([]int, 0, len(advisoryNames))
+	for _, name := range advisoryNames {
+		id, err := c.getErratumID(ctx, name)
+		if err != nil {
+			return 0, err
+		}
+		errataIDs = append(errataIDs, id)
+	}
 	return apiPost[int](c, "system/scheduleApplyErrata", map[string]any{
-		"sids":                serverIDs,
-		"errata_names":        advisoryNames,
-		"earliest_occurrence": earliest.Format(time.RFC3339),
+		"sids":               serverIDs,
+		"errataIds":          errataIDs,
+		"earliestOccurrence": earliest.Format(time.RFC3339),
 	})
 }
 
 func (c *Client) ScheduleApplyConfigChannels(ctx context.Context, serverIDs []int, earliest time.Time) (int, error) {
+	// Uyuni's real param name is "earliestOccurrence" (camelCase) - same bug
+	// pattern as ScheduleRemoteCommand's fix, confirmed against the official
+	// Uyuni API docs and a working WebUI test.
 	return apiPost[int](c, "system/scheduleApplyConfigChannel", map[string]any{
-		"sids":                serverIDs,
-		"earliest_occurrence": earliest.Format(time.RFC3339),
+		"sids":               serverIDs,
+		"earliestOccurrence": earliest.Format(time.RFC3339),
 	})
 }
 
