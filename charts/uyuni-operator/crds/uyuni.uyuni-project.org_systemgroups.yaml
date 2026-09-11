@@ -47,6 +47,16 @@ spec:
             type: object
           spec:
             properties:
+              cluster:
+                description: |-
+                  Reference to UyuniProvider for multi-cluster support.
+                  Empty = use default provider (spec.isDefault: true)
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
               configChannelRefs:
                 items:
                   description: |-
@@ -63,7 +73,155 @@ spec:
                 type: array
               description:
                 type: string
+              formulas:
+                description: |-
+                  Formulas enables Salt formulas on the group and supplies their form data,
+                  which Uyuni applies to every member system. Same shape and semantics as
+                  System.spec.formulas, including valuesFrom drift handling
+                  (FormulaValuesDrift, apply-formula-values annotation). Removing an entry
+                  disables that formula, but an empty list leaves the group's formulas
+                  unmanaged: Uyuni's API can't clear the whole set.
+                items:
+                  description: FormulaAssignment enables a Salt formula on a system
+                    and supplies its form data.
+                  properties:
+                    name:
+                      description: |-
+                        Name is the Salt formula name. The formula must be installed on the
+                        Uyuni server (formula.listFormulas).
+                      type: string
+                    values:
+                      description: |-
+                        Values is the static formula form data: arbitrary nested key/value
+                        configuration matching the formula's form definition.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    valuesFrom:
+                      description: |-
+                        ValuesFrom sets specific paths in the form data from resolved sources:
+                        a Secret/ConfigMap key or a field of another uyuni.uyuni-project.org
+                        resource (via JSONPath). Explicit entries override ValuesFromSources.
+                      items:
+                        description: |-
+                          FormulaValueFrom sets one path in a formula's form data from a source.
+                          Exactly one of the source fields must be set (webhook-enforced).
+                        properties:
+                          configMapKeyRef:
+                            description: ConfigMapKeyRef sources a string value from
+                              a ConfigMap key (same namespace).
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                          format:
+                            description: |-
+                              Format controls how a Secret/ConfigMap string value is interpreted:
+                                - "string" (default): the raw string is used as-is.
+                                - "yaml" / "json": the value is deserialized into structured form data
+                                  (nested maps/arrays) and placed at Path — or, when Path is empty, its
+                                  top-level keys are merged into the formula's form data.
+                              Lets you keep a whole structured formula config in one ConfigMap/Secret key.
+                              Only valid with secretKeyRef/configMapKeyRef; objectFieldRef values are
+                              already typed.
+                            enum:
+                            - string
+                            - yaml
+                            - json
+                            type: string
+                          objectFieldRef:
+                            description: ObjectFieldRef sources a typed value from
+                              another uyuni resource's field.
+                            properties:
+                              apiVersion:
+                                description: APIVersion is the group/version, e.g.
+                                  "uyuni.uyuni-project.org/v1alpha1".
+                                type: string
+                              fieldPath:
+                                description: |-
+                                  FieldPath is a JSONPath into the object, e.g.
+                                  "status.lastBuild.files[?(@.type=='image')].url".
+                                type: string
+                              kind:
+                                description: Kind is the referenced resource kind,
+                                  e.g. "ImageProfile".
+                                type: string
+                              name:
+                                description: Name is the referenced object's name
+                                  in the same namespace.
+                                type: string
+                            required:
+                            - apiVersion
+                            - fieldPath
+                            - kind
+                            - name
+                            type: object
+                          path:
+                            description: |-
+                              Path is the dot-separated path into the form data to set, e.g.
+                              "image_url" or "network.dns".
+                            type: string
+                          secretKeyRef:
+                            description: SecretKeyRef sources a string value from
+                              a Secret key (same namespace).
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - path
+                        type: object
+                      type: array
+                    valuesFromSources:
+                      description: |-
+                        ValuesFromSources merges every key of a Secret/ConfigMap into the form
+                        data under a path (envFrom-style).
+                      items:
+                        description: |-
+                          FormulaValueSource merges all keys of a Secret or ConfigMap into the form data
+                          under Path. Exactly one of the source fields must be set (webhook-enforced).
+                        properties:
+                          configMapRef:
+                            description: ConfigMapRef merges all keys of a ConfigMap.
+                            properties:
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          path:
+                            description: |-
+                              Path is the parent path under which the source's keys are merged (each
+                              key becomes Path.<key>). Empty merges at the top level.
+                            type: string
+                          secretRef:
+                            description: SecretRef merges all keys of a Secret (values
+                              are strings).
+                            properties:
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        type: object
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
               memberRefs:
+                description: |-
+                  Deprecated: use System.spec.groupRefs instead. System-side declaration is
+                  the authoritative source; this field is retained for backward compatibility.
                 items:
                   description: |-
                     LocalObjectRef is a name-only reference to a CR in the same namespace.
@@ -102,6 +260,16 @@ spec:
             type: object
           status:
             properties:
+              activeConfigChannelLabels:
+                items:
+                  type: string
+                type: array
+              activeFormulas:
+                description: ActiveFormulas is the set of Salt formulas last enabled
+                  on the group.
+                items:
+                  type: string
+                type: array
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -158,6 +326,13 @@ spec:
                   - type
                   type: object
                 type: array
+              formulaDataGeneration:
+                description: |-
+                  FormulaDataGeneration is the spec generation at which formula form data
+                  (including resolved valuesFrom references) was last pushed to Uyuni. Same
+                  role as System.status.formulaDataGeneration.
+                format: int64
+                type: integer
               memberCount:
                 type: integer
               observedGeneration:

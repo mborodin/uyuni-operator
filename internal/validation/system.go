@@ -52,8 +52,8 @@ func AutoinstallVariables(ai *uyuniv1.AutoinstallSpec, path *field.Path) field.E
 	return errs
 }
 
-// SystemFormulas validates a system's formula assignments: each must name a
-// formula, and names must be unique.
+// SystemFormulas validates formula assignments (System or SystemGroup
+// spec.formulas): each must name a formula, and names must be unique.
 func SystemFormulas(formulas []uyuniv1.FormulaAssignment, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
 	seen := map[string]bool{}

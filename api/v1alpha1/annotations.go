@@ -44,7 +44,7 @@ const (
 	// Operator-managed, not user-facing.
 	AnnBuildTrigger = Group + "/build-trigger"
 
-	// AnnApplyFormulaValues on a System forces the operator to re-resolve
+	// AnnApplyFormulaValues on a System or SystemGroup forces the operator to re-resolve
 	// formula valuesFrom references and push them to Uyuni, even without a spec
 	// change. Use it after a referenced value changes (e.g. a new image build)
 	// and the FormulaValuesDrift condition indicates the applied values are

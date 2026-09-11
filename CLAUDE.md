@@ -235,7 +235,7 @@ Canonical reason taxonomy:
 - `PreProvisioned` (System only) — `True` between profile creation and first
   registration. Different from `Ready` because the system isn't actually
   managed yet.
-- `FormulaValuesDrift` (System only) — `True` when a `spec.formulas[].valuesFrom`
+- `FormulaValuesDrift` (System and SystemGroup) — `True` when a `spec.formulas[].valuesFrom`
   reference (Secret/ConfigMap key, or a `uyuni.uyuni-project.org` object field via
   JSONPath) now resolves to a value different from what was last pushed to Uyuni.
   By design the operator does **not** apply it automatically (a new image build

@@ -246,7 +246,7 @@ func (v *SystemGroupValidator) SetupWebhookWithManager(mgr ctrl.Manager) error {
 }
 
 func (v *SystemGroupValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-	return nil, nil
+	return nil, v.validate(obj.(*uyuniv1.SystemGroup))
 }
 
 func (v *SystemGroupValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
@@ -260,9 +260,19 @@ func (v *SystemGroupValidator) ValidateUpdate(_ context.Context, oldObj, newObj 
 	if !reflect.DeepEqual(old.Spec.Cluster, sg.Spec.Cluster) {
 		return nil, apierrors.NewForbidden(gr, sg.Name, fmt.Errorf("spec.cluster is immutable"))
 	}
-	return nil, nil
+	return nil, v.validate(sg)
 }
 
 func (v *SystemGroupValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
 	return nil, nil
+}
+
+func (v *SystemGroupValidator) validate(sg *uyuniv1.SystemGroup) error {
+	errs := validation.SystemFormulas(sg.Spec.Formulas, field.NewPath("spec", "formulas"))
+	if len(errs) > 0 {
+		return apierrors.NewInvalid(
+			schema.GroupKind{Group: uyuniv1.Group, Kind: "SystemGroup"},
+			sg.Name, errs)
+	}
+	return nil
 }

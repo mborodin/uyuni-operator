@@ -3249,6 +3249,13 @@ func (in *SystemGroupSpec) DeepCopyInto(out *SystemGroupSpec) {
 		*out = make([]LocalObjectRef, len(*in))
 		copy(*out, *in)
 	}
+	if in.Formulas != nil {
+		in, out := &in.Formulas, &out.Formulas
+		*out = make([]FormulaAssignment, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.OrganizationRef != nil {
 		in, out := &in.OrganizationRef, &out.OrganizationRef
 		*out = new(LocalObjectRef)
@@ -3290,6 +3297,11 @@ func (in *SystemGroupStatus) DeepCopyInto(out *SystemGroupStatus) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.ActiveFormulas != nil {
+		in, out := &in.ActiveFormulas, &out.ActiveFormulas
+		*out = make([]string, len(*in))
+		copy(*out, *in)
 	}
 }
 

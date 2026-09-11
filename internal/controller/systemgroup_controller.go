@@ -27,6 +27,7 @@ type SystemGroupReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systemgroups/finalizers,verbs=update
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=configurationchannels,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets;configmaps,verbs=get;list;watch
 
 func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var sg uyuniv1.SystemGroup
@@ -91,6 +92,20 @@ func (r *SystemGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				return ctrl.Result{}, err
 			}
 		}
+	}
+
+	// Salt formulas + form data. Done before membership: formula data is pillar
+	// stored in Uyuni (no live minion needed), and members that PXE-boot via
+	// saltboot need it before they register — a memberRefs wait below would
+	// otherwise hold it back until they have.
+	formulaWait, err := r.reconcileFormulas(ctx, uc, &sg)
+	if err != nil {
+		return r.fail(ctx, &sg, "UpdateFailed", err)
+	}
+	if formulaWait != "" {
+		setReady(&sg.Status.Conditions, sg.Generation, metav1.ConditionFalse, "WaitingForFormula", formulaWait)
+		_ = r.Status().Update(ctx, &sg)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Resolve desired members from memberRefs and staticMinionIds.
@@ -185,6 +200,46 @@ func (r *SystemGroupReconciler) handleDeletion(ctx context.Context, sg *uyuniv1.
 	}
 	removeFinalizer(sg, sgFinalizer)
 	return ctrl.Result{}, r.Update(ctx, sg)
+}
+
+// reconcileFormulas enables the spec'd Salt formulas on the group and pushes
+// their form data. Mirrors SystemReconciler.reconcileFormulas: reference values
+// that change on their own surface as FormulaValuesDrift and are only applied
+// on a spec change or the apply-formula-values trigger. Returns a wait reason
+// if a formula isn't installed or a valuesFrom reference isn't available yet.
+func (r *SystemGroupReconciler) reconcileFormulas(ctx context.Context, uc uyuni.API, sg *uyuniv1.SystemGroup) (string, error) {
+	applyData := sg.Generation != sg.Status.FormulaDataGeneration ||
+		sg.Annotations[uyuniv1.AnnApplyFormulaValues] == "true"
+
+	desired, drift, wait, err := syncFormulas(ctx, r.Client, uc,
+		groupFormulas{uc: uc, id: sg.Status.UyuniID}, sg.Namespace, sg.Spec.Formulas, applyData)
+	if err != nil || wait != "" {
+		return wait, err
+	}
+
+	if applyData {
+		if _, ok := sg.Annotations[uyuniv1.AnnApplyFormulaValues]; ok {
+			// Update replaces sg with the server copy, whose status predates this
+			// reconcile (e.g. a just-created group's UyuniID); keep ours so the
+			// final status write persists it.
+			status := sg.Status.DeepCopy()
+			delete(sg.Annotations, uyuniv1.AnnApplyFormulaValues)
+			if err := r.Update(ctx, sg); err != nil {
+				return "", err
+			}
+			sg.Status = *status
+		}
+		sg.Status.FormulaDataGeneration = sg.Generation
+	}
+	if drift {
+		setCondition(&sg.Status.Conditions, condFormulaValuesDrift, metav1.ConditionTrue, sg.Generation,
+			"Drift", "resolved formula reference values differ from what was applied; set annotation "+uyuniv1.AnnApplyFormulaValues+`="true" to apply`)
+	} else {
+		setCondition(&sg.Status.Conditions, condFormulaValuesDrift, metav1.ConditionFalse, sg.Generation, "InSync", "")
+	}
+
+	sg.Status.ActiveFormulas = desired
+	return "", nil
 }
 
 func (r *SystemGroupReconciler) resolveMembers(ctx context.Context, uc uyuni.API, sg *uyuniv1.SystemGroup) (ids []int, minionIDs []string, wait string, err error) {

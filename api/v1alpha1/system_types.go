@@ -349,6 +349,14 @@ type SystemGroupSpec struct {
 	StaticMinionIDs   []string         `json:"staticMinionIds,omitempty"`
 	ConfigChannelRefs []LocalObjectRef `json:"configChannelRefs,omitempty"`
 
+	// Formulas enables Salt formulas on the group and supplies their form data,
+	// which Uyuni applies to every member system. Same shape and semantics as
+	// System.spec.formulas, including valuesFrom drift handling
+	// (FormulaValuesDrift, apply-formula-values annotation). Removing an entry
+	// disables that formula, but an empty list leaves the group's formulas
+	// unmanaged: Uyuni's API can't clear the whole set.
+	Formulas []FormulaAssignment `json:"formulas,omitempty"`
+
 	// +kubebuilder:validation:Required
 	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 
@@ -365,6 +373,14 @@ type SystemGroupStatus struct {
 	ActiveConfigChannelLabels []string           `json:"activeConfigChannelLabels,omitempty"`
 	ObservedGeneration        int64              `json:"observedGeneration,omitempty"`
 	Conditions                []metav1.Condition `json:"conditions,omitempty"`
+
+	// ActiveFormulas is the set of Salt formulas last enabled on the group.
+	ActiveFormulas []string `json:"activeFormulas,omitempty"`
+
+	// FormulaDataGeneration is the spec generation at which formula form data
+	// (including resolved valuesFrom references) was last pushed to Uyuni. Same
+	// role as System.status.formulaDataGeneration.
+	FormulaDataGeneration int64 `json:"formulaDataGeneration,omitempty"`
 }
 
 // +kubebuilder:object:root=true
