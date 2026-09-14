@@ -74,6 +74,8 @@ type CobblerSystemReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=cobblersystems/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=cobblersystems/finalizers,verbs=update
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=cobblerprofiles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems/status,verbs=get;update;patch
 
 func (r *CobblerSystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cs uyuniv1.CobblerSystem
@@ -102,6 +104,15 @@ func (r *CobblerSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &cs)
 	}
 
+	// Netboot is a one-shot annotation trigger (see AnnNetboot), not spec: apply
+	// it to the Cobbler record via the API, then strip the annotation from both
+	// this CobblerSystem and its owning System. Handled here, before the
+	// mode-specific branches below, and returns immediately so its Update calls
+	// don't race with the steady-state reconcile.
+	if _, ok := cs.Annotations[uyuniv1.AnnNetboot]; ok {
+		return r.reconcileNetbootAnnotation(ctx, cc, &cs, mode)
+	}
+
 	if mode == uyuniv1.CobblerModeImport {
 		item, found, err := cc.GetSystem(ctx, cs.Spec.Name)
 		if err != nil {
@@ -123,7 +134,6 @@ func (r *CobblerSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if wait != "" {
 		return r.waitReason(ctx, &cs, "WaitingForProfile", wait)
 	}
-	netboot := cs.Spec.NetbootEnabled == nil || *cs.Spec.NetbootEnabled
 	ifaces := make([]cobbler.SystemInterface, 0, len(cs.Spec.Interfaces))
 	for _, n := range cs.Spec.Interfaces {
 		ifaces = append(ifaces, cobbler.SystemInterface{Name: n.Name, MAC: n.MACAddress, IP: n.IPAddress, DNSName: n.DNSName, Management: n.Management})
@@ -132,7 +142,6 @@ func (r *CobblerSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Name:            cs.Spec.Name,
 		Hostname:        cs.Spec.Hostname,
 		Profile:         profile,
-		Netboot:         netboot,
 		AutoinstallMeta: cs.Spec.AutoinstallMeta,
 		Interfaces:      ifaces,
 		Server:          cs.Spec.Server,
@@ -161,6 +170,70 @@ func (r *CobblerSystemReconciler) resolveProfileName(ctx context.Context, cs *uy
 		return p.Spec.Name, "", nil
 	}
 	return "", "", nil
+}
+
+// reconcileNetbootAnnotation applies a pending AnnNetboot annotation to the
+// Cobbler record via SetNetboot, records the realized value in
+// status.netbootEnabled, and strips the annotation from this CobblerSystem
+// and its owning System (see clearParentSystemNetboot) — completing the
+// System -> CobblerSystem -> Cobbler API round trip in one pass. An
+// import-mode record is never mutated by this operator (mode: import only
+// observes), so the annotation is stripped there without calling the API.
+func (r *CobblerSystemReconciler) reconcileNetbootAnnotation(ctx context.Context, cc *cobbler.Client, cs *uyuniv1.CobblerSystem, mode uyuniv1.CobblerMode) (ctrl.Result, error) {
+	val := cs.Annotations[uyuniv1.AnnNetboot]
+	if val != "true" && val != "false" {
+		// admission on the System should have rejected this before it was ever
+		// copied here; strip defensively and skip.
+		delete(cs.Annotations, uyuniv1.AnnNetboot)
+		return ctrl.Result{Requeue: true}, r.Update(ctx, cs)
+	}
+	enabled := val == "true"
+	applied := mode == uyuniv1.CobblerModeCreate
+	if applied {
+		if err := cc.SetNetboot(ctx, cs.Spec.Name, enabled); err != nil {
+			return r.fail(ctx, cs, "UpdateFailed", err)
+		}
+		cs.Status.NetbootEnabled = &enabled
+		cs.Status.ObservedGeneration = cs.Generation
+		if err := r.Status().Update(ctx, cs); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	delete(cs.Annotations, uyuniv1.AnnNetboot)
+	if err := r.Update(ctx, cs); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.clearParentSystemNetboot(ctx, cs, enabled, applied); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{Requeue: true}, nil
+}
+
+// clearParentSystemNetboot completes the netboot round trip on the owning
+// System: when the value was actually applied, mirrors it into
+// status.netbootEnabled; either way, strips the now-consumed AnnNetboot
+// annotation the System reconciler forwarded. A no-op when cs has no
+// controller owner (e.g. a standalone CobblerSystem, not System-managed).
+func (r *CobblerSystemReconciler) clearParentSystemNetboot(ctx context.Context, cs *uyuniv1.CobblerSystem, enabled, applied bool) error {
+	owner := metav1.GetControllerOf(cs)
+	if owner == nil || owner.Kind != "System" {
+		return nil
+	}
+	var sys uyuniv1.System
+	if err := r.Get(ctx, types.NamespacedName{Namespace: cs.Namespace, Name: owner.Name}, &sys); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if applied {
+		sys.Status.NetbootEnabled = &enabled
+		if err := r.Status().Update(ctx, &sys); err != nil {
+			return err
+		}
+	}
+	if _, ok := sys.Annotations[uyuniv1.AnnNetboot]; !ok {
+		return nil
+	}
+	delete(sys.Annotations, uyuniv1.AnnNetboot)
+	return r.Update(ctx, &sys)
 }
 
 func (r *CobblerSystemReconciler) fail(ctx context.Context, cs *uyuniv1.CobblerSystem, reason string, err error) (ctrl.Result, error) {

@@ -135,12 +135,13 @@ type SystemInterface struct {
 	Management bool // primary/management interface (Cobbler management=true)
 }
 
-// SystemSpec is the desired state of a cobbler system record.
+// SystemSpec is the desired state of a cobbler system record. Netboot is
+// deliberately not here: it is applied separately via SetNetboot, driven by
+// the uyuni.uyuni-project.org/netboot annotation rather than spec.
 type SystemSpec struct {
 	Name            string
 	Hostname        string // system hostname/FQDN; "" leaves it unset
 	Profile         string
-	Netboot         bool
 	AutoinstallMeta map[string]string
 	Interfaces      []SystemInterface
 	Server          string // proxy/server override; "" leaves it unset
@@ -179,9 +180,6 @@ func (c *Client) upsertSystem(ctx context.Context, s SystemSpec) (string, error)
 		if err := set("hostname", s.Hostname); err != nil {
 			return "", err
 		}
-	}
-	if err := set("netboot_enabled", s.Netboot); err != nil {
-		return "", err
 	}
 	if err := set("comment", s.Comment); err != nil {
 		return "", err
@@ -229,6 +227,38 @@ func (c *Client) upsertSystem(ctx context.Context, s SystemSpec) (string, error)
 	}
 	uid, _ := m["uid"].(string)
 	return uid, nil
+}
+
+// SetNetboot toggles PXE netboot on an existing cobbler system record,
+// independent of UpsertSystem. It is driven by the
+// uyuni.uyuni-project.org/netboot annotation rather than spec: leaving a
+// system's netboot untouched (not calling this) preserves whatever
+// createSystemRecord's default (netboot on) or a prior toggle left it at.
+func (c *Client) SetNetboot(ctx context.Context, name string, enabled bool) error {
+	err := c.setNetbootOnce(ctx, name, enabled)
+	if isAuthFault(err) {
+		c.resetToken()
+		err = c.setNetbootOnce(ctx, name, enabled)
+	}
+	return err
+}
+
+func (c *Client) setNetbootOnce(ctx context.Context, name string, enabled bool) error {
+	token, err := c.ensureToken(ctx)
+	if err != nil {
+		return err
+	}
+	handle, err := c.itemHandle(ctx, "system", name, token)
+	if err != nil {
+		return err
+	}
+	if _, err := c.call(ctx, "modify_system", handle, "netboot_enabled", enabled, token); err != nil {
+		return fmt.Errorf("modify_system netboot_enabled: %w", err)
+	}
+	if _, err := c.call(ctx, "save_system", handle, token); err != nil {
+		return fmt.Errorf("save_system: %w", err)
+	}
+	return nil
 }
 
 // itemHandle returns an edit handle for an existing cobbler item of the given

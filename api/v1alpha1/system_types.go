@@ -27,14 +27,6 @@ type AutoinstallSpec struct {
 	// Mutually exclusive with Profile.
 	ProfileRef *LocalObjectRef `json:"profileRef,omitempty"`
 
-	// Netboot enables PXE netboot on the Cobbler system record — the netboot
-	// flag of system.setVariables, matching the UI's "Enable netboot" toggle.
-	// Defaults to true. Applied together with Variables (system.setVariables
-	// couples the two), so it only takes effect when at least one variable is
-	// declared; otherwise createSystemRecord's default (netboot on) stands.
-	// +kubebuilder:default=true
-	Netboot *bool `json:"netboot,omitempty"`
-
 	// Variables are per-system Cobbler system-record variables (ks_meta),
 	// substituted into the autoinstall template. Each entry sets a literal
 	// Value or sources it from a Secret/ConfigMap key (like a pod env var).
@@ -307,6 +299,13 @@ type SystemStatus struct {
 	// AutoinstallStatus reflects the Uyuni-side outcome of the last provisioning action.
 	// +kubebuilder:validation:Enum=Scheduled;Completed;Failed
 	AutoinstallStatus string `json:"autoinstallStatus,omitempty"`
+
+	// NetbootEnabled reflects the PXE netboot state last applied to the owned
+	// CobblerSystem's Cobbler record via the uyuni.uyuni-project.org/netboot
+	// annotation (see AnnNetboot). Nil until the annotation has been applied
+	// at least once; this is observed reality, not spec — set it by
+	// annotating the resource, not by editing status.
+	NetbootEnabled *bool `json:"netbootEnabled,omitempty"`
 
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`

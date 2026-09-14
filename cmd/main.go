@@ -275,7 +275,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Proxy")
 		os.Exit(1)
 	}
-	
 	if err := (&controller.MaintenanceCalendarReconciler{
 		Client:  mgr.GetClient(),
 		Clients: clientPool,

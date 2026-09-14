@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- **`System.spec.autoinstall.netboot` and `CobblerSystem.spec.netbootEnabled`
+  removed.** Netboot is no longer part of desired state on either resource —
+  it's now a one-shot annotation trigger,
+  `uyuni.uyuni-project.org/netboot: "true"` (or `"false"`), applied via a new
+  `status.netbootEnabled` on both `System` and `CobblerSystem`. Set the
+  annotation on a `System`; the reconciler copies it onto the owned
+  `CobblerSystem`, which calls Cobbler's `modify_system("netboot_enabled",
+  ...)` and, once applied, strips the annotation from **both** resources and
+  records the realized value in `status.netbootEnabled`. This closes a gap
+  where netboot toggles required a full spec edit (and, being coupled to
+  `system.setVariables`, only took effect alongside a ks_meta variable
+  change) for what is operationally a fire-and-forget action. Existing
+  `spec.autoinstall.netboot` / `spec.netbootEnabled` values in manifests are
+  now ignored by the API server (fields no longer exist on the CRDs) —
+  migrate any GitOps-committed value to the annotation form if you rely on
+  netboot being off by default (Cobbler's own create-time default, netboot
+  on, now applies whenever the annotation has never been set).
+
 ### Added
 
 - **`Proxy` resource** — declarative management of a Uyuni containerized proxy's

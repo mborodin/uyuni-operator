@@ -61,4 +61,16 @@ const (
 	// maintenance.refreshCalendar call for URL-backed calendars. Stripped
 	// after the refresh is submitted.
 	AnnRefreshNow = Group + "/refresh-now"
+
+	// AnnNetboot on a System carries the desired PXE netboot toggle for its
+	// Cobbler system record. Value must be exactly "true" or "false" (unlike
+	// the fire-once triggers above, this one carries a real boolean, not just
+	// presence). The System reconciler copies it verbatim onto the owned
+	// CobblerSystem; the CobblerSystem reconciler applies it to the Cobbler
+	// record via modify_system("netboot_enabled", ...) and records the
+	// realized value in status.netbootEnabled on both resources. Once
+	// applied, the operator strips the annotation from both the System and
+	// the CobblerSystem — it is a one-shot trigger, not persistent desired
+	// state, which is why netboot has no spec field on either resource.
+	AnnNetboot = Group + "/netboot"
 )

@@ -94,15 +94,6 @@ spec:
                       Defaults to immediate execution.
                     format: date-time
                     type: string
-                  netboot:
-                    default: true
-                    description: |-
-                      Netboot enables PXE netboot on the Cobbler system record — the netboot
-                      flag of system.setVariables, matching the UI's "Enable netboot" toggle.
-                      Defaults to true. Applied together with Variables (system.setVariables
-                      couples the two), so it only takes effect when at least one variable is
-                      declared; otherwise createSystemRecord's default (netboot on) stands.
-                    type: boolean
                   profile:
                     description: |-
                       Profile is the bare Cobbler/Kickstart profile label registered in Uyuni.
@@ -724,6 +715,14 @@ spec:
               lastCheckinTime:
                 format: date-time
                 type: string
+              netbootEnabled:
+                description: |-
+                  NetbootEnabled reflects the PXE netboot state last applied to the owned
+                  CobblerSystem's Cobbler record via the uyuni.uyuni-project.org/netboot
+                  annotation (see AnnNetboot). Nil until the annotation has been applied
+                  at least once; this is observed reality, not spec — set it by
+                  annotating the resource, not by editing status.
+                type: boolean
               observedGeneration:
                 format: int64
                 type: integer

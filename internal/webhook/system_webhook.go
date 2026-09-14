@@ -130,6 +130,9 @@ func (v *SystemValidator) validate(ctx context.Context, sys *uyuniv1.System) (ad
 	errs = append(errs, validation.StrictBooleanAnnotations(
 		sys.Annotations, validation.DangerousAnnotations,
 		field.NewPath("metadata", "annotations"))...)
+	errs = append(errs, validation.BooleanValueAnnotations(
+		sys.Annotations, []string{uyuniv1.AnnNetboot},
+		field.NewPath("metadata", "annotations"))...)
 	errs = append(errs, validation.SystemFormulas(
 		sys.Spec.Formulas, field.NewPath("spec", "formulas"))...)
 	errs = append(errs, validation.SystemCustomInfoValues(

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -65,6 +66,17 @@ func (r *SystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// system's Uyuni registration state.
 	if err := r.reconcileCobblerSystem(ctx, &sys); err != nil {
 		return r.fail(ctx, &sys, "ResolveRefs", err)
+	}
+
+	// Netboot is a one-shot annotation trigger (see AnnNetboot), not spec: keep
+	// forwarding it onto the owned CobblerSystem until one exists to receive
+	// it. The CobblerSystem reconciler applies it via the Cobbler API and, once
+	// applied, strips the annotation from both resources — so this System's own
+	// annotation is intentionally left in place here, not stripped on forward.
+	if waitForCobblerSystem, err := r.reconcileNetbootAnnotation(ctx, &sys); err != nil {
+		return r.fail(ctx, &sys, "ResolveRefs", err)
+	} else if waitForCobblerSystem {
+		return ctrl.Result{RequeueAfter: cobblerWait}, nil
 	}
 
 	// Find the system in Uyuni, adopting by minionID or MAC if needed.
@@ -237,8 +249,9 @@ func (r *SystemReconciler) handleNotRegistered(ctx context.Context, uc uyuni.API
 
 	// Autoinstall for pre-created systems is realized by an owned CobblerSystem
 	// (reconcileCobblerSystem in Reconcile), which creates the Cobbler record —
-	// named interfaces, profile binding, netboot and ks_meta — directly over
-	// XMLRPC. No JSON provisionSystem/WebUI step here.
+	// named interfaces, profile binding and ks_meta — directly over XMLRPC.
+	// No JSON provisionSystem/WebUI step here. Netboot is handled separately,
+	// out of band from this spec-driven record (see reconcileNetbootAnnotation).
 
 	// Adoption timeout check.
 	if sys.Status.PhaseTransitionTime != nil && !sys.Status.PhaseTransitionTime.IsZero() {
@@ -762,7 +775,7 @@ func filterOutBaseEntitlements(ents []string) []string {
 // reconcileCobblerSystem creates or updates an owned CobblerSystem (create mode)
 // for a pre-created system that has spec.autoinstall set. The CobblerSystem
 // controller then writes the Cobbler record over XMLRPC: named interfaces,
-// profile binding, netboot and ks_meta variables. Inputs that aren't ready yet
+// profile binding and ks_meta variables. Inputs that aren't ready yet
 // (the profile label, or a Secret/ConfigMap backing a variable) make it skip
 // this pass and retry on the next reconcile rather than block the rest of the
 // System reconcile.
@@ -811,7 +824,6 @@ func (r *SystemReconciler) reconcileCobblerSystem(ctx context.Context, sys *uyun
 		cs.Spec.ProfileName = profileLabel
 		cs.Spec.Interfaces = ifaces
 		cs.Spec.AutoinstallMeta = vars
-		cs.Spec.NetbootEnabled = sys.Spec.Autoinstall.Netboot
 		cs.Spec.Server = r.resolveProxyHost(ctx, sys)
 		cs.Spec.Comment = sys.Spec.Description
 		return controllerutil.SetControllerReference(sys, cs, r.Scheme())
@@ -820,6 +832,45 @@ func (r *SystemReconciler) reconcileCobblerSystem(ctx context.Context, sys *uyun
 	}
 	sys.Status.CobblerSystemName = cobblerName
 	return nil
+}
+
+// reconcileNetbootAnnotation forwards a pending AnnNetboot annotation onto the
+// owned CobblerSystem (by the same name/namespace reconcileCobblerSystem uses).
+// It does not strip the annotation from sys itself or write status.netbootEnabled
+// here — the CobblerSystem reconciler does both, once it has actually applied
+// the value to the Cobbler record, so a crash between forwarding and applying
+// can never lose the customer's intent (retried by simply forwarding again;
+// idempotent since we only write when the value differs).
+//
+// Returns true when there is no owned CobblerSystem yet to receive the
+// annotation (e.g. spec.autoinstall not configured), so the caller should
+// requeue and retry rather than treat this as done.
+func (r *SystemReconciler) reconcileNetbootAnnotation(ctx context.Context, sys *uyuniv1.System) (bool, error) {
+	val, ok := sys.Annotations[uyuniv1.AnnNetboot]
+	if !ok {
+		return false, nil
+	}
+	if val != "true" && val != "false" {
+		// admission should have rejected this; strip defensively.
+		delete(sys.Annotations, uyuniv1.AnnNetboot)
+		return false, r.Update(ctx, sys)
+	}
+
+	var cs uyuniv1.CobblerSystem
+	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Name}, &cs); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	if cs.Annotations[uyuniv1.AnnNetboot] == val {
+		return false, nil
+	}
+	if cs.Annotations == nil {
+		cs.Annotations = map[string]string{}
+	}
+	cs.Annotations[uyuniv1.AnnNetboot] = val
+	return false, r.Update(ctx, &cs)
 }
 
 // resolveOrgID returns the Uyuni organization id for the system's org (1 = default).

@@ -109,11 +109,6 @@ spec:
                   Name is the Cobbler system record name (Uyuni uses "<fqdn>:<orgId>").
                   Immutable after creation.
                 type: string
-              netbootEnabled:
-                default: true
-                description: NetbootEnabled toggles PXE netboot on the record. Defaults
-                  to true. Create mode.
-                type: boolean
               profileName:
                 description: |-
                   ProfileName is the Cobbler profile the system boots (create mode).
@@ -209,6 +204,12 @@ spec:
                   type: object
                 type: array
               found:
+                type: boolean
+              netbootEnabled:
+                description: |-
+                  NetbootEnabled reflects the PXE netboot state last applied to this
+                  record via the uyuni.uyuni-project.org/netboot annotation (see
+                  AnnNetboot). Nil until the annotation has been applied at least once.
                 type: boolean
               observedGeneration:
                 format: int64
