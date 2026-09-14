@@ -13,6 +13,18 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - kubernetes.crossplane.io
   resources:
   - objects
@@ -37,18 +49,6 @@ rules:
   - delete
   - get
   - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - uyuni.uyuni-project.org
