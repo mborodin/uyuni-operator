@@ -180,10 +180,6 @@ type CobblerSystemSpec struct {
 	// set on the system record. Create mode. system.setVariables-equivalent.
 	AutoinstallMeta map[string]string `json:"autoinstallMeta,omitempty"`
 
-	// NetbootEnabled toggles PXE netboot on the record. Defaults to true. Create mode.
-	// +kubebuilder:default=true
-	NetbootEnabled *bool `json:"netbootEnabled,omitempty"`
-
 	// Server is the Cobbler "server override" (e.g. a proxy the system boots
 	// through). Create mode.
 	Server string `json:"server,omitempty"`
@@ -196,7 +192,11 @@ type CobblerSystemStatus struct {
 	CobblerID string `json:"cobblerId,omitempty"`
 	Found     bool   `json:"found,omitempty"`
 	// ProfileName is the observed profile the system is bound to.
-	ProfileName        string             `json:"profileName,omitempty"`
+	ProfileName string `json:"profileName,omitempty"`
+	// NetbootEnabled reflects the PXE netboot state last applied to this
+	// record via the uyuni.uyuni-project.org/netboot annotation (see
+	// AnnNetboot). Nil until the annotation has been applied at least once.
+	NetbootEnabled     *bool              `json:"netbootEnabled,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }

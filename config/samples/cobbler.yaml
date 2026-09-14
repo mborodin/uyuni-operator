@@ -23,6 +23,12 @@ spec:
 # A system record created and managed by the operator. Normally you don't write
 # this directly — a System with spec.autoinstall spawns an owned CobblerSystem —
 # but it can be authored standalone too.
+#
+# Netboot has no spec field: it's a one-shot annotation trigger, applied via
+# the API and reflected in status.netbootEnabled. To toggle it, annotate the
+# owning System (or this CobblerSystem directly) with
+# uyuni.uyuni-project.org/netboot: "true" (or "false") — the operator applies
+# it and strips the annotation once done.
 apiVersion: uyuni.uyuni-project.org/v1alpha1
 kind: CobblerSystem
 metadata:
@@ -32,7 +38,6 @@ spec:
   mode: create
   name: "grmc-gq-store01.nexa-dev.delhaize.test:1"
   profileName: "BranchServer_MicroOS-0.6.13:S:1:PantheonofGoods"
-  netbootEnabled: true
   interfaces:
     - name: eth0
       macAddress: "52:54:00:07:48:52"

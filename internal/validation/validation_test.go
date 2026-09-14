@@ -309,6 +309,40 @@ func TestStrictBooleanAnnotations(t *testing.T) {
 	})
 }
 
+func TestBooleanValueAnnotations(t *testing.T) {
+	t.Run("true accepted", func(t *testing.T) {
+		errs := validation.BooleanValueAnnotations(
+			map[string]string{uyuniv1.AnnNetboot: "true"},
+			[]string{uyuniv1.AnnNetboot},
+			field.NewPath("metadata.annotations"))
+		require.Empty(t, errs)
+	})
+
+	t.Run("false accepted", func(t *testing.T) {
+		errs := validation.BooleanValueAnnotations(
+			map[string]string{uyuniv1.AnnNetboot: "false"},
+			[]string{uyuniv1.AnnNetboot},
+			field.NewPath("metadata.annotations"))
+		require.Empty(t, errs)
+	})
+
+	t.Run("absent accepted", func(t *testing.T) {
+		errs := validation.BooleanValueAnnotations(
+			map[string]string{},
+			[]string{uyuniv1.AnnNetboot},
+			field.NewPath("metadata.annotations"))
+		require.Empty(t, errs)
+	})
+
+	t.Run("yes rejected", func(t *testing.T) {
+		errs := validation.BooleanValueAnnotations(
+			map[string]string{uyuniv1.AnnNetboot: "yes"},
+			[]string{uyuniv1.AnnNetboot},
+			field.NewPath("metadata.annotations"))
+		require.Len(t, errs, 1)
+	})
+}
+
 func TestSystemFormulas(t *testing.T) {
 	cmRef := &uyuniv1.ConfigMapKeyRef{Name: "cfg", Key: "config.yaml"}
 	objRef := &uyuniv1.ObjectFieldRef{
