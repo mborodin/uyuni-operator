@@ -52,12 +52,16 @@ type API interface {
 	UpdateCustomInfoKey(ctx context.Context, label, description string) error
 	DeleteCustomInfoKey(ctx context.Context, label string) error
 
-	// Formulas (formula) — Salt formula assignment and per-system form data.
+	// Formulas (formula) — Salt formula assignment and per-system / per-group form data.
 	ListFormulas(ctx context.Context) ([]string, error)
 	GetServerFormulas(ctx context.Context, serverID int) ([]string, error)
 	SetServerFormulas(ctx context.Context, serverID int, formulas []string) error
 	GetServerFormulaData(ctx context.Context, serverID int, formula string) (map[string]any, error)
 	SetServerFormulaData(ctx context.Context, serverID int, formula string, data map[string]any) error
+	GetGroupFormulas(ctx context.Context, groupID int) ([]string, error)
+	SetGroupFormulas(ctx context.Context, groupID int, formulas []string) error
+	GetGroupFormulaData(ctx context.Context, groupID int, formula string) (map[string]any, error)
+	SetGroupFormulaData(ctx context.Context, groupID int, formula string, data map[string]any) error
 
 	// Proxy (system.changeProxy / system.getConnectionPath).
 	GetConnectionPath(ctx context.Context, serverID int) ([]ProxyHop, error)

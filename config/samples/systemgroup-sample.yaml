@@ -70,7 +70,38 @@ spec:
   # No cluster field → uses default UyuniProvider (rke)
 
 ---
-# Example 5: Multi-cluster example (when you have multiple UyuniProviders)
+# Example 5: SystemGroup with Salt formulas
+# Formulas and their form data are set on the group; Uyuni applies them to every
+# member system. values / valuesFrom / valuesFromSources work as on System, and a
+# changed valuesFrom reference surfaces as the FormulaValuesDrift condition until
+# applied with the uyuni.uyuni-project.org/apply-formula-values="true" annotation.
+apiVersion: uyuni.uyuni-project.org/v1alpha1
+kind: SystemGroup
+metadata:
+  name: test-pos-terminals
+  namespace: linux-platform
+spec:
+  name: Test POS Terminals
+  description: Test - POS terminals sharing formula configuration
+  organizationRef:
+    name: pantheon-of-goods
+  formulas:
+    - name: locale
+      values:
+        timezone:
+          name: Europe/Brussels
+          hardware_clock_set_to_utc: true
+    - name: branch-network
+      valuesFrom:
+        # Whole form data kept as YAML in one ConfigMap key, merged at the root.
+        - path: ""
+          format: yaml
+          configMapKeyRef:
+            name: pos-branch-network
+            key: config.yaml
+
+---
+# Example 6: Multi-cluster example (when you have multiple UyuniProviders)
 # Uncomment and adjust when you have additional UyuniProviders configured
 # apiVersion: uyuni.uyuni-project.org/v1alpha1
 # kind: SystemGroup

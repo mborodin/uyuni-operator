@@ -275,7 +275,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Proxy")
 		os.Exit(1)
 	}
-
 	if err := (&controller.MaintenanceCalendarReconciler{
 		Client:  mgr.GetClient(),
 		Clients: clientPool,
@@ -359,6 +358,11 @@ func main() {
 
 	if err := (&webhook.CustomInfoKeyValidator{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "CustomInfoKeyValidator")
+		os.Exit(1)
+	}
+
+	if err := (&webhook.ProxyValidator{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxyValidator")
 		os.Exit(1)
 	}
 

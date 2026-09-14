@@ -953,6 +953,46 @@ func (c *Client) SetServerFormulaData(ctx context.Context, serverID int, formula
 	return err
 }
 
+// Group formula calls. Parameter names follow FormulaHandler.java rather than
+// the docs (the server-side calls above showed the Java names are what the JSON
+// API matches on): systemGroupId for the formula list, groupId for form data.
+
+func (c *Client) GetGroupFormulas(ctx context.Context, groupID int) ([]string, error) {
+	return apiGet[[]string](c, fmt.Sprintf("formula/getFormulasByGroupId?systemGroupId=%d", groupID))
+}
+
+func (c *Client) SetGroupFormulas(ctx context.Context, groupID int, formulas []string) error {
+	// Same as SetServerFormulas: an empty array can't be type-matched to the
+	// string[] parameter, and an empty spec means "don't manage", not "remove
+	// everything".
+	if len(formulas) == 0 {
+		return nil
+	}
+	_, err := apiPost[any](c, "formula/setFormulasOfGroup", map[string]any{
+		"systemGroupId": groupID,
+		"formulas":      formulas,
+	})
+	return err
+}
+
+func (c *Client) GetGroupFormulaData(ctx context.Context, groupID int, formula string) (map[string]any, error) {
+	// Read method: GET only, like getSystemFormulaData.
+	return apiGet[map[string]any](c, fmt.Sprintf("formula/getGroupFormulaData?groupId=%d&formulaName=%s",
+		groupID, url.QueryEscape(formula)))
+}
+
+func (c *Client) SetGroupFormulaData(ctx context.Context, groupID int, formula string, data map[string]any) error {
+	if data == nil {
+		data = map[string]any{}
+	}
+	_, err := apiPost[any](c, "formula/setGroupFormulaData", map[string]any{
+		"groupId":     groupID,
+		"formulaName": formula,
+		"content":     data,
+	})
+	return err
+}
+
 // --- Proxy (system.changeProxy / system.getConnectionPath) ---
 
 func (c *Client) GetConnectionPath(ctx context.Context, serverID int) ([]ProxyHop, error) {

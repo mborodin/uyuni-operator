@@ -44,13 +44,19 @@ const (
 	// Operator-managed, not user-facing.
 	AnnBuildTrigger = Group + "/build-trigger"
 
-	// AnnApplyFormulaValues on a System forces the operator to re-resolve
+	// AnnApplyFormulaValues on a System or SystemGroup forces the operator to re-resolve
 	// formula valuesFrom references and push them to Uyuni, even without a spec
 	// change. Use it after a referenced value changes (e.g. a new image build)
 	// and the FormulaValuesDrift condition indicates the applied values are
 	// stale. Stripped after the values are applied. Value must be exactly "true".
 	AnnApplyFormulaValues = Group + "/apply-formula-values"
 
+	// AnnRegenerate on a Proxy forces the operator to re-call
+	// proxy.containerConfig and rewrite the owned config Secret, even when the
+	// resolved inputs are unchanged. Because regeneration rotates the proxy's
+	// SSH keypair, it is otherwise gated on an input-hash change. Stripped after
+	// the archive is regenerated. Value must be exactly "true".
+	AnnRegenerate = Group + "/regenerate"
 	// AnnRefreshNow on a MaintenanceCalendar triggers a one-off
 	// maintenance.refreshCalendar call for URL-backed calendars. Stripped
 	// after the refresh is submitted.

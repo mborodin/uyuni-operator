@@ -243,7 +243,7 @@ Standard condition types and their semantics:
 - `PreProvisioned` (System only) — `True` between profile creation and
   first registration. Different from `Ready` because the system isn't
   actually managed yet.
-- `FormulaValuesDrift` (System only) — `True` when a `spec.formulas[].valuesFrom`
+- `FormulaValuesDrift` (System and SystemGroup) — `True` when a `spec.formulas[].valuesFrom`
   reference now resolves to a value different from what was last pushed to Uyuni.
   Not applied automatically (a new image build must not silently rewrite formula
   config); apply with a spec change or the
