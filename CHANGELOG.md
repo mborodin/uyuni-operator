@@ -66,6 +66,20 @@
     list of advisory names, unchanged. Also `earliest_occurrence` →
     `earliestOccurrence`.
 
+- **`ScheduleApplyPatches` resolved advisory names via an unscoped global
+  lookup, causing `ScheduleFailed: Invalid errata` for genuinely relevant
+  patches.** `getErratumID` (added in the fix above) called
+  `errata/getDetails?advisoryName=`, which has no system/org/channel
+  scoping — on a Uyuni instance where the same advisory name exists as
+  separate erratum records for different products/organizations, it could
+  resolve to an ID belonging to a different record than the one the target
+  system's subscribed channels actually carry, which
+  `system/scheduleApplyErrata` then correctly rejected as not applicable.
+  Replaced `getErratumID` with `getRelevantErrata`
+  (`system/getRelevantErrata?sid=`), scoped to the first target system, and
+  resolve each requested advisory name against that system's own relevant-
+  errata list instead.
+
 - **Removed stray debug output from the System validator.** A leftover
   `fmt.Printf` in `internal/validation` `SystemFormulas` logged to the webhook's
   stdout on every empty-path `valuesFrom`; removed it (and the now-unused import).

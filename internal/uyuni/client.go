@@ -2328,23 +2328,26 @@ func (c *Client) ScheduleReboot(ctx context.Context, serverID int, earliest time
 	})
 }
 
-// wireErratum is the subset of errata/getDetails' response this client
-// needs - just enough to resolve an advisory name to its numeric errata ID.
+// wireErratum is the subset of system/getRelevantErrata's response this
+// client needs - just enough to resolve an advisory name to its numeric
+// errata ID.
 type wireErratum struct {
 	ID           int    `json:"id"`
 	AdvisoryName string `json:"advisory_name"`
 }
 
-// getErratumID resolves a customer-facing advisory name (e.g.
-// "openSUSE-2024-1234") to the numeric errata ID Uyuni's scheduling API
-// actually wants. errata/getDetails is a @ReadOnly method (GET, per the
-// convention noted on GetActionDetails above).
-func (c *Client) getErratumID(ctx context.Context, advisoryName string) (int, error) {
-	r, err := apiGet[wireErratum](c, fmt.Sprintf("errata/getDetails?advisoryName=%s", url.QueryEscape(advisoryName)))
-	if err != nil {
-		return 0, fmt.Errorf("resolving advisory %q: %w", advisoryName, err)
-	}
-	return r.ID, nil
+// getRelevantErrata returns the errata Uyuni considers applicable to the
+// given system. Deliberately scoped to one system rather than using the
+// global errata/getDetails?advisoryName= lookup: on a Uyuni instance where
+// the same advisory name exists as separate erratum records for different
+// products/organizations, that global lookup can resolve to an ID belonging
+// to a different record than the one this system's own subscribed channels
+// carry, which system/scheduleApplyErrata then rejects as "Invalid errata"
+// even though the advisory is genuinely relevant to the system.
+// system/getRelevantErrata is a @ReadOnly method (GET, per the convention
+// noted on GetActionDetails above).
+func (c *Client) getRelevantErrata(ctx context.Context, serverID int) ([]wireErratum, error) {
+	return apiGet[[]wireErratum](c, fmt.Sprintf("system/getRelevantErrata?sid=%d", serverID))
 }
 
 func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) (int, error) {
@@ -2356,11 +2359,27 @@ func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earl
 	// fix). advisoryNames stays the customer-facing spec field (see
 	// Task.Spec.ApplyPatches.IncludeAdvisories) - resolved to IDs here so
 	// nothing upstream of this call needs to change.
+	//
+	// Resolved against serverIDs[0]'s own relevant-errata list (see
+	// getRelevantErrata) rather than a global lookup. Callers guarantee
+	// serverIDs is non-empty (TaskReconciler.startRun rejects a target that
+	// resolves to zero systems before scheduleByKind runs). Systems in the
+	// same Task are expected to share org/channel context, so the first
+	// system's relevant-errata list should agree with the rest.
+	relevant, err := c.getRelevantErrata(ctx, serverIDs[0])
+	if err != nil {
+		return 0, fmt.Errorf("resolving relevant errata for system %d: %w", serverIDs[0], err)
+	}
+	byAdvisoryName := make(map[string]int, len(relevant))
+	for _, e := range relevant {
+		byAdvisoryName[e.AdvisoryName] = e.ID
+	}
+
 	errataIDs := make([]int, 0, len(advisoryNames))
 	for _, name := range advisoryNames {
-		id, err := c.getErratumID(ctx, name)
-		if err != nil {
-			return 0, err
+		id, ok := byAdvisoryName[name]
+		if !ok {
+			return 0, fmt.Errorf("advisory %q is not relevant to system %d", name, serverIDs[0])
 		}
 		errataIDs = append(errataIDs, id)
 	}
