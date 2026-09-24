@@ -66,19 +66,22 @@
     list of advisory names, unchanged. Also `earliest_occurrence` →
     `earliestOccurrence`.
 
-- **`ScheduleApplyPatches` resolved advisory names via an unscoped global
-  lookup, causing `ScheduleFailed: Invalid errata` for genuinely relevant
-  patches.** `getErratumID` (added in the fix above) called
-  `errata/getDetails?advisoryName=`, which has no system/org/channel
-  scoping — on a Uyuni instance where the same advisory name exists as
-  separate erratum records for different products/organizations, it could
-  resolve to an ID belonging to a different record than the one the target
-  system's subscribed channels actually carry, which
-  `system/scheduleApplyErrata` then correctly rejected as not applicable.
-  Replaced `getErratumID` with `getRelevantErrata`
-  (`system/getRelevantErrata?sid=`), scoped to the first target system, and
-  resolve each requested advisory name against that system's own relevant-
-  errata list instead.
+- **`Task` `applyPatches` always ended in `ScheduleFailed: Invalid errata`
+  even though Uyuni had scheduled the patch.** `system/scheduleApplyErrata`
+  returns `array(int) actionId`, but `ScheduleApplyPatches` decoded the
+  result into a single `int`. The call succeeded in Uyuni (a pending
+  "Combined Patch Update" action was created), the decode failed, the
+  reconciler recorded no run and retried, and every retry was rejected with
+  "Invalid errata" because that patch was already pending. `ScheduleApplyPatches`
+  (and `uyuni.API`) now return `[]int`, so the run and its action IDs are
+  recorded. If you hit the old behaviour, cancel the leftover pending
+  "Combined Patch Update" events for the system in the Uyuni WebUI.
+- **`ScheduleApplyPatches` resolves advisory names against the target
+  system's own relevant errata** (`system/getRelevantErrata?sid=`) instead of
+  the instance-wide `errata/getDetails?advisoryName=` lookup, so a name shared
+  by several erratum records can't resolve to another product's or org's
+  record. An advisory that isn't relevant to the system now fails with a clear
+  error instead of a raw Uyuni one.
 
 - **Removed stray debug output from the System validator.** A leftover
   `fmt.Printf` in `internal/validation` `SystemFormulas` logged to the webhook's

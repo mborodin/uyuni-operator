@@ -231,7 +231,7 @@ type API interface {
 	// system/scheduleReboot has no multi-sid form. Callers targeting
 	// multiple systems call this once per system.
 	ScheduleReboot(ctx context.Context, serverID int, earliest time.Time) (int, error)
-	ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) (int, error)
+	ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) ([]int, error)
 	ScheduleApplyConfigChannels(ctx context.Context, serverIDs []int, earliest time.Time) (int, error)
 	GetActionDetails(ctx context.Context, actionID int) (*ScheduledAction, error)
 	GetActionResults(ctx context.Context, actionID int) ([]SystemActionResult, error)

@@ -2337,20 +2337,20 @@ type wireErratum struct {
 }
 
 // getRelevantErrata returns the errata Uyuni considers applicable to the
-// given system. Deliberately scoped to one system rather than using the
-// global errata/getDetails?advisoryName= lookup: on a Uyuni instance where
-// the same advisory name exists as separate erratum records for different
-// products/organizations, that global lookup can resolve to an ID belonging
-// to a different record than the one this system's own subscribed channels
-// carry, which system/scheduleApplyErrata then rejects as "Invalid errata"
-// even though the advisory is genuinely relevant to the system.
-// system/getRelevantErrata is a @ReadOnly method (GET, per the convention
-// noted on GetActionDetails above).
+// given system. Scoped to one system rather than the global
+// errata/getDetails?advisoryName= lookup, so an advisory name that exists as
+// several erratum records instance-wide can't resolve to another product's or
+// org's record. system/getRelevantErrata is a @ReadOnly method (GET, per the
+// convention noted on GetActionDetails above).
 func (c *Client) getRelevantErrata(ctx context.Context, serverID int) ([]wireErratum, error) {
 	return apiGet[[]wireErratum](c, fmt.Sprintf("system/getRelevantErrata?sid=%d", serverID))
 }
 
-func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) (int, error) {
+// ScheduleApplyPatches returns every action ID Uyuni created: unlike the other
+// Schedule* calls, system/scheduleApplyErrata returns array(int) actionId, so
+// decoding it into a single int failed after the action was already scheduled,
+// and the reconciler's retry then got "Invalid errata" (patch already pending).
+func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earliest time.Time, advisoryNames []string) ([]int, error) {
 	// Uyuni's real param names are "errataIds" (numeric errata IDs, not
 	// advisory name strings) and "earliestOccurrence" (camelCase) - confirmed
 	// against the official Uyuni API docs and a working WebUI test; the old
@@ -2368,7 +2368,7 @@ func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earl
 	// system's relevant-errata list should agree with the rest.
 	relevant, err := c.getRelevantErrata(ctx, serverIDs[0])
 	if err != nil {
-		return 0, fmt.Errorf("resolving relevant errata for system %d: %w", serverIDs[0], err)
+		return nil, fmt.Errorf("resolving relevant errata for system %d: %w", serverIDs[0], err)
 	}
 	byAdvisoryName := make(map[string]int, len(relevant))
 	for _, e := range relevant {
@@ -2379,11 +2379,11 @@ func (c *Client) ScheduleApplyPatches(ctx context.Context, serverIDs []int, earl
 	for _, name := range advisoryNames {
 		id, ok := byAdvisoryName[name]
 		if !ok {
-			return 0, fmt.Errorf("advisory %q is not relevant to system %d", name, serverIDs[0])
+			return nil, fmt.Errorf("advisory %q is not relevant to system %d", name, serverIDs[0])
 		}
 		errataIDs = append(errataIDs, id)
 	}
-	return apiPost[int](c, "system/scheduleApplyErrata", map[string]any{
+	return apiPost[[]int](c, "system/scheduleApplyErrata", map[string]any{
 		"sids":               serverIDs,
 		"errataIds":          errataIDs,
 		"earliestOccurrence": earliest.Format(time.RFC3339),

@@ -211,8 +211,7 @@ func (r *TaskReconciler) scheduleByKind(ctx context.Context, uc uyuni.API, task 
 		}
 		return actionIDs, nil
 	case task.Spec.ApplyPatches != nil:
-		id, err := uc.ScheduleApplyPatches(ctx, serverIDs, earliest, task.Spec.ApplyPatches.IncludeAdvisories)
-		return []int{id}, err
+		return uc.ScheduleApplyPatches(ctx, serverIDs, earliest, task.Spec.ApplyPatches.IncludeAdvisories)
 	case task.Spec.ApplyConfigChannels != nil:
 		id, err := uc.ScheduleApplyConfigChannels(ctx, serverIDs, earliest)
 		return []int{id}, err
