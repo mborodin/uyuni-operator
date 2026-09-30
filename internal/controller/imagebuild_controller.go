@@ -38,6 +38,13 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Handle deletion before resolving the profile: the owning ImageProfile may
+	// already be gone (e.g. a cascading delete from a profile rename), and
+	// finalizer cleanup must not block on it still existing.
+	if !ib.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &ib)
+	}
+
 	// Resolve organization via ImageProfile.
 	var profile uyuniv1.ImageProfile
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ib.Namespace, Name: ib.Spec.ProfileRef.Name}, &profile); err != nil {
@@ -55,9 +62,6 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.fail(ctx, &ib, "OrganizationError", err)
 	}
 
-	if !ib.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, uc, &ib)
-	}
 	if ensureFinalizer(&ib, ibFinalizer) {
 		return ctrl.Result{Requeue: true}, r.Update(ctx, &ib)
 	}
@@ -171,20 +175,37 @@ func (r *ImageBuildReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
-func (r *ImageBuildReconciler) handleDeletion(ctx context.Context, uc uyuni.API, ib *uyuniv1.ImageBuild) (ctrl.Result, error) {
+func (r *ImageBuildReconciler) handleDeletion(ctx context.Context, ib *uyuniv1.ImageBuild) (ctrl.Result, error) {
 	if !containsFinalizer(ib, ibFinalizer) {
 		return ctrl.Result{}, nil
 	}
 	if ib.Status.ActionID != 0 && ib.Status.BuildStatus == "Running" {
-		// Best-effort cancel via the schedule namespace: the build user may lack
-		// the role to cancel actions (403). Don't block CR cleanup on it — the
-		// build finishing on its own is harmless.
-		if err := uc.CancelAction(ctx, ib.Status.ActionID); err != nil && !uyuni.IsNotFound(err) {
+		// Best-effort cancel. The owning ImageProfile may already be gone (e.g.
+		// a cascading delete from a profile rename), in which case there's no
+		// way to resolve an org-scoped client — skip the cancel rather than
+		// block cleanup on it. The build finishing on its own is harmless, same
+		// as an ignored cancel error below (e.g. the build user lacking the
+		// role to cancel actions, a 403).
+		if uc, err := r.uyuniClientForDeletion(ctx, ib); err != nil {
+			ctrl.LoggerFrom(ctx).Info("owning ImageProfile unavailable, skipping best-effort cancel",
+				"imagebuild", ib.Name, "error", err.Error())
+		} else if err := uc.CancelAction(ctx, ib.Status.ActionID); err != nil && !uyuni.IsNotFound(err) {
 			ctrl.LoggerFrom(ctx).Error(err, "cancelling image build action (continuing with deletion)")
 		}
 	}
 	removeFinalizer(ib, ibFinalizer)
 	return ctrl.Result{}, r.Update(ctx, ib)
+}
+
+// uyuniClientForDeletion resolves an org-scoped Uyuni client via the owning
+// ImageProfile, for the best-effort cancel in handleDeletion. Returns an error
+// if the profile (or its organization) can no longer be resolved.
+func (r *ImageBuildReconciler) uyuniClientForDeletion(ctx context.Context, ib *uyuniv1.ImageBuild) (uyuni.API, error) {
+	var profile uyuniv1.ImageProfile
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ib.Namespace, Name: ib.Spec.ProfileRef.Name}, &profile); err != nil {
+		return nil, err
+	}
+	return r.Clients.ForOrganization(ctx, orgRef(profile.Spec.OrganizationRef), ib.Namespace)
 }
 
 func (r *ImageBuildReconciler) resolveBuildHostID(ctx context.Context, namespace, name string) (int, error) {
