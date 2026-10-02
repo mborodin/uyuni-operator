@@ -153,6 +153,26 @@ spec:
                 required:
                 - name
                 type: object
+              retention:
+                description: |-
+                  Retention bounds how many terminal-state ImageBuild records (and their
+                  underlying Uyuni images) this profile keeps. Unset means no automatic
+                  cleanup — existing behavior. Builds in a non-terminal state (Scheduled or
+                  Running) are never affected.
+                properties:
+                  keepLastFailed:
+                    description: KeepLastFailed is the number of most recent Failed
+                      builds to keep.
+                    minimum: 0
+                    type: integer
+                  keepLastSucceeded:
+                    description: |-
+                      KeepLastSucceeded is the number of most recent Succeeded builds to keep.
+                      Enforced with a floor of 1 so a policy can never delete every successful
+                      build (that would remove the only rollback image).
+                    minimum: 1
+                    type: integer
+                type: object
               storeRef:
                 description: |-
                   StoreRef references the ImageStore CR that holds the built image.

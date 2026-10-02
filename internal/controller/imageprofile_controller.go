@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -28,7 +29,7 @@ type ImageProfileReconciler struct {
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imageprofiles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imageprofiles/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imageprofiles/finalizers,verbs=update
-// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imagebuilds,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imagebuilds,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=imagestores,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=activationkeys,verbs=get;list;watch
 // +kubebuilder:rbac:groups=uyuni.uyuni-project.org,resources=systems,verbs=get;list;watch
@@ -159,6 +160,13 @@ func (r *ImageProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if mirrorErr != nil {
 		// Non-fatal: log but continue so we don't lose the rest of the status.
 		ctrl.LoggerFrom(ctx).Error(mirrorErr, "mirroring latest build status")
+	}
+
+	// Enforce build retention (no-op unless spec.retention is set). Deletes
+	// are issued here; actual cleanup (finalizer removal, Uyuni-side cancel/
+	// image delete) happens in the ImageBuild controller.
+	if retErr := r.enforceRetention(ctx, &ip); retErr != nil {
+		ctrl.LoggerFrom(ctx).Error(retErr, "enforcing image build retention")
 	}
 
 	ip.Status.ObservedGeneration = ip.Generation
@@ -392,6 +400,71 @@ func (r *ImageProfileReconciler) mirrorLatestBuild(ctx context.Context, uc uyuni
 		return 30 * time.Second, nil
 	}
 	return 0, nil
+}
+
+// enforceRetention deletes terminal-state (Succeeded/Failed) ImageBuild
+// records beyond spec.retention's per-category keep count. Scheduled/Running
+// builds are never considered — only a build that has finished is eligible.
+// Issuing r.Delete here only starts deletion; the ImageBuild controller's
+// handleDeletion does the actual finalizer removal and best-effort Uyuni-side
+// image cleanup.
+func (r *ImageProfileReconciler) enforceRetention(ctx context.Context, ip *uyuniv1.ImageProfile) error {
+	pol := ip.Spec.Retention
+	if pol == nil {
+		return nil
+	}
+
+	var list uyuniv1.ImageBuildList
+	if err := r.List(ctx, &list, client.InNamespace(ip.Namespace)); err != nil {
+		return err
+	}
+
+	var succeeded, failed []*uyuniv1.ImageBuild
+	for i := range list.Items {
+		b := &list.Items[i]
+		if b.Spec.ProfileRef.Name != ip.Name || !b.DeletionTimestamp.IsZero() {
+			continue
+		}
+		switch b.Status.BuildStatus {
+		case "Succeeded":
+			succeeded = append(succeeded, b)
+		case "Failed":
+			failed = append(failed, b)
+		}
+	}
+
+	// KeepLastSucceeded <= 0 means "not configured" (e.g. a retention block
+	// that only sets keepLastFailed) — never treat it as "keep zero", which
+	// would prune every successful build. The CRD's Minimum=1 blocks an
+	// explicit 0, but an omitted field unmarshals to the same zero value, so
+	// this guard is the only thing standing between a partial retention spec
+	// and deleting all rollback images.
+	if pol.KeepLastSucceeded > 0 {
+		if err := r.deleteOldestBeyond(ctx, succeeded, pol.KeepLastSucceeded); err != nil {
+			return fmt.Errorf("pruning succeeded builds: %w", err)
+		}
+	}
+	if err := r.deleteOldestBeyond(ctx, failed, pol.KeepLastFailed); err != nil {
+		return fmt.Errorf("pruning failed builds: %w", err)
+	}
+	return nil
+}
+
+// deleteOldestBeyond deletes every build in builds except the keep newest
+// (by creation time). builds need not be pre-sorted.
+func (r *ImageProfileReconciler) deleteOldestBeyond(ctx context.Context, builds []*uyuniv1.ImageBuild, keep int) error {
+	if len(builds) <= keep {
+		return nil
+	}
+	sort.Slice(builds, func(i, j int) bool {
+		return builds[i].CreationTimestamp.After(builds[j].CreationTimestamp.Time)
+	})
+	for _, b := range builds[keep:] {
+		if err := r.Delete(ctx, b); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting ImageBuild %q: %w", b.Name, err)
+		}
+	}
+	return nil
 }
 
 // mapBuildStatus maps an ImageBuild's status.buildStatus to the ImageBuildRecord

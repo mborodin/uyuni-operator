@@ -2262,6 +2262,15 @@ func (c *Client) GetImageDetails(ctx context.Context, imageID int) (*ImageDetail
 	return d, nil
 }
 
+// DeleteImage permanently removes a built image record from Uyuni
+// (image.delete). Idempotent: an already-deleted image surfaces as NotFound.
+func (c *Client) DeleteImage(ctx context.Context, imageID int) error {
+	_, err := apiPost[any](c, "image/delete", map[string]any{
+		"imageId": imageID,
+	})
+	return asNotFound(err)
+}
+
 // ListImages returns all images visible to the user. image.listImages takes
 // only a session key — there is no per-profile filter (passing profile_label
 // yields "No method exists"), and the returned structs carry no build status or

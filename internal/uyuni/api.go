@@ -217,6 +217,9 @@ type API interface {
 	DeleteImageProfile(ctx context.Context, label string) error
 	ScheduleImageBuild(ctx context.Context, profileLabel, version string, buildHostID int, earliest time.Time) (int, error)
 	ListImages(ctx context.Context) ([]ImageInfo, error)
+	// DeleteImage permanently removes a built image record from Uyuni
+	// (image.delete), freeing the underlying storage.
+	DeleteImage(ctx context.Context, imageID int) error
 	// GetImagePillar returns the Salt pillar for a built image, which exposes the
 	// saltboot boot data (boot_images) for PXE/OS images.
 	GetImagePillar(ctx context.Context, imageID int) (map[string]any, error)

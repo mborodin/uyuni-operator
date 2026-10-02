@@ -130,6 +130,32 @@ type ImageProfileSpec struct {
 
 	// +kubebuilder:validation:Required
 	OrganizationRef *LocalObjectRef `json:"organizationRef"`
+
+	// Retention bounds how many terminal-state ImageBuild records (and their
+	// underlying Uyuni images) this profile keeps. Unset means no automatic
+	// cleanup — existing behavior. Builds in a non-terminal state (Scheduled or
+	// Running) are never affected.
+	// +optional
+	Retention *ImageRetentionPolicy `json:"retention,omitempty"`
+}
+
+// ImageRetentionPolicy caps the number of Succeeded and Failed ImageBuild
+// records (per profile) kept beyond their most recent N. Builds beyond the
+// cap are deleted — removing both the ImageBuild CR and, for Succeeded builds
+// with a recorded image, the underlying Uyuni image (see ImageBuild's
+// deletion handling). Scheduled/Running builds are never counted or deleted.
+type ImageRetentionPolicy struct {
+	// KeepLastSucceeded is the number of most recent Succeeded builds to keep.
+	// Enforced with a floor of 1 so a policy can never delete every successful
+	// build (that would remove the only rollback image).
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	KeepLastSucceeded int `json:"keepLastSucceeded,omitempty"`
+
+	// KeepLastFailed is the number of most recent Failed builds to keep.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	KeepLastFailed int `json:"keepLastFailed,omitempty"`
 }
 
 type ImageBuildRecord struct {

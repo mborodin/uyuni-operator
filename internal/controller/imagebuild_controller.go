@@ -179,18 +179,30 @@ func (r *ImageBuildReconciler) handleDeletion(ctx context.Context, ib *uyuniv1.I
 	if !containsFinalizer(ib, ibFinalizer) {
 		return ctrl.Result{}, nil
 	}
-	if ib.Status.ActionID != 0 && ib.Status.BuildStatus == "Running" {
-		// Best-effort cancel. The owning ImageProfile may already be gone (e.g.
-		// a cascading delete from a profile rename), in which case there's no
-		// way to resolve an org-scoped client — skip the cancel rather than
-		// block cleanup on it. The build finishing on its own is harmless, same
-		// as an ignored cancel error below (e.g. the build user lacking the
-		// role to cancel actions, a 403).
+	needsCancel := ib.Status.ActionID != 0 && ib.Status.BuildStatus == "Running"
+	needsImageDelete := ib.Status.ImageID != 0
+	if needsCancel || needsImageDelete {
+		// Best-effort. The owning ImageProfile may already be gone (e.g. a
+		// cascading delete from a profile rename), in which case there's no way
+		// to resolve an org-scoped client — skip both calls rather than block
+		// cleanup on them. Neither failure mode here may ever block finalizer
+		// removal (that's exactly how 24k builds got stuck previously): the
+		// build finishing on its own, or its Uyuni image outliving its CR, are
+		// both harmless compared to a permanently stuck ImageBuild.
 		if uc, err := r.uyuniClientForDeletion(ctx, ib); err != nil {
-			ctrl.LoggerFrom(ctx).Info("owning ImageProfile unavailable, skipping best-effort cancel",
+			ctrl.LoggerFrom(ctx).Info("owning ImageProfile unavailable, skipping best-effort cancel/image delete",
 				"imagebuild", ib.Name, "error", err.Error())
-		} else if err := uc.CancelAction(ctx, ib.Status.ActionID); err != nil && !uyuni.IsNotFound(err) {
-			ctrl.LoggerFrom(ctx).Error(err, "cancelling image build action (continuing with deletion)")
+		} else {
+			if needsCancel {
+				if err := uc.CancelAction(ctx, ib.Status.ActionID); err != nil && !uyuni.IsNotFound(err) {
+					ctrl.LoggerFrom(ctx).Error(err, "cancelling image build action (continuing with deletion)")
+				}
+			}
+			if needsImageDelete {
+				if err := uc.DeleteImage(ctx, ib.Status.ImageID); err != nil && !uyuni.IsNotFound(err) {
+					ctrl.LoggerFrom(ctx).Error(err, "deleting Uyuni image (continuing with deletion)")
+				}
+			}
 		}
 	}
 	removeFinalizer(ib, ibFinalizer)
