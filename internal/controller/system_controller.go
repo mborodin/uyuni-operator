@@ -477,11 +477,20 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 			}
 		}
 	} else if current.BaseChannelLabel != res.BaseChannelLabel ||
-		!stringSlicesEqual(current.ChildChannelLabels, res.ChildChannelLabels) {
-		if _, err := uc.ScheduleChangeChannels(ctx, sys.Status.UyuniServerID,
-			res.BaseChannelLabel, res.ChildChannelLabels, r.Now()); err != nil {
+		!stringSlicesEqual(current.ChildChannelLabels, res.ChildChannelLabels) ||
+		r.channelActionFailed(ctx, uc, sys) {
+		// Uyuni records the new subscription when the action is scheduled, so a
+		// failed action (e.g. minion restarting) leaves the minion's repo file
+		// stale while the subscriptions already match. Track the action and
+		// reschedule a failed one after the minion checks in again.
+		actionID, err := uc.ScheduleChangeChannels(ctx, sys.Status.UyuniServerID,
+			res.BaseChannelLabel, res.ChildChannelLabels, r.Now())
+		if err != nil {
 			return r.fail(ctx, sys, "UpdateFailed", err)
 		}
+		now := metav1.NewTime(r.Now())
+		sys.Status.ChannelActionID = actionID
+		sys.Status.ChannelActionTime = &now
 	}
 
 	// 3. Config channels (direct first, then group-sourced).
@@ -1064,6 +1073,36 @@ func (r *SystemReconciler) reconcileFormulas(ctx context.Context, uc uyuni.API, 
 
 	sys.Status.ActiveFormulas = desired
 	return "", nil
+}
+
+// channelActionFailed reports whether the last tracked channel change failed and
+// the minion has checked in since it was scheduled, i.e. a retry can reach it.
+// A completed (or vanished) action stops being tracked.
+func (r *SystemReconciler) channelActionFailed(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) bool {
+	if sys.Status.ChannelActionID == 0 {
+		return false
+	}
+	action, err := uc.GetActionDetails(ctx, sys.Status.ChannelActionID)
+	if err != nil {
+		if uyuni.IsNotFound(err) {
+			sys.Status.ChannelActionID = 0
+			sys.Status.ChannelActionTime = nil
+		}
+		return false
+	}
+	switch action.Status {
+	case "Completed":
+		sys.Status.ChannelActionID = 0
+		sys.Status.ChannelActionTime = nil
+		return false
+	case "Failed":
+		if sys.Status.ChannelActionTime == nil {
+			return true
+		}
+		checkin, err := uc.GetLastCheckin(ctx, sys.Status.UyuniServerID)
+		return err == nil && checkin.After(sys.Status.ChannelActionTime.Time)
+	}
+	return false
 }
 
 // resolveProxyID resolves spec.proxyRef to the proxy's Uyuni server id. The ref

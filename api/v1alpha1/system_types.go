@@ -281,6 +281,12 @@ type SystemStatus struct {
 	// ProxyActionID is the Uyuni action ID of the last changeProxy action.
 	ProxyActionID int `json:"proxyActionId,omitempty"`
 
+	// ChannelActionID is the Uyuni action ID of the last channel change that has
+	// not been seen completing yet. A failed one is rescheduled once the minion
+	// checks in again after ChannelActionTime.
+	ChannelActionID   int          `json:"channelActionId,omitempty"`
+	ChannelActionTime *metav1.Time `json:"channelActionTime,omitempty"`
+
 	// ConfigChannelLabels is the realized ordered config channel subscription
 	// (direct refs first, then group-sourced). Used to detect and apply drift.
 	ConfigChannelLabels []string `json:"configChannelLabels,omitempty"`

@@ -704,6 +704,22 @@ func (c *Client) FindSystemByMinionID(ctx context.Context, minionID string) (*Sy
 	return c.GetSystemDetails(ctx, sid)
 }
 
+// GetLastCheckin reads the system's last check-in time. system.getDetails
+// leaves last_checkin empty; system.getName carries it.
+func (c *Client) GetLastCheckin(ctx context.Context, serverID int) (time.Time, error) {
+	type nameInfo struct {
+		LastCheckin string `json:"last_checkin"`
+	}
+	r, err := apiGet[nameInfo](c, fmt.Sprintf("system/getName?sid=%d", serverID))
+	if err != nil {
+		return time.Time{}, asNotFound(err)
+	}
+	if r.LastCheckin == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, r.LastCheckin)
+}
+
 func (c *Client) FindSystemIDByName(ctx context.Context, name string) (int, error) {
 	type sysInfo struct {
 		ID int `json:"id"`

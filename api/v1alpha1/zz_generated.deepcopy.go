@@ -3601,6 +3601,10 @@ func (in *SystemStatus) DeepCopyInto(out *SystemStatus) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.ChannelActionTime != nil {
+		in, out := &in.ChannelActionTime, &out.ChannelActionTime
+		*out = (*in).DeepCopy()
+	}
 	if in.ConfigChannelLabels != nil {
 		in, out := &in.ConfigChannelLabels, &out.ConfigChannelLabels
 		*out = make([]string, len(*in))

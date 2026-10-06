@@ -624,6 +624,15 @@ spec:
                 type: string
               baseChannelLabel:
                 type: string
+              channelActionId:
+                description: |-
+                  ChannelActionID is the Uyuni action ID of the last channel change that has
+                  not been seen completing yet. A failed one is rescheduled once the minion
+                  checks in again after ChannelActionTime.
+                type: integer
+              channelActionTime:
+                format: date-time
+                type: string
               childChannelLabels:
                 items:
                   type: string
