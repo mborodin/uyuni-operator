@@ -226,6 +226,37 @@ type ImageFileDetail struct {
 	URL  string
 }
 
+// --- Packages ---
+
+// OrphanedPackage is one entry from channel.software.listPackagesWithoutChannel
+// — a package not associated with any software channel.
+type OrphanedPackage struct {
+	ID      int
+	Name    string
+	Version string
+	Release string
+	Epoch   string
+	Arch    string
+	// LastModified is parsed from Uyuni's last_modified date, used for the
+	// MinOrphanAgeDays grace period. Zero if the date couldn't be parsed —
+	// callers must treat that as "age unknown" and skip the package rather
+	// than risk deleting something whose age couldn't be confirmed.
+	LastModified time.Time
+}
+
+// ErrataRef is one entry from packages.listProvidingErrata — an advisory
+// that still depends on a package.
+type ErrataRef struct {
+	Advisory string
+}
+
+// SystemRef is one entry from system.listSystemsWithPackage — a system that
+// currently has a package installed.
+type SystemRef struct {
+	ID   int
+	Name string
+}
+
 // --- Autoinstall (kickstart.tree + kickstart.profile) ---
 
 type DistributionDetails struct {

@@ -227,6 +227,26 @@ type API interface {
 	// (image/kernel/initrd) with download URLs (image.getDetails).
 	GetImageDetails(ctx context.Context, imageID int) (*ImageDetails, error)
 
+	// Packages — orphaned-package cleanup support.
+	//
+	// ListPackagesWithoutChannel returns every package in the org not
+	// associated with any software channel (channel.software.
+	// listPackagesWithoutChannel) — the bulk "find" step. There is no
+	// equivalent bulk call for the per-package safety checks below.
+	ListPackagesWithoutChannel(ctx context.Context) ([]OrphanedPackage, error)
+	// ListProvidingErrata returns the errata (patches) that reference this
+	// package (packages.listProvidingErrata). A non-empty result means the
+	// package must not be deleted even if it's channel-orphaned.
+	ListProvidingErrata(ctx context.Context, pid int) ([]ErrataRef, error)
+	// ListSystemsWithPackage returns the systems that currently have this
+	// package installed (system.listSystemsWithPackage). A non-empty result
+	// means the package must not be deleted.
+	ListSystemsWithPackage(ctx context.Context, pid int) ([]SystemRef, error)
+	// RemovePackage permanently deletes a package from Uyuni
+	// (packages.removePackage). Callers must have already confirmed via
+	// ListProvidingErrata and ListSystemsWithPackage that it's safe to do so.
+	RemovePackage(ctx context.Context, pid int) error
+
 	// Scheduled actions (tasks)
 	ScheduleHighstate(ctx context.Context, serverIDs []int, earliest time.Time, test bool) (int, error)
 	ScheduleRemoteCommand(ctx context.Context, serverIDs []int, earliest time.Time, command, user, group string, timeoutSeconds int) (int, error)

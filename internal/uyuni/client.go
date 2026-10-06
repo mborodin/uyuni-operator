@@ -2294,6 +2294,114 @@ func (c *Client) ListImages(ctx context.Context) ([]ImageInfo, error) {
 }
 
 // =============================================================================
+// Packages — orphaned-package cleanup support
+// =============================================================================
+
+// wirePackageWithoutChannel mirrors channel.software.listPackagesWithoutChannel
+// per the documented (snake_case) field names. Unverified against a live
+// server — activationkey.getDetails documents snake_case but actually
+// serializes camelCase, so this should be confirmed the same way before
+// relying on it in production (see wireActivationKey's comment above).
+type wirePackageWithoutChannel struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	Release      string `json:"release"`
+	Epoch        string `json:"epoch"`
+	ArchLabel    string `json:"arch_label"`
+	LastModified string `json:"last_modified"`
+}
+
+// wireErrataRef mirrors packages.listProvidingErrata.
+type wireErrataRef struct {
+	Advisory string `json:"advisory"`
+}
+
+// wireSystemRef mirrors system.listSystemsWithPackage.
+type wireSystemRef struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// parseUyuniDate tries the date formats Uyuni's API has been observed to use.
+// Returns the zero time.Time on failure — callers must treat that as "age
+// unknown" and skip the package rather than assume it's old enough.
+func parseUyuniDate(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "20060102T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// ListPackagesWithoutChannel returns every package in the org not associated
+// with any software channel (channel.software.listPackagesWithoutChannel) —
+// the bulk candidate list for orphaned-package cleanup.
+func (c *Client) ListPackagesWithoutChannel(ctx context.Context) ([]OrphanedPackage, error) {
+	list, err := apiGet[[]wirePackageWithoutChannel](c, "channel/software/listPackagesWithoutChannel")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OrphanedPackage, len(list))
+	for i, p := range list {
+		out[i] = OrphanedPackage{
+			ID:           p.ID,
+			Name:         p.Name,
+			Version:      p.Version,
+			Release:      p.Release,
+			Epoch:        p.Epoch,
+			Arch:         p.ArchLabel,
+			LastModified: parseUyuniDate(p.LastModified),
+		}
+	}
+	return out, nil
+}
+
+// ListProvidingErrata returns the errata that still reference this package
+// (packages.listProvidingErrata). A non-empty result means the package must
+// not be deleted.
+func (c *Client) ListProvidingErrata(ctx context.Context, pid int) ([]ErrataRef, error) {
+	list, err := apiGet[[]wireErrataRef](c, fmt.Sprintf("packages/listProvidingErrata?pid=%d", pid))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ErrataRef, len(list))
+	for i, e := range list {
+		out[i] = ErrataRef{Advisory: e.Advisory}
+	}
+	return out, nil
+}
+
+// ListSystemsWithPackage returns the systems that currently have this
+// package installed (system.listSystemsWithPackage). A non-empty result
+// means the package must not be deleted.
+func (c *Client) ListSystemsWithPackage(ctx context.Context, pid int) ([]SystemRef, error) {
+	list, err := apiGet[[]wireSystemRef](c, fmt.Sprintf("system/listSystemsWithPackage?pid=%d", pid))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SystemRef, len(list))
+	for i, s := range list {
+		out[i] = SystemRef{ID: s.ID, Name: s.Name}
+	}
+	return out, nil
+}
+
+// RemovePackage permanently deletes a package from Uyuni
+// (packages.removePackage). Idempotent: an already-deleted package surfaces
+// as NotFound.
+func (c *Client) RemovePackage(ctx context.Context, pid int) error {
+	_, err := apiPost[any](c, "packages/removePackage", map[string]any{
+		"pid": pid,
+	})
+	return asNotFound(err)
+}
+
+// =============================================================================
 // Scheduled actions (tasks)
 // =============================================================================
 

@@ -69,6 +69,7 @@ rules:
   - maintenancecalendars
   - maintenanceschedules
   - organizations
+  - packagecleanuppolicies
   - proxies
   - repositories
   - softwarechannels
@@ -130,6 +131,7 @@ rules:
   - maintenancecalendars/status
   - maintenanceschedules/status
   - organizations/status
+  - packagecleanuppolicies/status
   - proxies/status
   - repositories/status
   - softwarechannels/status

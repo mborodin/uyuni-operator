@@ -1,0 +1,224 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: packagecleanuppolicies.uyuni.uyuni-project.org
+spec:
+  group: uyuni.uyuni-project.org
+  names:
+    kind: PackageCleanupPolicy
+    listKind: PackageCleanupPolicyList
+    plural: packagecleanuppolicies
+    singular: packagecleanuppolicy
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.dryRun
+      name: DryRun
+      type: boolean
+    - jsonPath: .status.candidatesFound
+      name: Candidates
+      type: integer
+    - jsonPath: .status.deletedThisRun
+      name: Deleted
+      type: integer
+    - jsonPath: .status.remainingCandidates
+      name: Remaining
+      type: integer
+    - jsonPath: .status.lastRunTime
+      name: LastRun
+      type: date
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              PackageCleanupPolicySpec defines a periodic sweep that finds packages no
+              longer associated with any software channel and, after re-verifying each
+              one is still unreferenced by any patch/errata and not installed on any
+              system, removes it from Uyuni (packages.removePackage) to free storage.
+
+              Unlike ImageProfile's retention (which prunes Kubernetes-side ImageBuild
+              records), there is no per-package Kubernetes object here — packages exist
+              only in Uyuni. This policy drives a periodic scan via Uyuni's own API
+              (channel.software.listPackagesWithoutChannel), not a reactive reconcile of
+              child CRs.
+            properties:
+              batchIntervalSeconds:
+                default: 60
+                description: |-
+                  BatchIntervalSeconds is the delay between consecutive batches while
+                  candidates remain, giving the Uyuni server breathing room between
+                  bursts of API calls.
+                minimum: 1
+                type: integer
+              dryRun:
+                default: true
+                description: |-
+                  DryRun, when true, only reports what would be deleted in status —
+                  nothing is actually removed from Uyuni. Defaults to true: a policy
+                  must be explicitly flipped to dryRun: false to ever delete anything.
+                type: boolean
+              maxDeletePerRun:
+                default: 500
+                description: |-
+                  MaxDeletePerRun caps how many packages a single reconcile batch
+                  deletes. While more eligible candidates remain, the controller
+                  requeues after BatchIntervalSeconds to process the next batch — it
+                  does not wait for the idle periodic interval until the backlog is
+                  fully drained.
+                minimum: 1
+                type: integer
+              minOrphanAgeDays:
+                default: 7
+                description: |-
+                  MinOrphanAgeDays is the minimum time, in days, a package record must
+                  have existed (per Uyuni's last_modified date) before it's eligible for
+                  deletion — a grace period so a package dropped from a channel moments
+                  ago isn't swept up immediately.
+                minimum: 1
+                type: integer
+              organizationRef:
+                description: |-
+                  LocalObjectRef is a name-only reference to a CR in the same namespace.
+                  We deliberately don't include namespace or kind: cross-namespace refs
+                  complicate RBAC and aren't needed in our model, and each ref's kind is
+                  implied by the field where it appears.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - organizationRef
+            type: object
+          status:
+            description: |-
+              PackageCleanupPolicyStatus reports the outcome of the most recent batch,
+              for auditability — every run's counts are visible without reading logs.
+            properties:
+              candidatesFound:
+                description: |-
+                  CandidatesFound is the total orphaned-package count from Uyuni
+                  (channel.software.listPackagesWithoutChannel) as of the most recent
+                  batch, before any per-package filtering.
+                type: integer
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              deletedThisRun:
+                description: |-
+                  DeletedThisRun is how many packages were actually removed in the most
+                  recent batch. Always 0 while DryRun is true.
+                type: integer
+              lastRunTime:
+                description: LastRunTime is when the most recent batch completed.
+                format: date-time
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              remainingCandidates:
+                description: |-
+                  RemainingCandidates is how many eligible candidates were left
+                  unprocessed after this batch (bounded by MaxDeletePerRun), driving
+                  whether the next reconcile is a follow-up batch or the idle wait.
+                type: integer
+              skippedErrataLinked:
+                description: |-
+                  SkippedErrataLinked is how many candidates were excluded because
+                  packages.listProvidingErrata still returned at least one entry.
+                type: integer
+              skippedInstalled:
+                description: |-
+                  SkippedInstalled is how many candidates were excluded because
+                  system.listSystemsWithPackage still returned at least one system.
+                type: integer
+              skippedTooRecent:
+                description: |-
+                  SkippedTooRecent is how many candidates were excluded for not yet
+                  meeting MinOrphanAgeDays.
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

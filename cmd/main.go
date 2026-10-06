@@ -234,6 +234,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.PackageCleanupPolicyReconciler{
+		Client:  mgr.GetClient(),
+		Clients: clientPool,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PackageCleanupPolicy")
+		os.Exit(1)
+	}
+
 	if err := (&controller.ImageBuildReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
