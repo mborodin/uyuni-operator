@@ -35,6 +35,7 @@ type API interface {
 	// System
 	FindSystemByMinionID(ctx context.Context, minionID string) (*SystemDetails, error)
 	FindSystemByMAC(ctx context.Context, mac string) (*SystemDetails, error)
+	FindSystemIDByName(ctx context.Context, name string) (int, error)
 	CreateSystemProfile(ctx context.Context, name string, data SystemProfileData) (int, error)
 	GetSystemDetails(ctx context.Context, serverID int) (*SystemDetails, error)
 	// SetSystemDetails updates mutable system properties via system.setDetails.

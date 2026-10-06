@@ -1066,24 +1066,41 @@ func (r *SystemReconciler) reconcileFormulas(ctx context.Context, uc uyuni.API, 
 	return "", nil
 }
 
-// resolveProxyID resolves spec.proxyRef to the proxy System's Uyuni server id.
-// Returns (0, "", nil) when no proxy is set, or a non-empty wait reason when the
-// referenced proxy System is missing or not yet registered in Uyuni.
-func (r *SystemReconciler) resolveProxyID(ctx context.Context, sys *uyuniv1.System) (int, string, error) {
+// resolveProxyID resolves spec.proxyRef to the proxy's Uyuni server id. The ref
+// names a proxy System or, for containerized proxies, a Proxy whose spec.fqdn is
+// the proxy's profile name in Uyuni. Returns (0, "", nil) when no proxy is set,
+// or a non-empty wait reason when the proxy is missing or not yet registered.
+func (r *SystemReconciler) resolveProxyID(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (int, string, error) {
 	if sys.Spec.ProxyRef == nil || sys.Spec.ProxyRef.Name == "" {
 		return 0, "", nil
 	}
-	var proxy uyuniv1.System
-	if err := r.Get(ctx, types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.ProxyRef.Name}, &proxy); err != nil {
+	key := types.NamespacedName{Namespace: sys.Namespace, Name: sys.Spec.ProxyRef.Name}
+	var proxySys uyuniv1.System
+	err := r.Get(ctx, key, &proxySys)
+	if err == nil {
+		if proxySys.Status.UyuniServerID == 0 {
+			return 0, fmt.Sprintf("proxy System %q not yet registered in Uyuni", key.Name), nil
+		}
+		return proxySys.Status.UyuniServerID, "", nil
+	}
+	if client.IgnoreNotFound(err) != nil {
+		return 0, "", err
+	}
+	var proxy uyuniv1.Proxy
+	if err := r.Get(ctx, key, &proxy); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			return 0, fmt.Sprintf("proxy System %q not found", sys.Spec.ProxyRef.Name), nil
+			return 0, fmt.Sprintf("proxy %q not found", key.Name), nil
 		}
 		return 0, "", err
 	}
-	if proxy.Status.UyuniServerID == 0 {
-		return 0, fmt.Sprintf("proxy System %q not yet registered in Uyuni", sys.Spec.ProxyRef.Name), nil
+	id, err := uc.FindSystemIDByName(ctx, proxy.Spec.FQDN)
+	if uyuni.IsNotFound(err) {
+		return 0, fmt.Sprintf("proxy %q (%s) not yet registered in Uyuni", key.Name, proxy.Spec.FQDN), nil
 	}
-	return proxy.Status.UyuniServerID, "", nil
+	if err != nil {
+		return 0, "", err
+	}
+	return id, "", nil
 }
 
 // reconcileProxy connects the system to its spec.proxyRef proxy (or directly to
@@ -1091,7 +1108,7 @@ func (r *SystemReconciler) resolveProxyID(ctx context.Context, sys *uyuniv1.Syst
 // desired proxy differs from the last one we requested (status.ProxyServerID),
 // to avoid re-scheduling the action on every reconcile.
 func (r *SystemReconciler) reconcileProxy(ctx context.Context, uc uyuni.API, sys *uyuniv1.System) (string, error) {
-	desiredProxyID, wait, err := r.resolveProxyID(ctx, sys)
+	desiredProxyID, wait, err := r.resolveProxyID(ctx, uc, sys)
 	if err != nil {
 		return "", err
 	}

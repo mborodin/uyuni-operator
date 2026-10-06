@@ -702,6 +702,20 @@ func (c *Client) FindSystemByMinionID(ctx context.Context, minionID string) (*Sy
 	return c.GetSystemDetails(ctx, sid)
 }
 
+func (c *Client) FindSystemIDByName(ctx context.Context, name string) (int, error) {
+	type sysInfo struct {
+		ID int `json:"id"`
+	}
+	systems, err := apiGet[[]sysInfo](c, "system/getId?name="+url.QueryEscape(name))
+	if err != nil {
+		return 0, err
+	}
+	if len(systems) == 0 {
+		return 0, &notFoundError{msg: fmt.Sprintf("system %q not found", name)}
+	}
+	return systems[0].ID, nil
+}
+
 func (c *Client) FindSystemByMAC(ctx context.Context, mac string) (*SystemDetails, error) {
 	// Uyuni has no bulk "list all network devices" call; system.getNetworkDevices
 	// is per-system (sessionKey, sid). Walk the visible systems and inspect each
