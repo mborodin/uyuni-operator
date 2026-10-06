@@ -7,9 +7,34 @@ import (
 	"path/filepath"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
+
+// RemoteHash returns the hash a branch or tag points to on the remote, without cloning.
+func RemoteHash(repoURL, ref string) (string, error) {
+	cloneURL := repoURL
+	opts := &git.ListOptions{}
+	if parsedURL, err := url.Parse(repoURL); err == nil && parsedURL.User != nil {
+		password, _ := parsedURL.User.Password()
+		opts.Auth = &http.BasicAuth{Username: parsedURL.User.Username(), Password: password}
+		parsedURL.User = nil
+		cloneURL = parsedURL.String()
+	}
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: "origin", URLs: []string{cloneURL}})
+	refs, err := remote.List(opts)
+	if err != nil {
+		return "", fmt.Errorf("listing remote refs: %w", err)
+	}
+	for _, r := range refs {
+		if r.Name() == plumbing.NewBranchReferenceName(ref) || r.Name() == plumbing.NewTagReferenceName(ref) {
+			return r.Hash().String(), nil
+		}
+	}
+	return "", fmt.Errorf("ref %q not found in repository", ref)
+}
 
 // Client handles git repository operations
 type Client interface {

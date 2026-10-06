@@ -100,6 +100,45 @@ spec:
                 required:
                 - name
                 type: object
+              packageSource:
+                description: |-
+                  PackageSource is a git repository whose RPM files are pushed into the
+                  channel. Packages already in the channel are skipped.
+                properties:
+                  auth:
+                    description: |-
+                      BasicAuthRef points at a Secret holding username/password values for
+                      HTTP Basic Auth.
+                    properties:
+                      name:
+                        description: Name is the Secret in the same namespace.
+                        type: string
+                      passwordKey:
+                        default: password
+                        description: PasswordKey is the key for the password value.
+                          Defaults to "password".
+                        type: string
+                      usernameKey:
+                        default: username
+                        description: UsernameKey is the key for the username value.
+                          Defaults to "username".
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  path:
+                    description: Sub-path within the repository. Defaults to the repository
+                      root.
+                    type: string
+                  ref:
+                    description: Branch or tag to read. Defaults to "main".
+                    type: string
+                  url:
+                    pattern: ^https?://.+
+                    type: string
+                required:
+                - url
+                type: object
               parentChannelRef:
                 description: Immutable after creation (Uyuni doesn't allow reparenting).
                 properties:
@@ -214,6 +253,8 @@ spec:
                 type: integer
               packageCount:
                 type: integer
+              packageSourceRevision:
+                type: string
               uyuniId:
                 type: integer
             type: object

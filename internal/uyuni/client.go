@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1444,6 +1446,110 @@ func (c *Client) GetChannelPackageCount(ctx context.Context, label string) (int,
 		return 0, asNotFound(err)
 	}
 	return len(list), nil
+}
+
+func (c *Client) ListChannelPackages(ctx context.Context, label string) ([]PackageNEVRA, error) {
+	type pkg struct {
+		Name    string `json:"name"`
+		Epoch   string `json:"epoch"`
+		Version string `json:"version"`
+		Release string `json:"release"`
+		Arch    string `json:"arch_label"`
+	}
+	list, err := apiGet[[]pkg](c, "channel/software/listAllPackages?channelLabel="+url.QueryEscape(label))
+	if err != nil {
+		return nil, asNotFound(err)
+	}
+	out := make([]PackageNEVRA, 0, len(list))
+	for _, p := range list {
+		out = append(out, PackageNEVRA{
+			Name:    p.Name,
+			Epoch:   strings.TrimSpace(p.Epoch),
+			Version: p.Version,
+			Release: p.Release,
+			Arch:    p.Arch,
+		})
+	}
+	return out, nil
+}
+
+// PushPackage uploads an RPM through the /PACKAGE-PUSH handler used by mgrpush,
+// authenticated with the API session cookie, then adds it to the channel.
+func (c *Client) PushPackage(ctx context.Context, channelLabel string, pkg PackageNEVRA, data []byte) error {
+	if err := c.uploadPackage(ctx, pkg, data); err != nil {
+		return err
+	}
+	epoch := pkg.Epoch
+	if epoch == "" {
+		epoch = "0"
+	}
+	type found struct {
+		ID int `json:"id"`
+	}
+	ids, err := apiGet[[]found](c, fmt.Sprintf("packages/findByNvrea?name=%s&version=%s&release=%s&epoch=%s&archLabel=%s",
+		url.QueryEscape(pkg.Name), url.QueryEscape(pkg.Version), url.QueryEscape(pkg.Release),
+		url.QueryEscape(epoch), url.QueryEscape(pkg.Arch)))
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("package %s-%s-%s.%s not found after upload", pkg.Name, pkg.Version, pkg.Release, pkg.Arch)
+	}
+	_, err = apiPost[int](c, "channel/software/addPackages", map[string]any{
+		"channelLabel": channelLabel,
+		"packageIds":   []int{ids[0].ID},
+	})
+	return err
+}
+
+func (c *Client) uploadPackage(ctx context.Context, pkg PackageNEVRA, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.rawLogin(); err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return err
+	}
+	var session string
+	for _, ck := range c.rawHTTP.Jar.Cookies(base) {
+		if ck.Name == "pxt-session-cookie" {
+			session = ck.Value
+		}
+	}
+	if session == "" {
+		return fmt.Errorf("no session cookie after login")
+	}
+
+	sum := sha256.Sum256(data)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/PACKAGE-PUSH", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	prefix := "X-RHN-Upload-"
+	req.Header.Set("Content-Type", "application/x-rpm")
+	req.Header.Set(prefix+"Auth-Session", session)
+	req.Header.Set(prefix+"Force", "0")
+	req.Header.Set(prefix+"Package-Name", pkg.Name)
+	req.Header.Set(prefix+"Package-Version", pkg.Version)
+	req.Header.Set(prefix+"Package-Release", pkg.Release)
+	req.Header.Set(prefix+"Package-Arch", pkg.Arch)
+	req.Header.Set(prefix+"Packaging", "rpm")
+	req.Header.Set(prefix+"File-Checksum-Type", "sha256")
+	req.Header.Set(prefix+"File-Checksum", hex.EncodeToString(sum[:]))
+
+	upload := &http.Client{Transport: c.rawHTTP.Transport, Timeout: 15 * time.Minute}
+	resp, err := upload.Do(req)
+	if err != nil {
+		return fmt.Errorf("uploading %s: %w", pkg.Name, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("uploading %s: HTTP %d: %s", pkg.Name, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func (c *Client) SetChannelDetails(ctx context.Context, id int, d ChannelDetails) error {

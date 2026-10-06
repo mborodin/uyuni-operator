@@ -228,6 +228,15 @@ type ImageFileDetail struct {
 
 // --- Packages ---
 
+// PackageNEVRA identifies a package by name, epoch, version, release and arch.
+type PackageNEVRA struct {
+	Name    string
+	Epoch   string
+	Version string
+	Release string
+	Arch    string
+}
+
 // OrphanedPackage is one entry from channel.software.listPackagesWithoutChannel
 // — a package not associated with any software channel.
 type OrphanedPackage struct {

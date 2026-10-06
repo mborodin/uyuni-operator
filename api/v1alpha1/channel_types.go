@@ -51,18 +51,39 @@ type SoftwareChannelSpec struct {
 
 	Sync SyncSchedule `json:"sync,omitempty"`
 
+	// PackageSource is a git repository whose RPM files are pushed into the
+	// channel. Packages already in the channel are skipped.
+	// +optional
+	PackageSource *PackageSource `json:"packageSource,omitempty"`
+
 	// +kubebuilder:validation:Required
 	OrganizationRef *LocalObjectRef `json:"organizationRef"`
 }
 
+type PackageSource struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	URL string `json:"url"`
+
+	// Branch or tag to read. Defaults to "main".
+	Ref string `json:"ref,omitempty"`
+
+	// Sub-path within the repository. Defaults to the repository root.
+	Path string `json:"path,omitempty"`
+
+	// +optional
+	Auth *BasicAuthRef `json:"auth,omitempty"`
+}
+
 type SoftwareChannelStatus struct {
-	UyuniID            int                `json:"uyuniId,omitempty"`
-	Label              string             `json:"label,omitempty"`
-	AssociatedRepos    []string           `json:"associatedRepos,omitempty"`
-	LastSyncTime       *metav1.Time       `json:"lastSyncTime,omitempty"`
-	PackageCount       int                `json:"packageCount,omitempty"`
-	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
-	Conditions         []metav1.Condition `json:"conditions,omitempty"`
+	UyuniID               int                `json:"uyuniId,omitempty"`
+	Label                 string             `json:"label,omitempty"`
+	AssociatedRepos       []string           `json:"associatedRepos,omitempty"`
+	LastSyncTime          *metav1.Time       `json:"lastSyncTime,omitempty"`
+	PackageCount          int                `json:"packageCount,omitempty"`
+	PackageSourceRevision string             `json:"packageSourceRevision,omitempty"`
+	ObservedGeneration    int64              `json:"observedGeneration,omitempty"`
+	Conditions            []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

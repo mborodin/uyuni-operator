@@ -142,6 +142,9 @@ type API interface {
 	SetRepoSyncSchedule(ctx context.Context, channelLabel, quartzCron string) error
 	SyncChannelNow(ctx context.Context, channelLabel string) error
 	GetChannelPackageCount(ctx context.Context, label string) (int, error)
+	ListChannelPackages(ctx context.Context, label string) ([]PackageNEVRA, error)
+	// PushPackage uploads an RPM file and adds it to the channel.
+	PushPackage(ctx context.Context, channelLabel string, pkg PackageNEVRA, data []byte) error
 
 	CreateRepo(ctx context.Context, r RepoDetails, sslCa, sslCert, sslKey string) (*RepoDetails, error)
 	GetRepo(ctx context.Context, label string) (*RepoDetails, error)

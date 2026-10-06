@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -14,6 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	uyuniv1 "github.com/mborodin/uyuni-operator/api/v1alpha1"
+	"github.com/mborodin/uyuni-operator/internal/git"
+	"github.com/mborodin/uyuni-operator/internal/rpm"
 	"github.com/mborodin/uyuni-operator/internal/uyuni"
 )
 
@@ -249,6 +252,14 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	sc.Status.AssociatedRepos = desiredRepos
 
+	if sc.Spec.PackageSource != nil {
+		if err := r.syncPackageSource(ctx, uc, &sc); err != nil {
+			setPackagesSynced(&sc.Status.Conditions, sc.Generation, false, "PackageSourceFailed", err.Error())
+			_ = r.Status().Update(ctx, &sc)
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		}
+	}
+
 	packageCount, pkgErr := uc.GetChannelPackageCount(ctx, sc.Spec.Label)
 	if pkgErr != nil {
 		return ctrl.Result{}, pkgErr
@@ -261,7 +272,7 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// unreachable. Don't flag it while a sync is actively running, and
 	// don't flag it at all when no repos are configured (nothing to sync).
 	switch {
-	case len(desiredRepos) == 0:
+	case len(desiredRepos) == 0 && sc.Spec.PackageSource == nil:
 		setPackagesSynced(&sc.Status.Conditions, sc.Generation, true, "NoRepositories", "")
 	case current.SyncStatus == "R":
 		setPackagesSynced(&sc.Status.Conditions, sc.Generation, false, "SyncInProgress", "")
@@ -278,6 +289,82 @@ func (r *SoftwareChannelReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+}
+
+// syncPackageSource pushes the RPM files of spec.packageSource that are not yet
+// in the channel. It clones only when the source ref moved since the last push.
+func (r *SoftwareChannelReconciler) syncPackageSource(ctx context.Context, uc uyuni.API, sc *uyuniv1.SoftwareChannel) error {
+	src := sc.Spec.PackageSource
+	repoURL := src.URL
+	if src.Auth != nil {
+		var secret corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Namespace: sc.Namespace, Name: src.Auth.Name}, &secret); err != nil {
+			return fmt.Errorf("reading auth secret %q: %w", src.Auth.Name, err)
+		}
+		usernameKey := src.Auth.UsernameKey
+		if usernameKey == "" {
+			usernameKey = "username"
+		}
+		passwordKey := src.Auth.PasswordKey
+		if passwordKey == "" {
+			passwordKey = "password"
+		}
+		var err error
+		repoURL, err = ccInjectBasicAuth(src.URL, string(secret.Data[usernameKey]), string(secret.Data[passwordKey]))
+		if err != nil {
+			return err
+		}
+	}
+	ref := src.Ref
+	if ref == "" {
+		ref = "main"
+	}
+	path := src.Path
+	if path == "" {
+		path = "."
+	}
+
+	revision, err := git.RemoteHash(repoURL, ref)
+	if err != nil {
+		return err
+	}
+	if revision == sc.Status.PackageSourceRevision {
+		return nil
+	}
+
+	files, _, err := git.New().Clone(repoURL, ref, path)
+	if err != nil {
+		return err
+	}
+	existing, err := uc.ListChannelPackages(ctx, sc.Spec.Label)
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for _, p := range existing {
+		have[p.Name+"-"+p.Version+"-"+p.Release+"."+p.Arch] = true
+	}
+
+	for _, name := range sortedMapKeys(files) {
+		if !strings.HasSuffix(name, ".rpm") {
+			continue
+		}
+		data := []byte(files[name])
+		h, err := rpm.ReadHeader(data)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		if h.Source || have[h.Name+"-"+h.Version+"-"+h.Release+"."+h.Arch] {
+			continue
+		}
+		pkg := uyuni.PackageNEVRA{Name: h.Name, Epoch: h.Epoch, Version: h.Version, Release: h.Release, Arch: h.Arch}
+		if err := uc.PushPackage(ctx, sc.Spec.Label, pkg, data); err != nil {
+			return fmt.Errorf("pushing %s: %w", name, err)
+		}
+	}
+
+	sc.Status.PackageSourceRevision = revision
+	return nil
 }
 
 func (r *SoftwareChannelReconciler) handleDeletion(ctx context.Context, sc *uyuniv1.SoftwareChannel) (ctrl.Result, error) {
