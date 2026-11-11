@@ -158,6 +158,16 @@ func (g *gitClient) Clone(repoURL, ref, subPath string) (map[string]string, stri
 		return files, repoHash, nil // Empty directory is not an error
 	}
 
+	// LFS-tracked files are checked out as pointer files - fetch the real
+	// objects, with the clone's credentials, before anything is read.
+	var lfsUsername, lfsPassword string
+	if auth != nil {
+		lfsUsername, lfsPassword = auth.Username, auth.Password
+	}
+	if err := resolveLFSPointers(targetPath, cloneURL, lfsUsername, lfsPassword); err != nil {
+		return nil, "", err
+	}
+
 	// Walk directory tree
 	err = filepath.WalkDir(targetPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
