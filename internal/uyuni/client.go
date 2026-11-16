@@ -55,7 +55,17 @@ type Client struct {
 	// the curl -c/-b cookie-jar flow that was used to verify these endpoints
 	// work fine when the session cookie is actually sent.
 	rawHTTP *http.Client
+
+	// listHTTP is a separate session with a long timeout for bulk calls that
+	// legitimately exceed the 60s client timeout (listPackagesWithoutChannel
+	// takes minutes on large orgs). It runs outside mu so it never blocks
+	// other controllers sharing this Client.
+	listHTTP *http.Client
+	listMu   sync.Mutex
 }
+
+// bulkListTimeout bounds bulk list calls served by listHTTP.
+const bulkListTimeout = 10 * time.Minute
 
 // notFoundError wraps a "not found" response so callers can use IsNotFound.
 type notFoundError struct{ msg string }
@@ -123,7 +133,14 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 		},
 	}
 
-	c := &Client{conn: conn, http: httpClient, baseURL: strings.TrimSuffix(rawURL, "/"), rawHTTP: rawHTTP}
+	listJar, _ := cookiejar.New(nil)
+	listHTTP := &http.Client{
+		Timeout:   bulkListTimeout,
+		Jar:       listJar,
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+	}
+
+	c := &Client{conn: conn, http: httpClient, baseURL: strings.TrimSuffix(rawURL, "/"), rawHTTP: rawHTTP, listHTTP: listHTTP}
 	if err := c.rawLogin(); err != nil {
 		return nil, fmt.Errorf("authenticating raw HTTP client with %s: %w", rawURL, err)
 	}
@@ -137,6 +154,10 @@ func NewClient(rawURL, username, password string, insecure bool, caCert []byte) 
 // work: a real, jar-backed client, talking to the server with its own
 // session, rather than borrowing one from a different client.
 func (c *Client) rawLogin() error {
+	return c.loginWith(c.rawHTTP)
+}
+
+func (c *Client) loginWith(hc *http.Client) error {
 	body, err := json.Marshal(map[string]string{"login": c.conn.User, "password": c.conn.Password})
 	if err != nil {
 		return fmt.Errorf("marshaling login body: %w", err)
@@ -146,7 +167,7 @@ func (c *Client) rawLogin() error {
 		return fmt.Errorf("creating login request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.rawHTTP.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("login request failed: %w", err)
 	}
@@ -190,6 +211,44 @@ func apiGet[T any](c *Client, path string) (T, error) {
 		return z, fmt.Errorf("%s", resp.Message)
 	}
 	return resp.Result, nil
+}
+
+// bulkGet calls GET <path> on listHTTP (long timeout, own session, outside mu).
+// It logs in fresh each call: bulk lists are rare, and a fresh session avoids
+// any expired-cookie retry dance on a request that can take minutes.
+func bulkGet[T any](ctx context.Context, c *Client, path string) (T, error) {
+	var z T
+	c.listMu.Lock()
+	defer c.listMu.Unlock()
+	if err := c.loginWith(c.listHTTP); err != nil {
+		return z, fmt.Errorf("authenticating bulk client: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/rhn/manager/api/"+path, nil)
+	if err != nil {
+		return z, fmt.Errorf("creating request for %s: %w", path, err)
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.listHTTP.Do(req)
+	if err != nil {
+		return z, sanitizeHTTPError(err, path)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return z, sanitizeHTTPError(fmt.Errorf("%d: %s", resp.StatusCode, body), path)
+	}
+	var apiResp struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Result  T      `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return z, fmt.Errorf("decoding %s response: %w", path, err)
+	}
+	if !apiResp.Success {
+		return z, fmt.Errorf("%s", apiResp.Message)
+	}
+	return apiResp.Result, nil
 }
 
 // apiPost calls POST <path> with JSON body and re-authenticates once on 401 or 403.
@@ -2478,7 +2537,7 @@ func parseUyuniDate(s string) time.Time {
 // with any software channel (channel.software.listPackagesWithoutChannel) —
 // the bulk candidate list for orphaned-package cleanup.
 func (c *Client) ListPackagesWithoutChannel(ctx context.Context) ([]OrphanedPackage, error) {
-	list, err := apiGet[[]wirePackageWithoutChannel](c, "channel/software/listPackagesWithoutChannel")
+	list, err := bulkGet[[]wirePackageWithoutChannel](ctx, c, "channel/software/listPackagesWithoutChannel")
 	if err != nil {
 		return nil, err
 	}
