@@ -31,8 +31,10 @@ type PackageCleanupPolicySpec struct {
 	DryRun bool `json:"dryRun,omitempty"`
 
 	// MaxDeletePerRun caps how many packages a single reconcile batch
-	// deletes. While more eligible candidates remain, the controller
-	// requeues after BatchIntervalSeconds to process the next batch — it
+	// deletes (or reports, in dry-run). Errata-linked or installed packages
+	// are skipped without counting toward it; one batch checks at most four
+	// times this many packages. While more eligible candidates remain, the
+	// controller requeues after BatchIntervalSeconds to process the next batch — it
 	// does not wait for the idle periodic interval until the backlog is
 	// fully drained.
 	// +kubebuilder:validation:Minimum=1
@@ -62,20 +64,22 @@ type PackageCleanupPolicyStatus struct {
 	// meeting MinOrphanAgeDays.
 	SkippedTooRecent int `json:"skippedTooRecent,omitempty"`
 
-	// SkippedErrataLinked is how many candidates were excluded because
-	// packages.listProvidingErrata still returned at least one entry.
+	// SkippedErrataLinked is how many candidates are currently excluded
+	// because packages.listProvidingErrata returned at least one entry.
+	// Skipped packages are re-checked after 24 hours.
 	SkippedErrataLinked int `json:"skippedErrataLinked,omitempty"`
 
-	// SkippedInstalled is how many candidates were excluded because
-	// system.listSystemsWithPackage still returned at least one system.
+	// SkippedInstalled is how many candidates are currently excluded
+	// because system.listSystemsWithPackage returned at least one system.
+	// Skipped packages are re-checked after 24 hours.
 	SkippedInstalled int `json:"skippedInstalled,omitempty"`
 
 	// DeletedThisRun is how many packages were actually removed in the most
 	// recent batch. Always 0 while DryRun is true.
 	DeletedThisRun int `json:"deletedThisRun,omitempty"`
 
-	// RemainingCandidates is how many eligible candidates were left
-	// unprocessed after this batch (bounded by MaxDeletePerRun), driving
+	// RemainingCandidates is how many eligible candidates were not yet
+	// checked after this batch (currently skipped ones excluded), driving
 	// whether the next reconcile is a follow-up batch or the idle wait.
 	RemainingCandidates int `json:"remainingCandidates,omitempty"`
 
