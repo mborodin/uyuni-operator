@@ -414,6 +414,17 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 		current.ChildChannelLabels = children
 	}
 
+	// No channel refs in spec: keep whatever the activation key subscribed at
+	// registration instead of converging to an empty channel set.
+	manageChannels := sys.Spec.BaseChannelRef != nil || sys.Spec.BaseChannelFrom != nil ||
+		len(sys.Spec.ChildChannelRefs) > 0 || len(sys.Spec.ChildChannelsFrom) > 0
+	if !manageChannels {
+		res.BaseChannelLabel = current.BaseChannelLabel
+		res.ChildChannelLabels = current.ChildChannelLabels
+		sys.Status.BaseChannelLabel = current.BaseChannelLabel
+		sys.Status.ChildChannelLabels = current.ChildChannelLabels
+	}
+
 	if current.BaseChannelLabel == "" {
 		// No current subscription (e.g. freshly registered "Bootstrap" system) —
 		// scheduleChangeChannels has nothing to schedule a change against and
@@ -476,9 +487,9 @@ func (r *SystemReconciler) applyConfig(ctx context.Context, uc uyuni.API, sys *u
 				return r.fail(ctx, sys, "UpdateFailed", err)
 			}
 		}
-	} else if current.BaseChannelLabel != res.BaseChannelLabel ||
+	} else if manageChannels && (current.BaseChannelLabel != res.BaseChannelLabel ||
 		!stringSlicesEqual(current.ChildChannelLabels, res.ChildChannelLabels) ||
-		r.channelActionFailed(ctx, uc, sys) {
+		r.channelActionFailed(ctx, uc, sys)) {
 		// Uyuni records the new subscription when the action is scheduled, so a
 		// failed action (e.g. minion restarting) leaves the minion's repo file
 		// stale while the subscriptions already match. Track the action and
